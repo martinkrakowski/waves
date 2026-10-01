@@ -101,7 +101,13 @@ function bearer(req: IncomingMessage): string | undefined {
  * whose `generatedAt` is nowhere near the server's clock is refused because the
  * status view would show a wave in the future.
  */
-export async function startStub(): Promise<Stub> {
+// `now` is the clock `generatedAt` is checked against. It defaults to the fixed
+// STUB_CLOCK the unit tests use; a test that pushes with the REAL clock passes
+// `Date.now`, or it would start failing once the tolerance window has passed.
+export async function startStub(
+  options: { readonly now?: () => number } = {},
+): Promise<Stub> {
+  const now = options.now ?? ((): number => STUB_CLOCK);
   const projects = new Map<string, string>();
   const stored = new Set<string>();
   const throttled = new Set<string>();
@@ -262,7 +268,7 @@ export async function startStub(): Promise<Stub> {
       return;
     }
     if (
-      Math.abs(Date.parse(validated.value.generatedAt) - STUB_CLOCK) >
+      Math.abs(Date.parse(validated.value.generatedAt) - now()) >
       CLOCK_TOLERANCE_MS
     ) {
       sendJson(res, 422, {

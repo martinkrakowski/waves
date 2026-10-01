@@ -35,7 +35,8 @@ let directory: string;
 let configDir: string;
 
 beforeAll(async () => {
-  stub = await startStub();
+  // This file pushes through `main` with the real system clock.
+  stub = await startStub({ now: Date.now });
   directory = (await temporaryDirectory()).path;
   configDir = join(directory, "config");
 });
