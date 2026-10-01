@@ -104,16 +104,18 @@ describe("register", () => {
     ).toBe("Waves Demo is not a project id");
   });
 
-  it("takes a name the contract would store", () => {
+  it("takes a name the contract would store, and names the flag it will not", () => {
     const base = ["register", "waves-demo", "--admin-token-stdin"];
-    expect(errorOf([...base])).toContain("/name");
-    expect(errorOf([...base, "--name", "  "])).toContain("/name");
-    expect(errorOf([...base, "--name", "x".repeat(81)])).toContain(
-      "at most 80 characters",
+    expect(errorOf([...base])).toBe("--name: expected at least 1 characters");
+    expect(errorOf([...base, "--name", "  "])).toBe(
+      "--name: expected at least 1 characters",
+    );
+    expect(errorOf([...base, "--name", "x".repeat(81)])).toBe(
+      "--name: expected at most 80 characters",
     );
     expect(
       errorOf([...base, "--name", `two${String.fromCharCode(7)}lines`]),
-    ).toContain("/name");
+    ).toBe("--name: expected printable text");
     expect(commandOf([...base, "--name", "n"]).kind).toBe("register");
     expect(commandOf([...base, "--name", "x".repeat(80)]).kind).toBe(
       "register",
@@ -128,16 +130,18 @@ describe("register", () => {
       "n",
       "--admin-token-stdin",
     ];
-    expect(errorOf([...base, "--repo", "http://example.com/x"])).toContain(
-      "/repo",
+    expect(errorOf([...base, "--repo", "http://example.com/x"])).toBe(
+      "--repo: expected an https URL",
     );
-    expect(errorOf([...base, "--repo", "example.com"])).toContain("/repo");
+    expect(errorOf([...base, "--repo", "example.com"])).toBe(
+      "--repo: expected an https URL",
+    );
     expect(errorOf([...base, "--repo", "https://user:pw@example.com/"])).toBe(
       "--repo must not carry a user or a password",
     );
     expect(
       errorOf([...base, "--repo", `https://example.com/${"x".repeat(200)}`]),
-    ).toContain("at most 200 characters");
+    ).toBe("--repo: expected at most 200 characters");
     expect(
       commandOf([...base, "--repo", "https://github.com/example/waves.git"])
         .kind,

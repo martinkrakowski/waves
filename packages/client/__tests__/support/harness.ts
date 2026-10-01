@@ -52,6 +52,15 @@ export function printedLines(): readonly string[] {
   return printed;
 }
 
+/**
+ * Records a line printed outside a `recorder`, so that a test which captures a
+ * stream itself — the shell shim's own console, say — is still covered by the
+ * leak guard rather than being a way around it.
+ */
+export function noteOutput(line: string): void {
+  printed.push(line);
+}
+
 export function forgetPrinted(): void {
   printed.length = 0;
 }
@@ -112,6 +121,7 @@ export function fakeFiles(
     files: {
       readText: async (path) => store.get(path)?.text,
       readSecret: async (path) => store.get(path),
+      checkSecretDirectory: async () => undefined,
       exists: async (path) => store.has(path),
       writeSecret: async (path, secret) => {
         writes.push({ path, secret });

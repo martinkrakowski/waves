@@ -33,55 +33,66 @@ const REASON_PHRASES: Readonly<Record<number, string>> = {
 // The bytes an escape sequence is made of. Left in an answer, they can clear
 // the screen, repaint the line and hide what the client actually said.
 const ESCAPE = 27;
-const BRACKET = 91;
 const FINAL_BYTE_LOW = 64;
 const FINAL_BYTE_HIGH = 126;
-const DELETE = 127;
-const LAST_C1 = 159;
 const ELLIPSIS = "…";
 
-function isControl(code: number): boolean {
-  return code <= 31 || (code >= DELETE && code <= LAST_C1);
+/**
+ * The characters that render as nothing: the C0 and C1 controls, the format
+ * characters (zero-width joiners, soft hyphens, the byte-order marks) and the
+ * two line separators Unicode counts as spaces. Between them they can hide a
+ * word, reorder one, or start a line the user never sees end.
+ */
+const INVISIBLE = /[\p{Cc}\p{Cf}\u2028\u2029]/u;
+
+function isInvisible(point: string): boolean {
+  return INVISIBLE.test(point);
 }
 
-/** The index of the last byte of the escape sequence at `index`, or `index` itself. */
-function skipEscape(value: string, index: number): number {
-  if (value.charCodeAt(index + 1) !== BRACKET) {
+/** The index of the last code point of the escape sequence at `index`. */
+function skipEscape(points: readonly string[], index: number): number {
+  if (points[index + 1] !== "[") {
     return index;
   }
-  let cursor = index + 2;
-  while (cursor < value.length) {
-    const code = value.charCodeAt(cursor);
-    cursor += 1;
-    if (code >= FINAL_BYTE_LOW && code <= FINAL_BYTE_HIGH) {
-      return cursor - 1;
-    }
-  }
+  const rest = points.slice(index + 2);
+  const end = rest.findIndex((point) => {
+    const code = point.charCodeAt(0);
+    return code >= FINAL_BYTE_LOW && code <= FINAL_BYTE_HIGH;
+  });
   // An unfinished sequence swallows the rest of the text: there is no way to
   // know where it was meant to end, so none of it can be trusted.
-  return value.length - 1;
+  return end === -1 ? points.length - 1 : index + 2 + end;
 }
 
 /**
- * A server-provided string, made safe to print. Escape sequences are removed,
- * the remaining controls become spaces so that nothing can forge the shape of
- * the output, and the result is capped: the text is the server's to choose, the
- * terminal's is not.
+ * A server-provided string, made safe to print. Escape sequences and every
+ * character that renders as nothing become spaces, and the result is capped by
+ * code point so that a character made of two code units is never cut in half.
+ * The text is the server's to choose; the terminal's is not.
  */
 export function safeText(value: string): string {
-  let cleaned = "";
-  for (let index = 0; index < value.length; index += 1) {
-    if (value.charCodeAt(index) === ESCAPE) {
-      index = skipEscape(value, index);
+  const points = Array.from(value);
+  const cleaned: string[] = [];
+  let index = 0;
+  for (const [position, point] of points.entries()) {
+    if (position < index) {
+      // Already inside a sequence that has been dropped.
       continue;
     }
-    cleaned += isControl(value.charCodeAt(index)) ? " " : value.charAt(index);
+    if (point.charCodeAt(0) === ESCAPE) {
+      // The sequence owns everything up to and including the point it ends on.
+      index = skipEscape(points, position) + 1;
+      continue;
+    }
+    cleaned.push(isInvisible(point) ? " " : point);
+    index = position + 1;
   }
-  const stripped = cleaned.trim();
+  const stripped = cleaned.join("").trim();
   if (stripped.length <= MAX_SERVER_TEXT) {
     return stripped;
   }
-  return `${stripped.slice(0, MAX_SERVER_TEXT - 1)}${ELLIPSIS}`;
+  const kept = Array.from(stripped).slice(0, MAX_SERVER_TEXT - 1);
+  return `${kept.join("")}${ELLIPSIS}`;
 }
 
 /** The reason phrase for a status, so a failure reads like an HTTP trace. */

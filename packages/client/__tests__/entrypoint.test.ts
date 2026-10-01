@@ -118,6 +118,7 @@ describe("run", () => {
       files: {
         readText: async () => undefined,
         readSecret: async () => undefined,
+        checkSecretDirectory: async () => undefined,
         exists: () => {
           throw "not even an error";
         },

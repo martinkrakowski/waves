@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import type { Command } from "../src/domain/args.js";
 import { register } from "../src/application/register.js";
-import type {
-  Files,
-  HttpRequest,
-  TransportOptions,
+import {
+  FileRefusal,
+  type Files,
+  type HttpRequest,
+  type TransportOptions,
 } from "../src/application/ports.js";
 import {
   ADMIN_TOKEN,
@@ -315,10 +316,83 @@ describe("a registration whose socket died", () => {
     expect(built.out).toEqual([]);
   });
 
+  it("says so when the directory turns bad between the check and the write", async () => {
+    const files = fakeFiles(ADMIN_FILE);
+    const refusal = new FileRefusal(
+      `${CONFIG_DIR} is a symbolic link; point WAVES_CONFIG_DIR at the directory itself`,
+    );
+    const built = harness({
+      script: [reply(201, `{"id":"${PROJECT}","token":"${PROJECT_TOKEN}"}`)],
+      files: ADMIN_FILE,
+    });
+
+    await expect(
+      register(command(), {
+        ...built.deps,
+        files: {
+          ...files.files,
+          writeSecret: async () => {
+            throw refusal;
+          },
+        },
+      }),
+    ).rejects.toThrow(
+      `${CONFIG_DIR} is a symbolic link; point WAVES_CONFIG_DIR at the directory itself; the token the server issued was not saved, so re-run with --rotate`,
+    );
+  });
+
   it("wants a configuration it can use", async () => {
     const built = harness({ vars: { WAVES_URL: undefined } });
     await expect(register(command(), built.deps)).rejects.toThrow(
       "WAVES_URL is required",
     );
+  });
+});
+
+describe("the config directory, checked before anything is minted", () => {
+  it("spends the admin token on nothing at all when the directory is bad", async () => {
+    const built = harness({
+      script: [reply(201, `{"id":"${PROJECT}","token":"${PROJECT_TOKEN}"}`)],
+      files: ADMIN_FILE,
+    });
+    const refusal = new FileRefusal(
+      `${CONFIG_DIR} is mode 0o755; run chmod 700 ${CONFIG_DIR} so only you can reach the tokens in it`,
+    );
+    let checked = "";
+    const checkedFiles: Files = {
+      ...built.deps.files,
+      checkSecretDirectory: async (path) => {
+        checked = path;
+        throw refusal;
+      },
+    };
+
+    await expect(
+      register(command(), { ...built.deps, files: checkedFiles }),
+    ).rejects.toBe(refusal);
+    expect(checked).toBe(CONFIG_DIR);
+    expect(built.sent()).toBe(0);
+    expect(built.files.writes).toEqual([]);
+  });
+
+  it("asks about the directory before it reads the admin token", async () => {
+    const built = harness({
+      script: [reply(201, `{"id":"${PROJECT}","token":"${PROJECT_TOKEN}"}`)],
+      files: {},
+    });
+    const order: string[] = [];
+    const files: Files = {
+      ...built.deps.files,
+      checkSecretDirectory: async () => {
+        order.push("directory");
+      },
+      readSecret: async () => {
+        order.push("admin token");
+        return { text: ADMIN_TOKEN, mode: 0o600 };
+      },
+    };
+
+    expect(await register(command(), { ...built.deps, files })).toBe(0);
+    expect(order).toEqual(["directory", "admin token"]);
   });
 });

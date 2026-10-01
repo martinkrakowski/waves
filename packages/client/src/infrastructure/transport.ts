@@ -205,6 +205,10 @@ function exchange(
     let request: ClientRequest;
     const onResponse = (response: IncomingMessage): void => {
       status = response.statusCode;
+      // The headers are read the moment they arrive, not when the body ends: a
+      // connection that dies mid-body still leaves a Retry-After and a challenge
+      // the client needs to act on.
+      headers = headerText(response.headers);
       stopWaiting();
       // A response that arrived before the body means the server never wanted
       // it: read the refusal out and drop the connection rather than earn a
@@ -225,7 +229,6 @@ function exchange(
         chunks.push(chunk);
       });
       response.on("end", () => {
-        headers = headerText(response.headers);
         tidy();
         finish(asReply());
       });

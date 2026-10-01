@@ -31,6 +31,15 @@ describe("askedToWait", () => {
     expect(askedToWait(undefined, NOW)).toBeUndefined();
     expect(askedToWait("soon", NOW)).toBeUndefined();
   });
+
+  it("does not read a number as a date, however willing Date.parse is", () => {
+    // `Date.parse("-1")` is a date in 2001 and `Date.parse("3.5")` a day in
+    // March; neither is a Retry-After, and treating them as the past would ask
+    // the client to retry immediately.
+    expect(askedToWait("-1", NOW)).toBeUndefined();
+    expect(askedToWait("3.5", NOW)).toBeUndefined();
+    expect(askedToWait("1e3", NOW)).toBeUndefined();
+  });
 });
 
 describe("decideRetry", () => {

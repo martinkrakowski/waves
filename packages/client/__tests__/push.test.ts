@@ -341,6 +341,42 @@ describe("the retry policy of a push", () => {
     expect(built.sent()).toBe(3);
   });
 
+  it("keeps a throttled answer whose body the connection cut short", async () => {
+    const built = harness({
+      script: [
+        reply(429, '{"error":"slow', { "retry-after": "2" }),
+        reply(200, ACCEPTED),
+      ],
+      stdin: lanesOnly("noisy\n"),
+      files: { [tokenPath]: { text: PROJECT_TOKEN, mode: 0o600 } },
+    });
+
+    // The Retry-After arrived with the headers, so it is honoured even though the
+    // explanation behind it never finished arriving.
+    expect(await push(command(), built.deps)).toBe(0);
+    expect(built.waits).toEqual([2000]);
+    expect(built.sent()).toBe(2);
+  });
+
+  it("counts a broken server and a throttling one against separate budgets", async () => {
+    const built = harness({
+      script: [
+        reply(503, ""),
+        reply(429, "", { "retry-after": "1" }),
+        reply(429, "", { "retry-after": "1" }),
+        reply(200, ACCEPTED),
+      ],
+      stdin: lanesOnly("noisy\n"),
+      files: { [tokenPath]: { text: PROJECT_TOKEN, mode: 0o600 } },
+    });
+
+    expect(await push(command(), built.deps)).toBe(0);
+    expect(built.sent()).toBe(4);
+    // One 5xx and two throttles: three waits drawn from two budgets of two and
+    // three, which one shared counter would have refused.
+    expect(built.waits).toEqual([1000, 1000, 1000]);
+  });
+
   it("never repeats a request the server refused", async () => {
     const built = harness({
       script: [

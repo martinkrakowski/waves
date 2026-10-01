@@ -57,13 +57,19 @@ export async function push(
     body: JSON.stringify(validated.value),
   } as const;
 
-  for (let retries = 0; ; retries += 1) {
+  // Two budgets, counted apart: a server that is broken is not the same as a
+  // server that is asking for patience, and neither of them should spend the
+  // other's retries.
+  let retries = 0;
+  let throttles = 0;
+  for (;;) {
     const outcome = await transport.send(request);
     if (outcome.kind === "network") {
       const decision = decideRetry({ kind: "network" }, retries);
       if (decision.kind !== "wait") {
         throw new Failure(`push failed: ${outcome.message}`);
       }
+      retries += 1;
       await deps.sleeper.sleep(decision.ms);
       continue;
     }
@@ -85,7 +91,7 @@ export async function push(
             now: deps.clock.now(),
           }
         : { kind: status >= 500 ? "server" : "refused" },
-      retries,
+      throttled ? throttles : retries,
     );
     if (decision.kind === "tooLong") {
       throw new Failure(
@@ -93,6 +99,11 @@ export async function push(
       );
     }
     if (decision.kind === "wait") {
+      if (throttled) {
+        throttles += 1;
+      } else {
+        retries += 1;
+      }
       await deps.sleeper.sleep(decision.ms);
       continue;
     }

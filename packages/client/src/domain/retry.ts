@@ -17,6 +17,7 @@ export const MAX_RETRY_AFTER_SECONDS = 60;
 
 const SECONDS = 1000;
 const DELTA_SECONDS = /^\d{1,9}$/;
+const HAS_LETTER = /[A-Za-z]/;
 
 /**
  * What the last attempt came back with, as far as the retry policy cares:
@@ -79,6 +80,11 @@ export function decideRetry(
  * The seconds `Retry-After` asks for, or `undefined` when it names nothing this
  * client can read. Both forms of the header are accepted: delta-seconds, and an
  * HTTP-date read against the clock.
+ *
+ * The date is only tried when the value contains a letter, because `Date.parse`
+ * is far too willing: it reads `-1` as a date in 2001 and `3.5` as a day in
+ * March, and a header that is none of those must come back as unread rather than
+ * as an instant in the past.
  */
 export function askedToWait(
   header: string | undefined,
@@ -89,6 +95,9 @@ export function askedToWait(
   }
   if (DELTA_SECONDS.test(header)) {
     return Number(header);
+  }
+  if (!HAS_LETTER.test(header)) {
+    return undefined;
   }
   const date = Date.parse(header);
   if (Number.isNaN(date)) {

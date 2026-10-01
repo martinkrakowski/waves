@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import type { ClientRequest, IncomingMessage } from "node:http";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { HttpRequest } from "../src/application/ports.js";
 import {
@@ -58,6 +58,10 @@ type Starter = NonNullable<Parameters<typeof createTransport>[1]>;
 type Callback = Parameters<Starter>[1];
 
 const CLOSED = 38471;
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function request(overrides: Partial<HttpRequest> = {}): HttpRequest {
   return {
@@ -237,21 +241,31 @@ describe("the expectation, and the body that waits for it", () => {
   });
 
   it("writes the body anyway when the server never answers the expectation", async () => {
+    // The wait is a second of the client's own clock, so it is taken from a
+    // fake one rather than spent.
+    vi.useFakeTimers();
     const scripted = deafPeer();
     const transport = transportOver(scripted);
 
-    transport.send(request());
+    const pending = transport.send(request());
     expect(scripted.peer.flushed).toHaveLength(1);
     expect(scripted.peer.bodies).toEqual([]);
 
-    await new Promise((resolve) => {
-      setTimeout(resolve, CONTINUE_WAIT_MS + 100);
-    });
+    await vi.advanceTimersByTimeAsync(CONTINUE_WAIT_MS);
     expect(scripted.peer.bodies).toEqual(['{"lanes":[]}']);
 
     // A late agreement does not send it a second time.
     scripted.peer.emit("continue");
     expect(scripted.peer.bodies).toEqual(['{"lanes":[]}']);
+
+    // And the exchange is settled rather than left hanging on its deadline.
+    scripted.peer.emit("error", new Error("the socket went away"));
+    expect(await pending).toEqual({
+      kind: "network",
+      message: "the socket went away",
+      beforeBody: false,
+    });
+    vi.useRealTimers();
   });
 
   it("never writes the body when the answer arrives first", async () => {
@@ -321,7 +335,10 @@ describe("the expectation, and the body that waits for it", () => {
 
 describe("a status that arrived is a verdict", () => {
   it("keeps a refusal whose body was cut short, and does not retry it", async () => {
-    const response = new FakeResponse(401, []);
+    const response = new FakeResponse(401, [], {
+      "www-authenticate": 'Bearer realm="waves"',
+      "x-note": "one",
+    });
     const scripted = peer();
     scripted.respond(response);
     const transport = transportOver(scripted);
@@ -332,12 +349,38 @@ describe("a status that arrived is a verdict", () => {
     response.emit("data", Buffer.from('{"error":"the project'));
     scripted.peer.emit("error", new Error("read ECONNRESET"));
 
+    // The headers arrived with the status, so a challenge or a Retry-After is
+    // still there after the connection died.
     expect(await pending).toEqual({
       kind: "reply",
       reply: {
         status: 401,
-        headers: {},
+        headers: {
+          "www-authenticate": 'Bearer realm="waves"',
+          "x-note": "one",
+        },
         body: '{"error":"the project',
+      },
+    });
+  });
+
+  it("keeps the headers of a throttled reply whose body was cut short", async () => {
+    const response = new FakeResponse(429, [], { "retry-after": "2" });
+    const scripted = peer();
+    scripted.respond(response);
+    const transport = transportOver(scripted);
+
+    const pending = transport.send(request());
+    await Promise.resolve();
+    response.emit("data", Buffer.from('{"error":"slow'));
+    scripted.peer.emit("error", new Error("read ECONNRESET"));
+
+    expect(await pending).toEqual({
+      kind: "reply",
+      reply: {
+        status: 429,
+        headers: { "retry-after": "2" },
+        body: '{"error":"slow',
       },
     });
   });

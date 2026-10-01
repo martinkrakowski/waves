@@ -89,10 +89,45 @@ describe("safeText", () => {
     expect(safeText(`a${String.fromCharCode(133)}b`)).toBe("a b");
   });
 
-  it("caps what a server can make a terminal print", () => {
+  it("turns the characters that render as nothing into spaces", () => {
+    const bidi = [
+      "\u202e",
+      "\u2066",
+      "\u2067",
+      "\u2068",
+      "\u2069",
+      "\u200b",
+      "\ufeff",
+      "\u00ad",
+    ];
+    for (const point of bidi) {
+      expect(safeText(`refused${point}more`)).toBe("refused more");
+    }
+  });
+
+  it("turns the two Unicode line separators into spaces", () => {
+    expect(safeText("a\u2028b\u2029c")).toBe("a b c");
+  });
+
+  it("keeps the text around a bidi control, in the order it was written", () => {
+    // A right-to-left override is how a message is made to read backwards.
+    expect(safeText("gnp.exe\u202egnpl.soh")).toBe("gnp.exe gnpl.soh");
+  });
+
+  it("caps what a server can make a terminal print, by character", () => {
     const long = safeText("x".repeat(500));
     expect(long).toHaveLength(MAX_SERVER_TEXT);
     expect(long.endsWith("…")).toBe(true);
+  });
+
+  it("never cuts a character made of two code units in half", () => {
+    const boundary = "x".repeat(MAX_SERVER_TEXT - 2) + "\u{1f600}" + "tail";
+    const capped = safeText(boundary);
+    // 198 characters, the emoji whole, and the ellipsis: 200 characters, though
+    // 201 code units.
+    expect(capped).toBe(`${"x".repeat(MAX_SERVER_TEXT - 2)}\u{1f600}…`);
+    expect(Array.from(capped)).toHaveLength(MAX_SERVER_TEXT);
+    expect(capped.includes("\u{1f600}")).toBe(true);
   });
 
   it("makes every printed part of an answer safe", () => {

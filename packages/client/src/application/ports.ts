@@ -47,6 +47,14 @@ export interface Files {
    * returning the contents of whatever a link pointed at.
    */
   readSecret(path: string): Promise<FileRead | undefined>;
+  /**
+   * The rules the directory the tokens live in must satisfy: not a link, not
+   * owned by somebody else, and reachable only by its owner. Asked before an
+   * admin token is spent, so a directory that cannot hold a secret safely is
+   * never discovered after a token has been minted. A directory that is not
+   * there yet is nothing to check — this client will create it itself.
+   */
+  checkSecretDirectory(path: string): Promise<void>;
   exists(path: string): Promise<boolean>;
   /** Writes a secret so that no window exists in which it is loose on disk. */
   writeSecret(path: string, secret: string): Promise<void>;

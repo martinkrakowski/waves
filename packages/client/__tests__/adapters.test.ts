@@ -118,7 +118,7 @@ describe("the filesystem", () => {
     await temporary.remove();
   });
 
-  it("refuses a secret that is a link", async () => {
+  it("refuses a secret that is a link, and says what it is", async () => {
     const temporary = await temporaryDirectory();
     const files = fileSystem();
     const path = join(temporary.path, "waves-demo.token");
@@ -127,7 +127,9 @@ describe("the filesystem", () => {
     await symlink(path, link);
 
     // The link is never followed, so the file behind it is never read.
-    await expect(files.readSecret(link)).rejects.toThrow(/ELOOP/);
+    await expect(files.readSecret(link)).rejects.toThrow(
+      `${link} is a symbolic link; the token file must be a regular file`,
+    );
     await temporary.remove();
   });
 
@@ -297,6 +299,64 @@ describe("the filesystem", () => {
 
     await files.writeSecret(join(directory, "waves-demo.token"), "t0ken");
     expect(statSync(directory).mode & 0o777).toBe(0o700);
+    await temporary.remove();
+  });
+
+  it("checks a config directory without creating one", async () => {
+    const temporary = await temporaryDirectory();
+    const files = fileSystem();
+    const absent = join(temporary.path, "not-there");
+
+    // Nothing to check where this client will create the directory itself.
+    await expect(files.checkSecretDirectory(absent)).resolves.toBeUndefined();
+    await expect(readdir(temporary.path)).resolves.toEqual([]);
+
+    const directory = join(temporary.path, "config");
+    await mkdir(directory, { mode: 0o700 });
+    await expect(
+      files.checkSecretDirectory(directory),
+    ).resolves.toBeUndefined();
+    await temporary.remove();
+  });
+
+  it("refuses a config directory of somebody else's, and does not create it", async () => {
+    const temporary = await temporaryDirectory();
+    const files = fileSystem();
+    const directory = join(temporary.path, "config");
+    await mkdir(directory, { mode: 0o700 });
+
+    Object.defineProperty(process, "getuid", {
+      value: () => 4242,
+      configurable: true,
+    });
+    await expect(files.checkSecretDirectory(directory)).rejects.toThrow(
+      `${directory} belongs to uid ${statSync(directory).uid}, not to you`,
+    );
+    await expect(
+      files.writeSecret(join(directory, "waves-demo.token"), "t0ken"),
+    ).rejects.toThrow("not to you");
+    await expect(readdir(directory)).resolves.toEqual([]);
+    await temporary.remove();
+  });
+
+  it("refuses a config directory that is a plain file", async () => {
+    const temporary = await temporaryDirectory();
+    const files = fileSystem();
+    const blocker = join(temporary.path, "config");
+    await writeFile(blocker, "not a directory");
+
+    await expect(files.checkSecretDirectory(blocker)).rejects.toThrow(
+      `${blocker} is not a directory`,
+    );
+    await temporary.remove();
+  });
+
+  it("names the path and the code of a config directory it cannot even look at", async () => {
+    const temporary = await temporaryDirectory();
+    const files = fileSystem();
+    await expect(files.checkSecretDirectory(TOO_LONG)).rejects.toThrow(
+      `${TOO_LONG} could not be read: ENAMETOOLONG`,
+    );
     await temporary.remove();
   });
 });

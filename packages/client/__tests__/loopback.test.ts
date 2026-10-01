@@ -145,6 +145,13 @@ function puts(wave: string): readonly {
   );
 }
 
+/** Every request the stub was asked to register something, before or after this one. */
+function posts(): readonly string[] {
+  return stub.requests
+    .filter((entry) => entry.method === "POST")
+    .map((entry) => entry.path);
+}
+
 /** The body of the push the stub was willing to read: the first attempt is throttled on its headers. */
 function bodyOf(wave: string): string {
   const carried = puts(wave).find((entry) => entry.body !== "");
@@ -379,16 +386,23 @@ describe("a real loopback server", () => {
       stdin: LANES,
     });
     expect(refused.code).toBe(2);
-    expect(refused.err[0]).toContain("ELOOP");
+    expect(refused.err[0]).toContain(
+      `${tokenFile(project)} is a symbolic link; the token file must be a regular file`,
+    );
   });
 
   it("refuses a config directory anyone else can reach, and says what to run", async () => {
     const project = "waves-dir";
     await mkdir(configDir, { recursive: true, mode: 0o750 });
+    const before = posts();
+
     const refused = await waves(register(project));
+
     expect(refused.code).toBe(2);
     expect(refused.err[0]).toContain(`run chmod 700 ${configDir}`);
     expect((await stat(configDir)).mode & 0o777).toBe(0o750);
+    // Nothing was asked of the server, so there is no token to have lost.
+    expect(posts()).toEqual(before);
   });
 
   it("refuses a config directory that is a link", async () => {
@@ -396,9 +410,13 @@ describe("a real loopback server", () => {
     const real = join(directory, "real");
     await mkdir(real, { mode: 0o700 });
     await symlink(real, configDir);
+    const before = posts();
+
     const refused = await waves(register(project));
+
     expect(refused.code).toBe(2);
     expect(refused.err[0]).toContain("is a symbolic link");
+    expect(posts()).toEqual(before);
     await rm(configDir);
   });
 });

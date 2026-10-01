@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { forgetPrinted, noteOutput, printedLines } from "./support/harness.js";
+
 const originalArgv = process.argv;
 const originalEnv = { ...process.env };
 
@@ -20,18 +22,27 @@ afterEach(() => {
 interface Written {
   readonly log: string[];
   readonly error: string[];
+  /** Writes the line the console spy would write, without reaching for the console. */
+  readonly sayError: (line: string) => void;
 }
 
 function capture(): Written {
   const log: string[] = [];
   const error: string[] = [];
+  const sayError = (line: string): void => {
+    error.push(line);
+    noteOutput(line);
+  };
+  // These lines are handed to the leak guard as well: the shim writes to the
+  // console itself, so capturing it must not be a way around the check.
   vi.spyOn(console, "log").mockImplementation((line: string) => {
     log.push(line);
+    noteOutput(line);
   });
   vi.spyOn(console, "error").mockImplementation((line: string) => {
-    error.push(line);
+    sayError(line);
   });
-  return { log, error };
+  return { log, error, sayError };
 }
 
 async function invoke(args: readonly string[]): Promise<Written> {
@@ -95,5 +106,17 @@ describe("cli", () => {
     expect(written.error).toEqual(["waves: unexpected failure"]);
     expect(written.log).toEqual([]);
     expect(process.exitCode).toBe(1);
+  });
+
+  it("feeds the leak guard the lines the shim prints", () => {
+    const written = capture();
+
+    written.sayError("a line from the shim");
+
+    // The guard reads the same store these spies write to, so a line that reached
+    // the console here is one it will search for a secret in.
+    expect(written.error).toEqual(["a line from the shim"]);
+    expect(printedLines()).toEqual(["a line from the shim"]);
+    forgetPrinted();
   });
 });

@@ -25,6 +25,10 @@ export async function register(
 ): Promise<number> {
   const session = await openSession(deps.env, deps.files);
   const path = tokenPath(session.configDir, command.id);
+  // Before anything else: a directory that cannot hold a secret safely is a
+  // refusal, and finding it out after the server has minted a token would mean
+  // throwing that token away.
+  await deps.files.checkSecretDirectory(session.configDir);
   if (!command.rotate && (await deps.files.exists(path))) {
     throw new UsageError(`${path} already exists; pass --rotate to replace it`);
   }

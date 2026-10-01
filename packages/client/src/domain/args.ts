@@ -1,6 +1,6 @@
 import { isProjectId, isWaveId } from "@hexagen-monaco/waves-contract";
 
-import { readProjectRequest } from "./project-request.js";
+import { flagIssues, readProjectRequest } from "./project-request.js";
 import { carriesCredentials } from "./endpoint.js";
 
 export const USAGE = [
@@ -174,12 +174,7 @@ function readRegister(tokens: Tokens): ParseResult {
   const repo = tokens.values.get("--repo");
   const refused = readProjectRequest({ id, name, repo });
   if (refused.length > 0) {
-    return {
-      ok: false,
-      error: refused
-        .map((issue) => `${issue.path}: ${issue.message}`)
-        .join("; "),
-    };
+    return { ok: false, error: flagIssues(refused).join("; ") };
   }
   // The contract would store a repo URL that carries a password; the status page
   // would then render it.

@@ -28,10 +28,16 @@ export const SECRET_MODE = 0o600;
 export const DIRECTORY_MODE = 0o700;
 
 const MISSING = "ENOENT";
+const LOOP = "ELOOP";
 const REACHABLE_BY_OTHERS = 0o077;
 
 function isMissing(error: unknown): boolean {
   return (error as NodeJS.ErrnoException).code === MISSING;
+}
+
+/** `O_NOFOLLOW` says this with ELOOP: the path is a link and was not followed. */
+function isLink(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException).code === LOOP;
 }
 
 /** The message for anything the kernel refused, naming the path and the code. */
@@ -67,6 +73,11 @@ export function fileSystem(): Files {
         if (isMissing(error)) {
           return undefined;
         }
+        if (isLink(error)) {
+          throw new FileRefusal(
+            `${path} is a symbolic link; the token file must be a regular file`,
+          );
+        }
         throw named(path, error);
       }
       try {
@@ -88,6 +99,13 @@ export function fileSystem(): Files {
       } finally {
         await handle.close();
       }
+    },
+    checkSecretDirectory: async (path) => {
+      const existing = await lstatOrRefuse(path);
+      if (existing === undefined) {
+        return;
+      }
+      checkDirectory(path, existing);
     },
     exists: async (path) => {
       try {
@@ -128,10 +146,10 @@ function ownedByThisUser(uid: number): boolean {
 }
 
 /**
- * The directory the tokens live in. One this client created is 0700. One that
- * was already there is checked rather than adjusted: changing the mode of a
- * directory the user pointed at would be a surprise, and a directory anyone else
- * can write into is a reason to stop and say so.
+ * The directory the tokens live in, once it is there. One this client created is
+ * 0700; one that was already there is checked rather than adjusted, because
+ * changing the mode of a directory the user pointed at would be a surprise and a
+ * directory anyone else can reach is a reason to stop and say so.
  */
 async function prepareDirectory(path: string): Promise<void> {
   const existing = await lstatOrRefuse(path);
@@ -141,6 +159,11 @@ async function prepareDirectory(path: string): Promise<void> {
     await chmod(path, DIRECTORY_MODE);
     return;
   }
+  checkDirectory(path, existing);
+}
+
+/** What a directory must already satisfy before a token goes anywhere near it. */
+function checkDirectory(path: string, existing: Stats): void {
   if (existing.isSymbolicLink()) {
     throw new FileRefusal(
       `${path} is a symbolic link; point WAVES_CONFIG_DIR at the directory itself`,
@@ -148,6 +171,9 @@ async function prepareDirectory(path: string): Promise<void> {
   }
   if (!existing.isDirectory()) {
     throw new FileRefusal(`${path} is not a directory`);
+  }
+  if (!ownedByThisUser(existing.uid)) {
+    throw new FileRefusal(`${path} belongs to uid ${existing.uid}, not to you`);
   }
   const mode = existing.mode & 0o777;
   if ((mode & REACHABLE_BY_OTHERS) !== 0) {
