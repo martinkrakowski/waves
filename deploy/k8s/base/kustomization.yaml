@@ -10,5 +10,7 @@ resources:
   - pvc.yaml
   - ingress.yaml
 
-commonLabels:
-  app.kubernetes.io/name: waves
+labels:
+  - pairs:
+      app.kubernetes.io/name: waves
+    includeSelectors: true

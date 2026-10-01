@@ -37,6 +37,13 @@ spec:
           # The overlay replaces this with the image that was just pushed.
           image: waves
           imagePullPolicy: IfNotPresent
+          env:
+            # A subdirectory, not the mount root: a local-path (hostPath) volume is
+            # root-owned 0777 and fsGroup does not apply to it, while the file store
+            # refuses any data dir it does not own at mode 0700. It creates this one
+            # itself, owned by uid 1000, mode 0700.
+            - name: WAVES_DATA_DIR
+              value: /data/store
           ports:
             - name: http
               containerPort: 8080
