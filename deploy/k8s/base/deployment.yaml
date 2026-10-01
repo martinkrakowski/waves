@@ -25,6 +25,10 @@ spec:
       # The server talks to nothing in the cluster: no API calls, so no token is
       # projected into the container.
       automountServiceAccountToken: false
+      # A Service named `waves` makes Kubernetes inject docker-link variables such
+      # as WAVES_PORT=tcp://<ip>:80 into every pod in the namespace, which collides
+      # with the server's own WAVES_* configuration. Turn them off.
+      enableServiceLinks: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -44,6 +48,8 @@ spec:
             # itself, owned by uid 1000, mode 0700.
             - name: WAVES_DATA_DIR
               value: /data/store
+            - name: WAVES_PORT
+              value: "8080"
           ports:
             - name: http
               containerPort: 8080
