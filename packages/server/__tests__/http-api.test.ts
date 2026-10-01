@@ -91,9 +91,24 @@ describe("the API surface", () => {
         registeredAt: "2026-10-01T12:00:00Z",
         waves: 1,
         lastPush: "2026-10-01T12:00:01Z",
+        stale: true,
       },
     ]);
     expect(body).not.toContain("tokenSha256");
+  });
+
+  it("lists a project whose newest wave is still inside its interval as fresh", async () => {
+    const started = await startHarness({
+      store: await seeded(),
+      now: () => RECEIVED_AT_MS + 1_000,
+    });
+
+    const response = await fetch(`${started.origin}/api/v1/projects`);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual([
+      expect.objectContaining({ id: "alpha", stale: false }),
+    ]);
   });
 
   it("lists the waves with the stale and retained flags", async () => {
@@ -271,18 +286,40 @@ describe("the read token", () => {
 });
 
 describe("failures", () => {
-  it("answers 405 with Allow for every method that is not a read", async () => {
+  it("answers 405 with the path's own Allow for every method that path does not take", async () => {
     const started = await startHarness({ store: await seeded() });
 
-    for (const method of ["PUT", "POST", "DELETE", "PATCH"]) {
+    for (const method of ["PUT", "DELETE", "PATCH"]) {
       const response = await fetch(`${started.origin}/api/v1/projects`, {
         method,
       });
 
       expect(response.status).toBe(405);
-      expect(response.headers.get("allow")).toBe("GET, HEAD");
+      expect(response.headers.get("allow")).toBe("GET, HEAD, POST");
       expectSecurityHeaders(response.headers, true);
     }
+  });
+
+  it("answers 405 with Allow for the paths a write belongs to", async () => {
+    const started = await startHarness({ store: await seeded() });
+
+    const wave = await fetch(
+      `${started.origin}/api/v1/projects/alpha/waves/wv1`,
+      { method: "POST" },
+    );
+    const waves = await fetch(`${started.origin}/api/v1/projects/alpha/waves`, {
+      method: "PUT",
+    });
+    const project = await fetch(`${started.origin}/api/v1/projects/alpha`, {
+      method: "GET",
+    });
+
+    expect([wave.status, waves.status, project.status]).toEqual([
+      405, 405, 405,
+    ]);
+    expect(wave.headers.get("allow")).toBe("GET, HEAD, PUT, DELETE");
+    expect(waves.headers.get("allow")).toBe("GET, HEAD");
+    expect(project.headers.get("allow")).toBe("DELETE");
   });
 
   it("answers HEAD with the headers of the GET and no body", async () => {

@@ -3,6 +3,7 @@ kind: Kustomization
 
 resources:
   - ../../base
+  - middleware.yaml
 
 # deploy.sh replaces the tag with the short SHA it built and pushed.
 images:
@@ -34,7 +35,24 @@ patches:
           "path": "/metadata/annotations",
           "value": {
             "cert-manager.io/cluster-issuer": "midnight-ca",
-            "traefik.ingress.kubernetes.io/router.entrypoints": "web,websecure"
+            "traefik.ingress.kubernetes.io/router.entrypoints": "web,websecure",
+            "traefik.ingress.kubernetes.io/router.middlewares": "waves-redirect-https@kubernetescrd"
+          }
+        }
+      ]
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: waves
+    patch: |-
+      [
+        {
+          "op": "add",
+          "path": "/spec/template/spec/containers/0/env/-",
+          "value": {
+            "name": "WAVES_TRUST_PROXY",
+            "value": "1"
           }
         }
       ]
