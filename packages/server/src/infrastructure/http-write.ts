@@ -54,6 +54,7 @@ export const RETRY_AFTER_ONE = { "Retry-After": "1" } as const;
 const CONNECTION_CLOSE = { Connection: "close" } as const;
 
 const ROTATE_QUERY = "rotate=1";
+const EXPECT_100 = /(?:^|\W)100-continue(?:$|\W)/i;
 
 const PATH_MISMATCH: readonly ValidationIssue[] = [
   {
@@ -218,6 +219,28 @@ function decode(
   }
 }
 
+/**
+ * Tells a client that asked to wait that its body is welcome. Only now, after
+ * the request has been authenticated and limited: a 100 sent earlier is a promise
+ * to read a body this service is about to refuse, and a client that trusts it
+ * sends a megabyte to a socket that is already closing.
+ *
+ * Only for HTTP/1.1, where the expectation is part of the protocol, and only for
+ * the token `100-continue` itself: anything else in `Expect` is an extension this
+ * service does not implement and must not be answered with a promise it will not
+ * keep.
+ */
+function continueIfExpected(req: IncomingMessage, res: ServerResponse): void {
+  if (req.httpVersion !== "1.1") {
+    return;
+  }
+  const expected = req.headers.expect;
+  if (expected === undefined || !EXPECT_100.test(expected)) {
+    return;
+  }
+  res.writeContinue();
+}
+
 export function createWriteHandler(deps: WriteDeps): WriteHandler {
   const { store, now, adminToken, trustProxy, failures, rate } = deps;
   const model = createWriteModel({
@@ -255,7 +278,12 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
     return answer(res, method, socket, refusal);
   };
 
-  async function readBody(req: IncomingMessage, cap: number): Promise<Outcome> {
+  async function readBody(
+    req: IncomingMessage,
+    res: ServerResponse,
+    cap: number,
+  ): Promise<Outcome> {
+    continueIfExpected(req, res);
     const bytes = await readCapped(req, cap);
     return bytes === undefined
       ? {
@@ -322,7 +350,7 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
     req: IncomingMessage,
     rotate: boolean,
   ): Promise<number> {
-    const body = await readBody(req, POST_BODY_CAP);
+    const body = await readBody(req, res, POST_BODY_CAP);
     if (isRefusal(body)) {
       return answer(res, method, socket, body);
     }
@@ -365,7 +393,7 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
     project: string,
     wave: string,
   ): Promise<number> {
-    const body = await readBody(req, PUT_BODY_CAP);
+    const body = await readBody(req, res, PUT_BODY_CAP);
     if (isRefusal(body)) {
       return answer(res, method, socket, body);
     }

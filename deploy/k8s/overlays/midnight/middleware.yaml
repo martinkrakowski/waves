@@ -1,10 +1,15 @@
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
-  # The name the ingress references, `waves-redirect-https@kubernetescrd`. A
-  # middleware nothing routes to is not an error the proxy will report, so the
-  # two names have to be one name.
-  name: waves-redirect-https
+  # Traefik's kubernetescrd provider writes a middleware reference as
+  # `<namespace>-<name>@kubernetescrd`, so the annotation on the ingress says
+  # `waves-redirect-https` for a middleware named `redirect-https` in the
+  # `waves` namespace. This overlay has no `namePrefix` and must not have one —
+  # that would rename the Deployment, the Service and the PersistentVolumeClaim
+  # the base names, and the ingress's backend would point at a Service that is
+  # not there — so the namespace is stated here instead.
+  name: redirect-https
+  namespace: waves
   labels:
     app.kubernetes.io/name: waves
 # The service speaks plain HTTP and its write routes only answer a request that

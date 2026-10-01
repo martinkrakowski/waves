@@ -56,6 +56,15 @@ trusted those headers behind an ingress configured with
 whoever asked, and a write would be accepted over plain http from an address the
 caller chose.
 
+With `WAVES_TRUST_PROXY=1` the pod believes whoever reaches it, so keep the
+network between it small: a NetworkPolicy that allows ingress only from Traefik's
+namespace means an in-cluster pod cannot forge `X-Forwarded-Proto: https` and push
+a wave, or spend another project's failure allowance.
+
+Note that with a viewer token configured, `OPTIONS` and `PATCH` answer 401 rather
+than 405: the read gate runs before the method is looked at, because a path
+guarded by a token must not tell an unauthenticated caller which methods it takes.
+
 ### On Kubernetes
 
 Render the base and apply it, then add your own overlay for the parts that name
@@ -184,6 +193,13 @@ Run these after the first deploy of the write path, in this order:
    middleware resource. An older Traefik serves the same CRD under
    `traefik.containo.us`, in which case the middleware manifest and the router
    annotation both need that group instead.
+5. `curl -v -H 'Expect: 100-continue' -T <1 MiB file> -H 'Authorization: Bearer wrong' https://<host>/api/v1/projects/a/waves/b`
+   answers 401 with no `Done waiting for 100-continue`. The service sends its 100
+   only after it has authenticated and rate-limited the request, so a wrong token
+   is refused without the body ever leaving the client. Traefik forwards `Expect`
+   and holds the body until the backend answers with a 100, falling back to
+   sending it after a second, so a `curl` that does wait is telling you the
+   request never reached the service.
 
 ### The weekly backup
 

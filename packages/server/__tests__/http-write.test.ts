@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { connect } from "node:net";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -13,6 +14,8 @@ import {
   NOW_MS,
   type Started,
   startHarness,
+  finalStatus,
+  statusLines,
   watchSecret,
 } from "./http-harness.js";
 
@@ -315,7 +318,7 @@ describe("pushing a wave", () => {
       "Transfer-Encoding: chunked",
     ]);
 
-    expect(raw).toContain("400");
+    expect(finalStatus(raw)).toBe("HTTP/1.1 400");
   });
 });
 
@@ -418,7 +421,7 @@ describe("every refusal before the body is read", () => {
       "{}",
     );
 
-    expect(raw).toContain("415");
+    expect(finalStatus(raw)).toBe("HTTP/1.1 415");
     expect(await stateOf(store)).toEqual(before);
   });
 
@@ -526,7 +529,7 @@ describe("every refusal before the body is read", () => {
       body,
     );
 
-    expect(raw).toContain("400");
+    expect(finalStatus(raw)).toBe("HTTP/1.1 400");
     expect(await stateOf(store)).toEqual(before);
   });
 
@@ -615,7 +618,7 @@ describe("reading the body", () => {
       Buffer.from([0xc3, 0x28, 0xff]),
     );
 
-    expect(raw).toContain("400");
+    expect(finalStatus(raw)).toBe("HTTP/1.1 400");
   });
 
   it("413s a chunked push that passes the cap, and stops reading it", async () => {
@@ -712,23 +715,147 @@ describe("reading the body", () => {
     ]);
 
     for (const raw of [duplicated, both]) {
-      expect(raw).toContain("400");
+      expect(finalStatus(raw)).toBe("HTTP/1.1 400");
       expect(raw).toContain("X-Content-Type-Options: nosniff");
       expect(raw).toContain("Connection: close");
     }
   });
 
   it("never reads the body of a request it has already refused", async () => {
+    const store = await seeded();
+    const started = await startHarness({ store });
+    const before = await stateOf(store);
+    const bytesBefore = started.bytesRead();
+
+    // The client offers its head and nothing else, so whatever the server reads
+    // of the body it read on its own initiative. A server that authenticates
+    // first answers without touching the body, and a client whose write is
+    // refused mid-stream sees a reset rather than the answer on some platforms,
+    // so either counts as the refusal.
+    const result = await started.headOnly(
+      `PUT ${wavePath()} HTTP/1.1`,
+      [
+        "Content-Type: application/json",
+        `Authorization: Bearer ${UNKNOWN_TOKEN}`,
+        `Content-Length: ${PUT_CAP}`,
+      ],
+      Buffer.alloc(PUT_CAP, 0x78),
+    );
+
+    expect(result.status).toBe("HTTP/1.1 401");
+    expect(started.bytesRead() - bytesBefore).toBeLessThan(PUT_CAP);
+    expect(result.failed || result.read < PUT_CAP).toBe(true);
+    expect(await stateOf(store)).toEqual(before);
+  });
+
+  it("ends a refused connection politely, then drops it a second later", async () => {
     const started = await startHarness({ store: await seeded() });
-    const before = started.bytesRead();
 
-    const response = await put(started, "x".repeat(PUT_CAP), {
-      headers: { authorization: `Bearer ${UNKNOWN_TOKEN}` },
+    const result = await started.expecting(
+      `PUT ${wavePath()} HTTP/1.1`,
+      [
+        "Content-Type: application/json",
+        `Authorization: Bearer ${UNKNOWN_TOKEN}`,
+        "Content-Length: 0",
+      ],
+      "",
+    );
+    const justAfter = started.sockets();
+    await delay(1_100);
+    const later = started.sockets();
+
+    // The answer arrived, whole, over a graceful end rather than a reset, so a
+    // client that was mid-body can read what it was refused; the socket is ended,
+    // left alone for a second and only then dropped, rather than reset under it.
+    expect(result.status).toBe("HTTP/1.1 401");
+    expect(result.body).toContain("unauthorized");
+    expect(result.reset).toBe(false);
+    expect(justAfter.every((socket) => socket.writableEnded)).toBe(true);
+    expect(later.every((socket) => socket.destroyed)).toBe(true);
+  });
+
+  it("refuses a request that asked to wait before its body, without a 100", async () => {
+    const store = await seeded();
+    const started = await startHarness({ store });
+    const before = await stateOf(store);
+
+    const result = await started.expecting(
+      `PUT ${wavePath()} HTTP/1.1`,
+      [
+        "Content-Type: application/json",
+        `Authorization: Bearer ${UNKNOWN_TOKEN}`,
+        `Content-Length: ${PUT_CAP}`,
+        "Expect: 100-continue",
+      ],
+      "x".repeat(PUT_CAP),
+    );
+
+    // No 100 at all, so the client never sent a byte of the body, and the answer
+    // is the refusal itself.
+    expect(statusLines(result.body)).toEqual(["HTTP/1.1 401"]);
+    expect(result.status).toBe("HTTP/1.1 401");
+    expect(result.sent).toBe(0);
+    expect(started.bytesRead()).toBeLessThan(PUT_CAP);
+    expect(await stateOf(store)).toEqual(before);
+  });
+
+  it("holds the body of a request it will accept until it says so", async () => {
+    const store = await seeded();
+    const started = await startHarness({ store });
+    const body = JSON.stringify(envelope());
+
+    const result = await started.expecting(
+      `PUT ${wavePath()} HTTP/1.1`,
+      [
+        "Content-Type: application/json",
+        `Authorization: Bearer ${PROJECT_TOKEN}`,
+        `Content-Length: ${Buffer.byteLength(body)}`,
+        "Expect: 100-continue",
+      ],
+      body,
+    );
+
+    expect(statusLines(result.body)).toEqual(["HTTP/1.1 100", "HTTP/1.1 200"]);
+    expect(result.sent).toBe(Buffer.byteLength(body));
+    expect(await store.getSnapshot("alpha", WAVE)).toMatchObject({
+      receivedAt: RECEIVED_AT,
     });
-    const read = started.bytesRead() - before;
+  });
 
-    expect(response.status).toBe(401);
-    expect(read).toBeLessThan(PUT_CAP);
+  it("holds the body of a request that asked for an expectation it does not keep", async () => {
+    const started = await startHarness({ store: await seeded() });
+    const body = JSON.stringify(envelope());
+
+    const refused = await started.expecting(
+      `PUT ${wavePath()} HTTP/1.1`,
+      [
+        "Content-Type: application/json",
+        `Authorization: Bearer ${PROJECT_TOKEN}`,
+        `Content-Length: ${Buffer.byteLength(body)}`,
+        "Expect: 200-ok",
+      ],
+      body,
+    );
+    const old = await started.expecting(
+      `PUT ${wavePath()} HTTP/1.0`,
+      [
+        "Content-Type: application/json",
+        `Authorization: Bearer ${PROJECT_TOKEN}`,
+        `Content-Length: ${Buffer.byteLength(body)}`,
+        "Expect: 100-continue",
+      ],
+      body,
+      { waitForContinue: false },
+    );
+
+    // Node answers 417 for an expectation it does not implement, and only HTTP/1.1
+    // has the expectation at all: an HTTP/1.0 request that carries one anyway is
+    // answered without a promise, which the client above ignored by sending its
+    // body straight away.
+    expect(statusLines(refused.body)).toEqual(["HTTP/1.1 417"]);
+    expect(refused.sent).toBe(0);
+    expect(statusLines(old.body)).toEqual(["HTTP/1.1 200"]);
+    expect(old.sent).toBe(Buffer.byteLength(body));
   });
 });
 

@@ -91,9 +91,24 @@ describe("the API surface", () => {
         registeredAt: "2026-10-01T12:00:00Z",
         waves: 1,
         lastPush: "2026-10-01T12:00:01Z",
+        stale: true,
       },
     ]);
     expect(body).not.toContain("tokenSha256");
+  });
+
+  it("lists a project whose newest wave is still inside its interval as fresh", async () => {
+    const started = await startHarness({
+      store: await seeded(),
+      now: () => RECEIVED_AT_MS + 1_000,
+    });
+
+    const response = await fetch(`${started.origin}/api/v1/projects`);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual([
+      expect.objectContaining({ id: "alpha", stale: false }),
+    ]);
   });
 
   it("lists the waves with the stale and retained flags", async () => {

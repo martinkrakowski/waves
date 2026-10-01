@@ -40,11 +40,63 @@ export interface Started {
     body?: string | Buffer,
   ) => Promise<string>;
   /**
+   * Sends headers that ask the server to hold the body until it answers, and
+   * reports what came back and how much of the body went out. `undici` cannot
+   * send `Expect`, so this is a socket.
+   */
+  readonly expecting: (
+    requestLine: string,
+    headers: readonly string[],
+    body: string | Buffer,
+    options?: { readonly waitForContinue?: boolean },
+  ) => Promise<{
+    status: string;
+    sent: number;
+    body: string;
+    reset: boolean;
+  }>;
+  /**
+   * Sends the head and nothing else, then reports what the server answered and
+   * whether the body that follows went anywhere. A client that finds out from
+   * the refusal is what keeps a refused body from being read.
+   */
+  readonly headOnly: (
+    requestLine: string,
+    headers: readonly string[],
+    body: string | Buffer,
+  ) => Promise<{
+    status: string;
+    read: number;
+    written: number;
+    failed: boolean;
+  }>;
+  /**
    * The bytes the server has taken off its own sockets, which is how a test
    * shows that a request body was never read rather than merely refused.
    */
   readonly bytesRead: () => number;
+  /**
+   * The server-side sockets as they are now, so a test can watch one being ended
+   * and then dropped without waiting on a client to notice.
+   */
+  readonly sockets: () => readonly {
+    readonly destroyed: boolean;
+    readonly writableEnded: boolean;
+  }[];
   readonly stop: () => Promise<void>;
+}
+
+/** Every status line in a raw response, so `100` and the final answer differ. */
+export function statusLines(raw: string): string[] {
+  return [...raw.matchAll(/^HTTP\/1\.1 (\d{3})(?: .*)?$/gm)].map(
+    (match) => `HTTP/1.1 ${String(match[1])}`,
+  );
+}
+
+/** The status of the last answer in a raw response, exactly as it was written. */
+export function finalStatus(raw: string): string {
+  const lines = statusLines(raw);
+  return lines[lines.length - 1] ?? "";
 }
 
 const cleanups: (() => Promise<void>)[] = [];
@@ -123,6 +175,149 @@ async function rawRequest(
   return chunks.join("");
 }
 
+/**
+ * A client that honours `Expect: 100-continue`: it sends the head, waits for
+ * the answer, and only then the body. `sent` is the number of body bytes that
+ * went out, which is what tells a refused request that refused before the body
+ * from one that asked for it.
+ */
+async function expectingRequest(
+  port: number,
+  requestLine: string,
+  headers: readonly string[],
+  body: string | Buffer,
+  waitForContinue = true,
+): Promise<{
+  status: string;
+  sent: number;
+  body: string;
+  reset: boolean;
+}> {
+  const socket = connect(port, "127.0.0.1");
+  socket.setEncoding("utf8");
+  const bytes = Buffer.isBuffer(body) ? body : Buffer.from(body, "utf8");
+  let raw = "";
+  let sent = 0;
+  let waited = false;
+  let reset = false;
+  return new Promise((settled) => {
+    const settle = (): void => {
+      settled({ status: finalStatus(raw), sent, body: raw, reset });
+      socket.destroy();
+    };
+    const giveUp = setTimeout(settle, 10_000);
+    const finish = (): void => {
+      clearTimeout(giveUp);
+      settle();
+    };
+    socket.on("data", (text: string) => {
+      raw += text;
+      // A 100 is the only answer that is not the end of it, so the body goes out
+      // on that one and nowhere else.
+      if (!waited && statusLines(raw).includes("HTTP/1.1 100")) {
+        waited = true;
+        sent = socket.write(bytes) ? bytes.byteLength : 0;
+        return;
+      }
+      if (!raw.endsWith("\r\n\r\n")) {
+        return;
+      }
+      finish();
+    });
+    socket.on("error", (error: NodeJS.ErrnoException) => {
+      reset = error.code === "ECONNRESET";
+      finish();
+    });
+    socket.on("close", finish);
+    socket.on("connect", () => {
+      socket.write(
+        [
+          requestLine,
+          "Host: localhost",
+          ...headers,
+          "Connection: close",
+          "",
+          "",
+        ].join("\r\n"),
+      );
+      if (!waitForContinue) {
+        sent = socket.write(bytes) ? bytes.byteLength : 0;
+      }
+    });
+  });
+}
+
+/**
+ * A client that sends its head and waits. Whatever the server answers, only then
+ * does it offer the body — so a server that refused before reading is never
+ * given one, and a server that read before refusing has already taken it.
+ */
+async function headOnlyRequest(
+  port: number,
+  requestLine: string,
+  headers: readonly string[],
+  body: string | Buffer,
+): Promise<{ status: string; read: number; written: number; failed: boolean }> {
+  const socket = connect(port, "127.0.0.1");
+  socket.setEncoding("utf8");
+  const bytes = Buffer.isBuffer(body) ? body : Buffer.from(body, "utf8");
+  const chunk = 65_536;
+  let raw = "";
+  let read = 0;
+  let failed = false;
+  return new Promise((settled) => {
+    const finish = (): void => {
+      clearTimeout(giveUp);
+      socket.destroy();
+      settled({
+        status: finalStatus(raw),
+        read,
+        written: bytes.byteLength,
+        failed,
+      });
+    };
+    const giveUp = setTimeout(finish, 10_000);
+    const pump = (): void => {
+      while (read < bytes.byteLength && socket.writable && raw === "") {
+        const slice = bytes.subarray(
+          read,
+          Math.min(read + chunk, bytes.byteLength),
+        );
+        if (!socket.write(slice)) {
+          break;
+        }
+        read += slice.byteLength;
+      }
+    };
+    socket.on("data", (text: string) => {
+      raw += text;
+      if (raw !== "") {
+        return;
+      }
+      // The answer is here: the body is either refused by a closed socket or
+      // accepted by a paused reader. Try once, then stop.
+      pump();
+    });
+    socket.on("error", () => {
+      failed = true;
+      finish();
+    });
+    socket.on("close", finish);
+    socket.on("connect", () => {
+      socket.write(
+        [
+          requestLine,
+          "Host: localhost",
+          ...headers,
+          "Connection: close",
+          "",
+          "",
+        ].join("\r\n"),
+      );
+    });
+  });
+}
+
 export async function startHarness(
   options: HarnessOptions = {},
 ): Promise<Started> {
@@ -168,8 +363,23 @@ export async function startHarness(
     logLines: () => [...lines],
     raw: (requestLine, headers = [], body = "") =>
       rawRequest(port, requestLine, headers, body),
+    expecting: (requestLine, headers, body, options) =>
+      expectingRequest(
+        port,
+        requestLine,
+        headers,
+        body,
+        options?.waitForContinue !== false,
+      ),
+    headOnly: (requestLine, headers, body) =>
+      headOnlyRequest(port, requestLine, headers, body),
     bytesRead: () =>
       sockets.reduce((total, socket) => total + socket.bytesRead, 0),
+    sockets: () =>
+      sockets.map((socket) => ({
+        destroyed: socket.destroyed,
+        writableEnded: socket.writableEnded,
+      })),
     stop: close,
   };
 }

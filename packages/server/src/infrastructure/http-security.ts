@@ -48,13 +48,20 @@ export interface SendOptions {
   readonly method: string;
   readonly extra?: Headers;
   /**
-   * When given, the answer declares `Connection: close` and this socket is
-   * dropped once the answer has flushed. It is how a refusal that arrives before
-   * the request body was read ends the connection, so Node never has to drain a
-   * body nobody is going to read.
+   * When given, the answer declares `Connection: close` and ends this socket
+   * once it has flushed. It is how a refusal that arrives before the request
+   * body was read ends the connection, so Node never has to drain a body nobody
+   * is going to read.
+   *
+   * The socket is ended rather than destroyed, and dropped a second later: a
+   * client may still be sending a body it did not expect to be refused, and a
+   * reset before it has read the answer is what turns a readable 401 into an
+   * EPIPE. The timer is unref'd, so a process shutting down is not held up by it.
    */
   readonly socket?: Socket;
 }
+
+const RESET_AFTER_FLUSH_MS = 1_000;
 
 export function send(
   res: ServerResponse,
@@ -62,6 +69,12 @@ export function send(
   options: SendOptions,
 ): number {
   const socket = options.socket;
+  if (socket !== undefined) {
+    // Stop reading before the answer goes out: what is left of the body has no
+    // reader, and a socket that is being closed politely would otherwise keep
+    // pulling it in for as long as the client keeps sending.
+    socket.pause();
+  }
   res.writeHead(reply.status, {
     ...BASE_HEADERS,
     ...(socket === undefined ? {} : { Connection: "close" }),
@@ -74,9 +87,14 @@ export function send(
         }),
   });
   res.end(options.method === "HEAD" ? undefined : reply.body, () => {
-    if (socket !== undefined) {
-      socket.destroy();
+    if (socket === undefined) {
+      return;
     }
+    socket.end();
+    const reset = setTimeout(() => {
+      socket.destroy();
+    }, RESET_AFTER_FLUSH_MS);
+    reset.unref();
   });
   return reply.status;
 }

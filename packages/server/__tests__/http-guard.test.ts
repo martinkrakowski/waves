@@ -17,10 +17,11 @@ import {
 const PROJECT_TOKEN = "project-token-0123456789abcdefghijklmnopq";
 const ADMIN_TOKEN = "admin-token-0123456789abcdefghijklmnop";
 const UNKNOWN_TOKEN = "unknown-token-0123456789abcdefghijklmno";
+const OTHER_TOKEN = "other-token-0123456789abcdefghijklmnopqr";
 const WAVE = "wv1";
 const COLLECTION = "/api/v1/projects";
 
-for (const secret of [PROJECT_TOKEN, UNKNOWN_TOKEN]) {
+for (const secret of [PROJECT_TOKEN, UNKNOWN_TOKEN, OTHER_TOKEN]) {
   watchSecret(secret);
 }
 
@@ -67,18 +68,24 @@ function clock(startAt = NOW_MS): {
   };
 }
 
+interface PushOptions {
+  readonly headers?: Record<string, string>;
+  readonly token?: string;
+  readonly forwarded?: string;
+}
+
 function push(
   started: { readonly origin: string },
-  options: {
-    readonly headers?: Record<string, string>;
-    readonly token?: string;
-  } = {},
+  options: PushOptions = {},
 ): Promise<Response> {
   return fetch(`${started.origin}/api/v1/projects/alpha/waves/${WAVE}`, {
     method: "PUT",
     headers: {
       "content-type": "application/json",
       ...BEARER(options.token ?? PROJECT_TOKEN),
+      ...(options.forwarded === undefined
+        ? {}
+        : { "x-forwarded-for": options.forwarded }),
       ...options.headers,
     },
     body: JSON.stringify(envelope()),
@@ -272,29 +279,60 @@ describe("the address lockout", () => {
     });
   });
 
-  it("counts a refused scheme and a refused project as failures", async () => {
+  it.each([
+    [
+      "a scheme that is not https",
+      (address: string) => ({
+        token: PROJECT_TOKEN,
+        headers: { "x-forwarded-proto": "http" },
+        forwarded: address,
+      }),
+    ],
+    [
+      "another project's token",
+      (address: string) => ({
+        token: OTHER_TOKEN,
+        headers: {},
+        forwarded: address,
+      }),
+    ],
+  ])("charges a refusal for %s to the address", async (_label, refused) => {
     const time = clock();
+    const store = await seeded();
+    await store.putProject({
+      id: "beta",
+      name: "Beta",
+      tokenSha256: digestOf(OTHER_TOKEN),
+      registeredAt: "2026-10-01T12:00:00Z",
+    });
     const started = await startHarness({
-      store: await seeded(),
+      store,
       trustProxy: true,
       now: time.now,
     });
 
     for (let attempt = 0; attempt < 10; attempt += 1) {
       time.pass();
-      await push(started, {
-        token: UNKNOWN_TOKEN,
-        headers: { "x-forwarded-proto": "https" },
-      });
+      const response = await push(started, refused("203.0.113.7"));
+      expect(response.status).toBe(403);
     }
+    const locked = await push(started, {
+      token: PROJECT_TOKEN,
+      headers: { "x-forwarded-proto": "https" },
+      forwarded: "203.0.113.7",
+    });
+    const elsewhere = await push(started, {
+      token: PROJECT_TOKEN,
+      headers: { "x-forwarded-proto": "https" },
+      forwarded: "203.0.113.8",
+    });
 
-    expect(
-      (
-        await push(started, {
-          headers: { "x-forwarded-proto": "https" },
-        })
-      ).status,
-    ).toBe(429);
+    // A correct token from a locked out address is refused before any digest is
+    // computed, and an address that was never refused is not.
+    expect([locked.status, elsewhere.status]).toEqual([429, 200]);
+    expect(await store.getSnapshot("alpha", WAVE)).toMatchObject({
+      receivedAt: "2026-10-01T12:01:10.000Z",
+    });
   });
 
   it("does not read a body to decide that an address is locked out", async () => {

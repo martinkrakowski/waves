@@ -8,6 +8,7 @@ import {
   cleanupHarnesses,
   logLeaks,
   type Started,
+  finalStatus,
   startHarness,
   watchSecret,
 } from "./http-harness.js";
@@ -475,7 +476,7 @@ describe("the admin token", () => {
       body,
     );
 
-    expect(raw).toContain("400");
+    expect(finalStatus(raw)).toBe("HTTP/1.1 400");
   });
 
   it("works while a viewer token guards the reads", async () => {

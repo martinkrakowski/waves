@@ -267,6 +267,15 @@ export function createHttpServer(deps: HttpServerDeps): Server {
       void handle(req, res);
     },
   );
+  // A listener here suppresses Node's automatic 100 and its `request` event for
+  // every request that asked to wait, so this is the only way such a request
+  // gets handled at all. It goes through the same handler as every other
+  // request, for every method: what a write does with `Expect` is the write
+  // pipeline's business, and answering it before authentication would be the one
+  // way to make it cheaper to refuse than to accept.
+  server.on("checkContinue", (req, res) => {
+    void handle(req, res);
+  });
   server.on("clientError", (error, socket) => {
     refuseParsedRequest(socket, parserRefusal(error));
   });
