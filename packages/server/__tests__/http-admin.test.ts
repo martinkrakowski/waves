@@ -75,6 +75,12 @@ interface RegisterOptions {
   readonly headers?: Record<string, string>;
 }
 
+/**
+ * `body: undefined` sends no body at all, which is what a test about a refusal
+ * the server decides from the head alone should do: a body in flight is a body
+ * racing a connection the server is about to close, and which side wins that race
+ * is a property of the TCP stack rather than of the service.
+ */
 function register(
   started: Started,
   body: unknown,
@@ -87,7 +93,12 @@ function register(
       ...(options.noToken === true ? {} : BEARER(options.token ?? ADMIN_TOKEN)),
       ...options.headers,
     },
-    body: typeof body === "string" ? body : JSON.stringify(body),
+    body:
+      body === undefined
+        ? undefined
+        : typeof body === "string"
+          ? body
+          : JSON.stringify(body),
   });
 }
 
@@ -311,20 +322,30 @@ describe("registering a project", () => {
     });
 
     expect(
-      (await register(started, registration(), { query: "?rotate=2" })).status,
+      (await register(started, undefined, { query: "?rotate=2" })).status,
     ).toBe(400);
   });
 
-  it("413s a body above its own, much smaller cap", async () => {
+  it("413s an announced length above its own, much smaller cap", async () => {
+    const store = new MemoryStore();
     const started = await startHarness({
-      store: new MemoryStore(),
+      store,
       adminToken: ADMIN_TOKEN,
       mint: minting().mint,
     });
 
-    const response = await register(started, "x".repeat(POST_CAP + 1));
+    // The length is announced and the body is not sent: the refusal is about the
+    // number in the head, so there is nothing to send and nothing in flight to
+    // lose to a connection the server is closing on purpose.
+    const raw = await started.raw(`POST ${COLLECTION} HTTP/1.1`, [
+      "Content-Type: application/json",
+      `Authorization: Bearer ${ADMIN_TOKEN}`,
+      `Content-Length: ${POST_CAP + 1}`,
+    ]);
 
-    expect(response.status).toBe(413);
+    expect(finalStatus(raw)).toBe("HTTP/1.1 413");
+    expect(raw).toContain("Connection: close");
+    expect(await store.listProjects()).toEqual([]);
   });
 
   it("413s a chunked registration that passes the cap, and stores nothing", async () => {
@@ -348,7 +369,7 @@ describe("registering a project", () => {
       mint: minting().mint,
     });
 
-    const response = await register(started, registration(), {
+    const response = await register(started, undefined, {
       headers: { "content-type": "application/x-www-form-urlencoded" },
     });
 
@@ -362,7 +383,7 @@ describe("registering a project", () => {
       mint: minting().mint,
     });
 
-    const response = await register(started, registration(), {
+    const response = await register(started, undefined, {
       headers: { origin: "https://waves.example.invalid" },
     });
 
@@ -428,7 +449,7 @@ describe("the admin token", () => {
       mint: minting().mint,
     });
 
-    const response = await register(started, registration(), {
+    const response = await register(started, undefined, {
       noToken: token === undefined,
       token,
     });
@@ -447,7 +468,7 @@ describe("the admin token", () => {
       mint: minting().mint,
     });
 
-    const response = await register(started, registration(), {
+    const response = await register(started, undefined, {
       headers: BASIC(VIEWER_TOKEN),
     });
 

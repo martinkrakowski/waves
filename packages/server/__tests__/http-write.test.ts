@@ -91,6 +91,12 @@ interface PutOptions {
   readonly token?: string;
 }
 
+/**
+ * `body: undefined` sends no body at all, which is what a test about a refusal
+ * the server decides from the head alone should do: a body in flight is a body
+ * racing a connection the server is about to close, and which side wins that race
+ * is a property of the TCP stack rather than of the service.
+ */
 function put(
   started: Started,
   body: unknown,
@@ -103,7 +109,12 @@ function put(
       ...BEARER(options.token ?? PROJECT_TOKEN),
       ...options.headers,
     },
-    body: typeof body === "string" ? body : JSON.stringify(body),
+    body:
+      body === undefined
+        ? undefined
+        : typeof body === "string"
+          ? body
+          : JSON.stringify(body),
   });
 }
 
@@ -117,16 +128,16 @@ async function stateOf(store: MemoryStore): Promise<unknown> {
 
 /**
  * Streams a body in fixed chunks and reports what the client managed to do
- * before the connection broke: the answer it received, how much of the announced
- * body it got out, and whether the socket went away while the body was still
- * outstanding — which is the client's write failing part-way through.
+ * before the connection broke: the status it read — 0 for nothing at all, which
+ * is what a reset that discards the answer looks like — and how much of the
+ * announced body got out.
  */
 function stream(
   started: Started,
   headers: readonly string[],
   total: number,
   chunkBytes: number,
-): Promise<{ status: number; sent: number; cutOff: boolean }> {
+): Promise<{ status: number; sent: number }> {
   return new Promise((settled) => {
     const socket = connect(started.port, "127.0.0.1");
     socket.setEncoding("utf8");
@@ -156,7 +167,6 @@ function stream(
       settled({
         status: Number(raw.split(" ")[1] ?? 0),
         sent,
-        cutOff: sent < total,
       });
     }
     socket.on("data", (text: string) => {
@@ -359,7 +369,7 @@ describe("every refusal before the body is read", () => {
     }) as StorePort<Project, StoredSnapshot>;
     const started = await startHarness({ store: watched });
 
-    const response = await put(started, envelope(), {
+    const response = await put(started, undefined, {
       path: "/api/v1/projects/Bad%20Id/waves/wv1",
     });
 
@@ -371,7 +381,7 @@ describe("every refusal before the body is read", () => {
     const started = await startHarness({ store: await seeded() });
 
     expect(
-      (await put(started, envelope(), { path: `${wavePath()}/` })).status,
+      (await put(started, undefined, { path: `${wavePath()}/` })).status,
     ).toBe(404);
   });
 
@@ -380,7 +390,7 @@ describe("every refusal before the body is read", () => {
     const started = await startHarness({ store });
     const before = await stateOf(store);
 
-    const response = await put(started, envelope(), {
+    const response = await put(started, undefined, {
       path: `${wavePath()}?rotate=1`,
     });
 
@@ -400,7 +410,6 @@ describe("every refusal before the body is read", () => {
         origin: "https://waves.example.invalid",
         "content-type": "text/plain",
       },
-      body: "{}",
     });
 
     expect(response.status).toBe(403);
@@ -426,7 +435,6 @@ describe("every refusal before the body is read", () => {
     const response = await fetch(`${started.origin}${wavePath()}`, {
       method: "PUT",
       headers: { ...BEARER(PROJECT_TOKEN), ...headers },
-      body: JSON.stringify(envelope()),
     });
 
     expect(response.status).toBe(415);
@@ -467,18 +475,21 @@ describe("every refusal before the body is read", () => {
     const store = await seeded();
     const started = await startHarness({ store });
     const before = await stateOf(store);
+    const bytesBefore = started.bytesRead();
 
-    const response = await fetch(`${started.origin}${wavePath()}`, {
-      method: "PUT",
-      headers: {
-        ...BEARER(PROJECT_TOKEN),
-        "content-type": "application/json",
-      },
-      body: "x".repeat(PUT_CAP + 1),
-    });
+    // The length is announced and the body is not sent: the refusal is about the
+    // number in the head, so there is nothing to send, and nothing in flight to
+    // lose to a connection the server is closing on purpose.
+    const raw = await started.raw(`PUT ${wavePath()} HTTP/1.1`, [
+      "Content-Type: application/json",
+      `Authorization: Bearer ${PROJECT_TOKEN}`,
+      `Content-Length: ${PUT_CAP + 1}`,
+    ]);
 
-    expect(response.status).toBe(413);
-    expect(response.headers.get("connection")).toBe("close");
+    expect(finalStatus(raw)).toBe("HTTP/1.1 413");
+    expect(raw).toContain("Connection: close");
+    expect(raw).toContain("Cache-Control: no-store");
+    expect(started.bytesRead() - bytesBefore).toBeLessThan(PUT_CAP);
     expect(await stateOf(store)).toEqual(before);
   });
 
@@ -494,7 +505,7 @@ describe("every refusal before the body is read", () => {
     const started = await startHarness({ store });
     const before = await stateOf(store);
 
-    const response = await put(started, envelope(), {
+    const response = await put(started, undefined, {
       headers: { authorization },
     });
 
@@ -517,7 +528,7 @@ describe("every refusal before the body is read", () => {
     const started = await startHarness({ store });
     const before = await stateOf(store);
 
-    const response = await put(started, envelope(), {
+    const response = await put(started, undefined, {
       headers: BEARER(OTHER_TOKEN),
     });
 
@@ -528,7 +539,7 @@ describe("every refusal before the body is read", () => {
   it("403s a wave of a project that does not exist", async () => {
     const started = await startHarness({ store: await seeded() });
 
-    const response = await put(started, envelope(WAVE, "absent"), {
+    const response = await put(started, undefined, {
       path: wavePath(WAVE, "absent"),
     });
 
@@ -576,7 +587,7 @@ describe("every refusal before the body is read", () => {
   it("404s a write to a path that does not exist", async () => {
     const started = await startHarness({ store: await seeded() });
 
-    const response = await put(started, envelope(), {
+    const response = await put(started, undefined, {
       path: "/api/v1/nope/waves/wv1",
     });
 
@@ -588,7 +599,7 @@ describe("every refusal before the body is read", () => {
     const started = await startHarness({ store });
     await put(started, envelope());
 
-    const response = await put(started, envelope());
+    const response = await put(started, undefined);
 
     expect(response.status).toBe(429);
     expect(response.headers.get("retry-after")).toBe("1");
@@ -601,17 +612,23 @@ describe("every refusal before the body is read", () => {
     const refused = await put(started, envelope("wv2"));
 
     expect(refused.status).toBe(422);
-    expect((await put(started, envelope())).status).toBe(429);
+    expect((await put(started, undefined)).status).toBe(429);
   });
 });
 
 describe("reading the body", () => {
-  it("413s a stream that never ends and breaks the client mid-write", async () => {
+  it("413s a stream that never ends and cuts the client off", async () => {
     const store = await seeded();
     const started = await startHarness({ store });
     const before = await stateOf(store);
+    const bytesBefore = started.bytesRead();
 
-    const result = await stream(
+    // Here the body is the point: a client announces two megabytes and keeps
+    // writing them. The refusal is decided from the head, so what the client
+    // makes of it is a set of accepted outcomes — the 413, or a connection that
+    // broke under it, which is what the reset looks like where the kernel
+    // discards what the client has not read.
+    const streaming = stream(
       started,
       [
         "Content-Type: application/json",
@@ -621,10 +638,14 @@ describe("reading the body", () => {
       2_097_152,
       65_536,
     );
+    const droppedAt = await firstDestroyed(started);
+    const result = await within(streaming, 2_000);
 
-    expect(result.status).toBe(413);
-    expect(result.cutOff).toBe(true);
-    expect(result.sent).toBeLessThan(2_097_152);
+    // The server's own behaviour: it refused without reading the megabytes, it
+    // dropped the connection, and it stored nothing.
+    expect([413, 0]).toContain(result?.status ?? 0);
+    expect(droppedAt).toBeLessThan(500);
+    expect(started.bytesRead() - bytesBefore).toBeLessThan(PUT_CAP);
     expect(await stateOf(store)).toEqual(before);
   });
 
