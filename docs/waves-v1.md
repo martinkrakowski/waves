@@ -270,7 +270,11 @@ stopped telling the server whether the process is still up
 ### 5.1 Read routes, served today
 
 Only `GET` and `HEAD` are answered; anything else is `405` with
-`Allow: GET, HEAD` (`READ_METHODS`, `ALLOW_GET_HEAD`,
+`Allow: GET, HEAD`. The order of checks matters for which status you see: a
+parser refusal (`431`, `408`, `400`) happens before any request handling; then
+the URL length (`414`); then, when a viewer token is configured, authorization
+(`401`); then the method (`405`). So an unauthenticated `POST` to a token-protected
+server answers `401`, not `405` (`READ_METHODS`, `ALLOW_GET_HEAD`,
 `packages/server/src/infrastructure/http-server.ts:39`,
 `packages/server/src/infrastructure/http-security.ts:11`).
 
@@ -419,5 +423,7 @@ curl --fail --silent --show-error \
 
 Read the token from a file rather than an environment variable when you can;
 `WAVES_READ_TOKEN_FILE` exists for the same reason — a secret in the
-environment is readable from `/proc` by any co-tenant of the host
+environment is readable from `/proc/<pid>/environ` by anything that passes the
+kernel's ptrace access check on the process (the same user, or root), and it is
+inherited by every child process
 (`packages/server/src/infrastructure/read-token.ts:3-9`).
