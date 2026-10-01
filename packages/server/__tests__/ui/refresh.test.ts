@@ -9,6 +9,7 @@ import {
   fetchStub,
   flush,
   freshRoot,
+  gatedFetch,
   root,
   setHidden,
   textOf,
@@ -107,6 +108,57 @@ describe("the project list route", () => {
     expect(textsOf(root(), ".empty")).toStrictEqual(["Loading…"]);
     await flush();
     expect(textsOf(root(), ".card-name")).toStrictEqual(["Alpha"]);
+    app.stop();
+  });
+
+  it("keeps one chain when the tab is hidden and shown mid-refresh", async () => {
+    const fetchImpl = gatedFetch(() => ({
+      status: 200,
+      body: [projectCard()],
+    }));
+    const { app, timers } = harness({ fetchImpl });
+
+    app.start();
+    await flush();
+    expect(fetchImpl.calls).toHaveLength(1);
+    expect(fetchImpl.pending()).toBe(1);
+    fetchImpl.release();
+    await flush();
+    expect(timers.scheduled).toHaveLength(1);
+
+    timers.runLast();
+    await flush();
+    expect(fetchImpl.calls).toHaveLength(2);
+    expect(fetchImpl.pending()).toBe(1);
+    expect(timers.scheduled).toHaveLength(0);
+
+    setHidden(true);
+    visible();
+    setHidden(false);
+    visible();
+    expect(fetchImpl.calls).toHaveLength(2);
+
+    fetchImpl.release();
+    await flush();
+
+    expect(fetchImpl.calls).toHaveLength(2);
+    expect(timers.scheduled).toHaveLength(1);
+    expect(timers.scheduled[0]?.delayMs).toBe(REFRESH_MS);
+    app.stop();
+  });
+
+  it("keeps refreshing when the project list comes back as not a list", async () => {
+    const { app, timers } = harness({
+      fetchImpl: fetchStub(() => ({ status: 404 })),
+    });
+    app.start();
+    await flush();
+    expect(textsOf(root(), ".empty")).toStrictEqual(["offline, retrying"]);
+
+    timers.runLast();
+    await flush();
+    expect(timers.scheduled).toHaveLength(1);
+    expect(textsOf(root(), ".empty")).toStrictEqual(["offline, retrying"]);
     app.stop();
   });
 

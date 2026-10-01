@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { projectList, projectPath } from "../../public/projects.js";
 
-import { NOW_ISO, NOW_MS, projectCard } from "./fixtures.js";
+import { NOW_MS, projectCard } from "./fixtures.js";
 import {
   assertNoInjectedMarkup,
   freshRoot,
@@ -117,6 +117,5 @@ describe("projectPath", () => {
   it("is the href the card links to", () => {
     const host = render(projectCard({ id: "a b" }));
     expect(host.querySelector("a")?.getAttribute("href")).toBe("/p/a%20b");
-    expect(NOW_ISO).not.toBe("");
   });
 });

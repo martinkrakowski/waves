@@ -64,6 +64,15 @@ describe("httpsUrl", () => {
     }
   });
 
+  it("refuses a URL carrying a credential", () => {
+    expect(httpsUrl("https://user@evil.example/repo")).toBeUndefined();
+    expect(httpsUrl("https://user:pass@evil.example/repo")).toBeUndefined();
+    expect(httpsUrl("https://:pass@evil.example/repo")).toBeUndefined();
+    expect(httpsUrl("https://git.example.test/alpha")).toBe(
+      "https://git.example.test/alpha",
+    );
+  });
+
   it("refuses anything that is not a string", () => {
     expect(httpsUrl(undefined)).toBeUndefined();
     expect(httpsUrl(7)).toBeUndefined();
@@ -89,6 +98,16 @@ describe("links", () => {
     expect(plain.tagName).toBe("SPAN");
     expect(plain.hasAttribute("href")).toBe(false);
     expect(textOf(plain)).toBe("javascript:alert(1)");
+  });
+
+  it("a repository wearing a credential is text, not a link", () => {
+    const node = repoLink(
+      "https://user:pass@evil.example/repo",
+      "https://user:pass@evil.example/repo",
+    );
+    expect(node.tagName).toBe("SPAN");
+    expect(node.hasAttribute("href")).toBe(false);
+    expect(textOf(node)).toBe("https://user:pass@evil.example/repo");
   });
 });
 

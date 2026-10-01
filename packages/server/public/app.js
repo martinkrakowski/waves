@@ -49,11 +49,16 @@ export function createApp(deps) {
   let showAll = false;
   let selected = "";
   let timer = undefined;
+  let inFlight = undefined;
   let stopped = false;
 
   async function load() {
     if (route.kind === "projects") {
-      return { kind: "projects", projects: await api.projects() };
+      const projects = await api.projects();
+      if (!Array.isArray(projects)) {
+        throw new Error("the project list is not a list");
+      }
+      return { kind: "projects", projects };
     }
     if (route.kind === "project") {
       const waves = await api.waves(route.id);
@@ -127,18 +132,41 @@ export function createApp(deps) {
     try {
       data = await load();
       note = "";
+      draw();
     } catch {
       note = OFFLINE_NOTE;
+      draw();
     }
-    draw();
+  }
+
+  /**
+   * One refresh at a time. A caller that arrives while one is in flight waits
+   * for that one rather than starting a second, which is what keeps the timer
+   * callback and a visibility change from chaining two loops.
+   */
+  async function refreshOnce() {
+    if (inFlight !== undefined) {
+      return inFlight;
+    }
+    inFlight = refresh();
+    try {
+      return await inFlight;
+    } finally {
+      inFlight = undefined;
+    }
   }
 
   function schedule() {
     if (stopped || doc.hidden) {
       return;
     }
+    if (timer !== undefined) {
+      clearTimer(timer);
+      timer = undefined;
+    }
     timer = setTimer(() => {
-      void refresh().then(schedule);
+      timer = undefined;
+      void refreshOnce().then(schedule);
     }, refreshMs);
   }
 
@@ -150,14 +178,14 @@ export function createApp(deps) {
       }
       return;
     }
-    void refresh().then(schedule);
+    void refreshOnce().then(schedule);
   }
 
   function start() {
     stopped = false;
     doc.addEventListener("visibilitychange", onVisibility);
     draw();
-    void refresh();
+    void refreshOnce();
     schedule();
   }
 

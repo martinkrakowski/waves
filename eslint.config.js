@@ -22,6 +22,18 @@ const HTML_MESSAGE =
 const CODE_MESSAGE =
   "The UI never evaluates source at runtime. Render what the API sent as text.";
 
+const ATTRIBUTE_MESSAGE =
+  "The UI sets attributes by name from a fixed list in public/dom.js. A computed name, or a name starting with 'on', is a hole the attribute allow-list cannot close.";
+
+/** The names that parse a string as HTML, however they are reached. */
+const HTML_LITERAL_NAMES = [
+  "innerHTML",
+  "outerHTML",
+  "insertAdjacentHTML",
+  "setHTMLUnsafe",
+  "createContextualFragment",
+];
+
 export default tseslint.config(
   {
     ignores: ["**/dist/**", "**/coverage/**", ".yarn/**"],
@@ -162,6 +174,33 @@ export default tseslint.config(
         {
           selector: "MemberExpression[property.name='insertAdjacentHTML']",
           message: HTML_MESSAGE,
+        },
+        {
+          selector: "MemberExpression[property.name='setHTMLUnsafe']",
+          message: HTML_MESSAGE,
+        },
+        {
+          selector:
+            "MemberExpression[property.name='createContextualFragment']",
+          message: HTML_MESSAGE,
+        },
+        ...HTML_LITERAL_NAMES.map((name) => ({
+          selector: `Literal[value='${name}']`,
+          message: HTML_MESSAGE,
+        })),
+        ...HTML_LITERAL_NAMES.map((name) => ({
+          selector: `Property[key.name='${name}']`,
+          message: HTML_MESSAGE,
+        })),
+        {
+          selector:
+            "CallExpression[callee.property.name='setAttribute']:not(:has(> Literal:first-child))",
+          message: ATTRIBUTE_MESSAGE,
+        },
+        {
+          selector:
+            "CallExpression[callee.property.name='setAttribute'] > Literal:first-child[value=/^on/]",
+          message: ATTRIBUTE_MESSAGE,
         },
         {
           selector: "CallExpression[callee.name='eval']",

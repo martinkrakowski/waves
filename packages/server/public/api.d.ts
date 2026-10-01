@@ -5,14 +5,13 @@ import type {
 } from "../src/application/read-model.js";
 
 /**
- * A project summary plus the one flag the project list badges on. The read
- * model does not send it yet: `isStale` needs the interval, which
- * `ProjectSummary` does not carry. It is optional here so the list stays
- * correct either way.
+ * A project summary as the list endpoint answers it. `Omit` keeps this
+ * compiling whether or not `stale` has reached `ProjectSummary` yet; when it
+ * has, the two agree and this alias can go.
  */
-export interface ProjectCard extends ProjectSummary {
+export type ProjectCard = Omit<ProjectSummary, "stale"> & {
   readonly stale?: boolean;
-}
+};
 
 export interface ApiResponse {
   readonly ok: boolean;

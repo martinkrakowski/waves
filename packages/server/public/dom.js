@@ -1,28 +1,31 @@
 /**
  * The only way this UI touches the document. Every element is created here and
- * filled with `textContent` or with one of the attributes in `ATTRIBUTES`, so
- * no byte of API data is ever parsed as HTML. `href` is deliberately absent
- * from that set: the two link helpers below are the only things that may set
- * one, and each of them decides the URL on its own terms.
+ * filled with `textContent` or with one of the attributes below, so no byte of
+ * API data is ever parsed as HTML. Each allowed attribute has its own setter
+ * with the name spelled out, which is what lets `eslint.config.js` refuse a
+ * computed attribute name anywhere in `public/`: this table is the only way in.
+ * `href` is deliberately absent: the two link helpers below are the only things
+ * that may set one, and each decides the URL on its own terms.
  */
 
 import { relativeTime } from "./format.js";
 
-const ATTRIBUTES = new Set([
-  "class",
-  "data-label",
-  "rel",
-  "role",
-  "title",
-  "type",
-]);
+const SETTERS = {
+  class: (node, value) => node.setAttribute("class", value),
+  "data-label": (node, value) => node.setAttribute("data-label", value),
+  rel: (node, value) => node.setAttribute("rel", value),
+  role: (node, value) => node.setAttribute("role", value),
+  title: (node, value) => node.setAttribute("title", value),
+  type: (node, value) => node.setAttribute("type", value),
+};
 
 function attributes(node, values) {
-  for (const name of Object.keys(values)) {
-    if (!ATTRIBUTES.has(name)) {
+  for (const [name, value] of Object.entries(values)) {
+    const setter = SETTERS[name];
+    if (setter === undefined) {
       throw new TypeError(`refusing to set attribute ${name}`);
     }
-    node.setAttribute(name, String(values[name]));
+    setter(node, String(value));
   }
 }
 
@@ -56,7 +59,9 @@ export function stamp(iso, nowMs) {
 
 /**
  * The address an outbound link may point at, or nothing. A URL that does not
- * parse, or that parses to any protocol other than `https:`, is not a link.
+ * parse, that parses to any protocol other than `https:`, or that carries a
+ * username or a password, is not a link: a credential in a URL a stored field
+ * controls is a phishing link wearing this app's name.
  */
 export function httpsUrl(value) {
   if (typeof value !== "string") {
@@ -64,7 +69,10 @@ export function httpsUrl(value) {
   }
   try {
     const url = new URL(value);
-    return url.protocol === "https:" ? url.href : undefined;
+    if (url.protocol !== "https:") {
+      return undefined;
+    }
+    return url.username === "" && url.password === "" ? url.href : undefined;
   } catch {
     return undefined;
   }

@@ -89,7 +89,8 @@ export function oneOf(node: Element, selector: string): Element | null {
 /**
  * The invariants the CSP alone cannot give: only tags from `ALLOWED_TAGS`, no
  * `on*` or other dangerous attribute, and no `href` carrying a scheme other
- * than `https:`.
+ * than `https:`. An attribute *value* is never parsed as HTML, so a payload in
+ * a `title` is inert and is asserted as text by the test that feeds it.
  */
 export function assertNoInjectedMarkup(): void {
   for (const element of document.querySelectorAll("*")) {
@@ -109,6 +110,7 @@ export function assertNoInjectedMarkup(): void {
   }
   for (const anchor of document.querySelectorAll("a[href]")) {
     const href = anchor.getAttribute("href") ?? "";
+    expect(href.startsWith("//")).toBe(false);
     const scheme = SCHEME.exec(href);
     if (scheme === null) {
       expect(href.startsWith("/")).toBe(true);
@@ -154,6 +156,43 @@ export function throwingFetch(): FetchStub {
     },
     { calls },
   );
+}
+
+export interface GatedFetch extends FetchStub {
+  /** Answers every response that is still waiting, and all of them at once. */
+  release(): void;
+  /** How many responses are still waiting for `release`. */
+  pending(): number;
+}
+
+/** A fetch whose bodies arrive only when the test says so. */
+export function gatedFetch(handler: FetchHandler): GatedFetch {
+  const calls: string[] = [];
+  const waiting = new Set<() => void>();
+  const release = (): void => {
+    for (const answer of [...waiting]) {
+      answer();
+    }
+    waiting.clear();
+  };
+  const impl: GatedFetch = Object.assign(
+    (path: string): Promise<ApiResponse> => {
+      calls.push(path);
+      const answer = handler(path);
+      return Promise.resolve({
+        ok: answer.status >= 200 && answer.status < 300,
+        status: answer.status,
+        json: () =>
+          new Promise((resolve) => {
+            waiting.add(() => {
+              resolve(answer.body);
+            });
+          }),
+      });
+    },
+    { calls, release, pending: () => waiting.size },
+  );
+  return impl;
 }
 
 export interface ScheduledTimer {
