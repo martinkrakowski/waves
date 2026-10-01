@@ -1,0 +1,7 @@
+**/node_modules
+**/dist
+coverage
+.git
+.agents
+.yarn/cache
+.yarn/install-state.gz

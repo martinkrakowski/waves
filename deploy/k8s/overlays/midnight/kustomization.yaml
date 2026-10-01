@@ -1,0 +1,40 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+# deploy.sh replaces the tag with the short SHA it built and pushed.
+images:
+  - name: waves
+    newName: registry.midnight.lan/library/waves
+    newTag: latest
+
+# A JSON patch, inline: kustomize reads the leading `[` as RFC 6902, which a
+# strategic merge cannot express here because `rules` and `tls` merge on a key
+# whose value this patch changes, and prettier would reflow the array away from
+# JSON in a file of its own.
+patches:
+  - target:
+      group: networking.k8s.io
+      version: v1
+      kind: Ingress
+      name: waves
+    patch: |-
+      [
+        { "op": "replace", "path": "/spec/ingressClassName", "value": "traefik" },
+        { "op": "replace", "path": "/spec/rules/0/host", "value": "waves.midnight.lan" },
+        {
+          "op": "replace",
+          "path": "/spec/tls/0/hosts",
+          "value": ["waves.midnight.lan"]
+        },
+        {
+          "op": "add",
+          "path": "/metadata/annotations",
+          "value": {
+            "cert-manager.io/cluster-issuer": "midnight-ca",
+            "traefik.ingress.kubernetes.io/router.entrypoints": "web,websecure"
+          }
+        }
+      ]

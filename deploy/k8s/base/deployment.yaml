@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: waves
+  labels:
+    app.kubernetes.io/name: waves
+    app.kubernetes.io/component: server
+spec:
+  # One process owns a data directory, and a second pod could be writing to the
+  # same volume while the first one still holds it, so the old pod is gone
+  # before the new one starts.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: waves
+      app.kubernetes.io/component: server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: waves
+        app.kubernetes.io/component: server
+    spec:
+      # The server talks to nothing in the cluster: no API calls, so no token is
+      # projected into the container.
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: server
+          # The overlay replaces this with the image that was just pushed.
+          image: waves
+          imagePullPolicy: IfNotPresent
+          env:
+            # A subdirectory, not the mount root: a local-path (hostPath) volume is
+            # root-owned 0777 and fsGroup does not apply to it, while the file store
+            # refuses any data dir it does not own at mode 0700. It creates this one
+            # itself, owned by uid 1000, mode 0700.
+            - name: WAVES_DATA_DIR
+              value: /data/store
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            timeoutSeconds: 2
+            failureThreshold: 6
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: waves-data
+        # The root filesystem is read only, so the writable scratch the runtime
+        # expects is a volume of its own.
+        - name: tmp
+          emptyDir: {}
