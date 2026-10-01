@@ -22,6 +22,13 @@ export interface ProjectSummary {
   readonly registeredAt: string;
   readonly waves: number;
   readonly lastPush?: string;
+  /**
+   * Whether the project's newest wave is past the point where its own interval
+   * says it should have arrived. A project with no waves is not stale: it has
+   * said nothing, which is not the same as having said something that is now
+   * overdue.
+   */
+  readonly stale: boolean;
 }
 
 export interface WaveSummary extends SnapshotHead {
@@ -72,6 +79,23 @@ function lastPushOf(heads: readonly SnapshotHead[]): string | undefined {
   return latest;
 }
 
+/**
+ * The head of a project's most recent wave, which is the one the project summary
+ * describes: an older wave may well be stale while the newest is not.
+ */
+function newestHead(heads: readonly SnapshotHead[]): SnapshotHead | undefined {
+  let newest: SnapshotHead | undefined;
+  for (const head of heads) {
+    if (
+      newest === undefined ||
+      Date.parse(head.receivedAt) > Date.parse(newest.receivedAt)
+    ) {
+      newest = head;
+    }
+  }
+  return newest;
+}
+
 function aliveView(alive: boolean, stale: boolean): AliveView {
   return stale && alive ? "unknown" : alive;
 }
@@ -98,9 +122,11 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
   return {
     async listProjects(): Promise<readonly ProjectSummary[]> {
       const projects = await store.listProjects();
+      const nowMs = now();
       const summaries: ProjectSummary[] = [];
       for (const project of projects) {
         const heads = await store.listSnapshotHeads(project.id);
+        const newest = newestHead(heads);
         summaries.push({
           id: project.id,
           name: project.name,
@@ -108,6 +134,13 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
           registeredAt: project.registeredAt,
           waves: heads.length,
           lastPush: lastPushOf(heads),
+          stale:
+            newest !== undefined &&
+            isStale(
+              Date.parse(newest.receivedAt),
+              newest.intervalSeconds,
+              nowMs,
+            ),
         });
       }
       return summaries;

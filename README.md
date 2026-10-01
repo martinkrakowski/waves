@@ -2,7 +2,9 @@
 
 One status page for every project's delegated waves. Projects push a versioned `waves/v1` snapshot of each wave they orchestrate; one small service renders them all.
 
-Status: scaffolding. The design and its decisions are recorded in the plan that started this project; the push contract will live in `docs/waves-v1.md`.
+Status: the write path has landed, the read path is live. The design and its decisions are recorded in the plan that started this project; the push contract lives in `docs/waves-v1.md`.
+
+Projects write their own waves: `PUT` and `DELETE` on a wave of a project with that project's bearer token, `POST` on the project collection and `DELETE` on a project with the admin token. `docs/` carries the contract for both.
 
 ## Layout
 

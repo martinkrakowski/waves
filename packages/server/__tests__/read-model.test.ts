@@ -53,6 +53,7 @@ describe("read model", () => {
         registeredAt: "2026-10-01T12:00:00Z",
         waves: 1,
         lastPush: "2026-10-01T12:00:01Z",
+        stale: false,
       },
       {
         id: "beta",
@@ -61,6 +62,7 @@ describe("read model", () => {
         registeredAt: "2026-09-01T09:00:00Z",
         waves: 0,
         lastPush: undefined,
+        stale: false,
       },
     ]);
     expect(JSON.stringify(projects)).not.toContain("tokenSha256");
@@ -83,6 +85,57 @@ describe("read model", () => {
 
     expect(projects[0]?.waves).toBe(3);
     expect(projects[0]?.lastPush).toBe("2026-10-01T13:00:05Z");
+  });
+
+  it("marks a project stale on its newest wave, not on its oldest", async () => {
+    const store = new MemoryStore();
+    await store.putProject(project("alpha"));
+    // An interval of 10 seconds is stale after 30, so an hour-old wave is long
+    // overdue while the newest one is not until half a minute after it arrived.
+    await store.putSnapshot({
+      ...snapshot("wv1"),
+      receivedAt: "2026-10-01T11:00:01Z",
+    });
+    await store.putSnapshot({
+      ...snapshot("wv2"),
+      receivedAt: "2026-10-01T11:59:40Z",
+    });
+
+    const fresh = await model(store, PUSHED_AT_MS + 10_000).listProjects();
+    const overdue = await model(store, PUSHED_AT_MS + 60_000).listProjects();
+
+    expect(fresh[0]?.stale).toBe(false);
+    expect(overdue[0]?.stale).toBe(true);
+  });
+
+  it("does not mark a project with no waves stale", async () => {
+    const store = new MemoryStore();
+    await store.putProject(project("alpha"));
+
+    const projects = await model(store, PUSHED_AT_MS + DAY_MS).listProjects();
+
+    expect(projects[0]).toMatchObject({
+      waves: 0,
+      lastPush: undefined,
+      stale: false,
+    });
+  });
+
+  it("marks a project stale when its newest wave says nothing about an interval", async () => {
+    const store = new MemoryStore();
+    await store.putProject(project("alpha"));
+    await store.putSnapshot({
+      ...snapshot("wv1"),
+      envelope: { ...snapshot("wv1").envelope, intervalSeconds: null },
+    });
+
+    // No interval means the default five minutes, counted from the moment the
+    // wave arrived rather than from the moment the test started.
+    const projects = await model(store, PUSHED_AT_MS + 299_000).listProjects();
+    const overdue = await model(store, PUSHED_AT_MS + 302_000).listProjects();
+
+    expect(projects[0]?.stale).toBe(false);
+    expect(overdue[0]?.stale).toBe(true);
   });
 
   it("lists the waves of a project newest first", async () => {

@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ADMIN_TOKEN_FILE_VARIABLE,
   ConfigError,
   DATA_DIR_VARIABLE,
   HOST_VARIABLE,
   parseConfig,
   PORT_VARIABLE,
   READ_TOKEN_FILE_VARIABLE,
+  TRUST_PROXY_VARIABLE,
 } from "../src/application/config.js";
 
 const DATA_DIR: Record<string, string> = { [DATA_DIR_VARIABLE]: "/srv/waves" };
@@ -18,6 +20,8 @@ describe("parseConfig", () => {
       port: 8080,
       dataDir: "/srv/waves",
       readTokenFile: undefined,
+      adminTokenFile: undefined,
+      trustProxy: false,
     });
   });
 
@@ -28,13 +32,43 @@ describe("parseConfig", () => {
         [PORT_VARIABLE]: "18080",
         [DATA_DIR_VARIABLE]: "/var/lib/waves",
         [READ_TOKEN_FILE_VARIABLE]: "/run/secrets/waves-read",
+        [ADMIN_TOKEN_FILE_VARIABLE]: "/run/secrets/waves-admin/token",
+        [TRUST_PROXY_VARIABLE]: "1",
       }),
     ).toEqual({
       host: "127.0.0.1",
       port: 18080,
       dataDir: "/var/lib/waves",
       readTokenFile: "/run/secrets/waves-read",
+      adminTokenFile: "/run/secrets/waves-admin/token",
+      trustProxy: true,
     });
+  });
+
+  it.each(["", "2", "true", "01", " 1"])(
+    "rejects the trust proxy setting %j",
+    (trustProxy) => {
+      expect(() =>
+        parseConfig({ ...DATA_DIR, [TRUST_PROXY_VARIABLE]: trustProxy }),
+      ).toThrow(TRUST_PROXY_VARIABLE);
+    },
+  );
+
+  it("accepts trust proxy 0 and 1", () => {
+    for (const [value, expected] of [
+      ["0", false],
+      ["1", true],
+    ] as const) {
+      expect(
+        parseConfig({ ...DATA_DIR, [TRUST_PROXY_VARIABLE]: value }).trustProxy,
+      ).toBe(expected);
+    }
+  });
+
+  it("rejects an empty admin token file path", () => {
+    expect(() =>
+      parseConfig({ ...DATA_DIR, [ADMIN_TOKEN_FILE_VARIABLE]: "" }),
+    ).toThrow(ADMIN_TOKEN_FILE_VARIABLE);
   });
 
   it.each(["1", "8080", "65535"])("accepts the port %j", (port) => {
