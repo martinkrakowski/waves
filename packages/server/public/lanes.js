@@ -121,6 +121,13 @@ function laneRow(lane, nowMs, generatedAt) {
   });
 }
 
+/** The lanes a view can show: the ones the API could actually describe. */
+export function drawableLanes(view) {
+  return (view.envelope.lanes ?? []).filter(
+    (lane) => lane !== null && lane !== undefined,
+  );
+}
+
 export function laneTable(view, nowMs) {
   return el("table", {
     attrs: { class: "lanes" },
@@ -133,7 +140,7 @@ export function laneTable(view, nowMs) {
         ],
       }),
       el("tbody", {
-        children: view.envelope.lanes.map((lane) =>
+        children: drawableLanes(view).map((lane) =>
           laneRow(lane, nowMs, view.envelope.generatedAt),
         ),
       }),

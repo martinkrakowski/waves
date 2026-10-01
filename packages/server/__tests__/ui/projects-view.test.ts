@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { projectList, projectPath } from "../../public/projects.js";
+import {
+  drawableProjects,
+  projectList,
+  projectPath,
+} from "../../public/projects.js";
 
 import { NOW_MS, projectCard } from "./fixtures.js";
 import {
@@ -84,6 +88,39 @@ describe("the project list", () => {
 
   it("counts one project as one project", () => {
     expect(textOf(oneOf(render(projectCard()), ".count"))).toBe("1 project");
+  });
+
+  it("skips an entry it cannot draw rather than throwing on it", () => {
+    const host = render();
+    const section = projectList(
+      [null, undefined, projectCard()] as unknown as ReturnType<
+        typeof projectCard
+      >[],
+      NOW_MS,
+    );
+    host.replaceChildren(section);
+    expect(textsOf(host, ".card-name")).toStrictEqual(["Alpha"]);
+    expect(textsOf(host, "dd")[2]).toBe("3 waves");
+  });
+
+  it("shows the empty state when a list is nothing but holes", () => {
+    const host = render();
+    host.replaceChildren(
+      projectList(
+        [null] as unknown as ReturnType<typeof projectCard>[],
+        NOW_MS,
+      ),
+    );
+    expect(textOf(oneOf(host, ".empty"))).toBe("No projects registered yet.");
+  });
+
+  it("knows which responses it can draw", () => {
+    expect(drawableProjects([projectCard()])).toBe(true);
+    expect(drawableProjects([])).toBe(true);
+    expect(drawableProjects([null])).toBe(false);
+    expect(drawableProjects([projectCard(), null])).toBe(false);
+    expect(drawableProjects(undefined)).toBe(false);
+    expect(drawableProjects({})).toBe(false);
   });
 
   it("links the repository only when it is https", () => {

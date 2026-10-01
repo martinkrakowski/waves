@@ -34,6 +34,9 @@ const HTML_LITERAL_NAMES = [
   "createContextualFragment",
 ];
 
+/** The names that write an attribute, however they are reached. */
+const ATTRIBUTE_LITERAL_NAMES = ["setAttribute", "setAttributeNS"];
+
 export default tseslint.config(
   {
     ignores: ["**/dist/**", "**/coverage/**", ".yarn/**"],
@@ -189,9 +192,21 @@ export default tseslint.config(
           message: HTML_MESSAGE,
         })),
         ...HTML_LITERAL_NAMES.map((name) => ({
+          selector: `TemplateElement[value.cooked='${name}']`,
+          message: HTML_MESSAGE,
+        })),
+        ...HTML_LITERAL_NAMES.map((name) => ({
           selector: `Property[key.name='${name}']`,
           message: HTML_MESSAGE,
         })),
+        ...ATTRIBUTE_LITERAL_NAMES.map((name) => ({
+          selector: `Literal[value='${name}']`,
+          message: ATTRIBUTE_MESSAGE,
+        })),
+        {
+          selector: "CallExpression[callee.property.name='setAttributeNS']",
+          message: ATTRIBUTE_MESSAGE,
+        },
         {
           selector:
             "CallExpression[callee.property.name='setAttribute']:not(:has(> Literal:first-child))",
@@ -199,7 +214,7 @@ export default tseslint.config(
         },
         {
           selector:
-            "CallExpression[callee.property.name='setAttribute'] > Literal:first-child[value=/^on/]",
+            "CallExpression[callee.property.name='setAttribute'] > Literal:first-child[value=/^on/i]",
           message: ATTRIBUTE_MESSAGE,
         },
         {

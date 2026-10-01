@@ -19,6 +19,22 @@ function fact(term, value) {
   });
 }
 
+function present(project) {
+  return project !== null && project !== undefined;
+}
+
+/**
+ * Whether a response is a list this view can draw at all. A list holding a hole
+ * is not a list of projects: it is a broken endpoint, and the app says so
+ * rather than replacing a page that was right with one that claims the
+ * registry is empty.
+ */
+export function drawableProjects(projects) {
+  return (
+    Array.isArray(projects) && projects.every((project) => present(project))
+  );
+}
+
 function card(project, nowMs) {
   const name = el("h2", {
     attrs: { class: "card-name" },
@@ -45,25 +61,25 @@ function card(project, nowMs) {
 }
 
 export function projectList(projects, nowMs) {
+  const cards = projects.filter(present);
   const heading = [el("h1", { text: "waves" })];
-  if (projects.length > 0) {
+  if (cards.length > 0) {
     heading.push(
       el("p", {
         attrs: { class: "count" },
-        text:
-          projects.length === 1 ? "1 project" : `${projects.length} projects`,
+        text: cards.length === 1 ? "1 project" : `${cards.length} projects`,
       }),
     );
   }
   const body =
-    projects.length === 0
+    cards.length === 0
       ? el("p", {
           attrs: { class: "empty" },
           text: "No projects registered yet.",
         })
       : el("ul", {
           attrs: { class: "cards" },
-          children: projects.map((project) => card(project, nowMs)),
+          children: cards.map((project) => card(project, nowMs)),
         });
   return el("section", {
     attrs: { class: "view" },

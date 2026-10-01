@@ -200,4 +200,29 @@ describe("the lane table", () => {
       "three",
     ]);
   });
+
+  it("skips a lane it cannot draw, and draws a wave that lists none", () => {
+    const holed = renderPanel({
+      view: {
+        ...waveView(),
+        envelope: {
+          ...waveView().envelope,
+          lanes: [null, lane()] as unknown as ReturnType<typeof lane>[],
+        },
+      },
+    });
+    expect(holed.host.querySelectorAll("tbody tr")).toHaveLength(1);
+
+    const none = renderPanel({
+      view: {
+        ...waveView(),
+        envelope: {
+          ...waveView().envelope,
+          lanes: undefined as unknown as ReturnType<typeof lane>[],
+        },
+      },
+    });
+    expect(none.host.querySelectorAll("tbody tr")).toHaveLength(0);
+    expect(none.host.querySelectorAll("thead th")).toHaveLength(7);
+  });
 });

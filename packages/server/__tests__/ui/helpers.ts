@@ -48,6 +48,9 @@ const BANNED_ATTRIBUTES: ReadonlySet<string> = new Set([
 
 const SCHEME = /^([a-z][a-z0-9+.-]*):/i;
 
+/** `//host` and `/\host`: a backslash is a slash for every special scheme. */
+const PROTOCOL_RELATIVE = /^[/\\]{2}/;
+
 export function freshRoot(): HTMLElement {
   document.body.replaceChildren();
   document.title = "waves";
@@ -88,9 +91,10 @@ export function oneOf(node: Element, selector: string): Element | null {
 
 /**
  * The invariants the CSP alone cannot give: only tags from `ALLOWED_TAGS`, no
- * `on*` or other dangerous attribute, and no `href` carrying a scheme other
- * than `https:`. An attribute *value* is never parsed as HTML, so a payload in
- * a `title` is inert and is asserted as text by the test that feeds it.
+ * `on*` or other dangerous attribute, and no `href` that is protocol-relative
+ * or carries a scheme other than `https:`. An attribute *value* is never parsed
+ * as HTML, so a payload in a `title` is inert; the test that feeds one counts
+ * those titles instead of banning them.
  */
 export function assertNoInjectedMarkup(): void {
   for (const element of document.querySelectorAll("*")) {
@@ -110,7 +114,7 @@ export function assertNoInjectedMarkup(): void {
   }
   for (const anchor of document.querySelectorAll("a[href]")) {
     const href = anchor.getAttribute("href") ?? "";
-    expect(href.startsWith("//")).toBe(false);
+    expect(PROTOCOL_RELATIVE.test(href)).toBe(false);
     const scheme = SCHEME.exec(href);
     if (scheme === null) {
       expect(href.startsWith("/")).toBe(true);

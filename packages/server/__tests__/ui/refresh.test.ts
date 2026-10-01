@@ -162,6 +162,88 @@ describe("the project list route", () => {
     app.stop();
   });
 
+  it("keeps the last good cards when a later list holds one it cannot show", async () => {
+    let second = false;
+    const flaky = fetchStub(() =>
+      second
+        ? { status: 200, body: [null] }
+        : {
+            status: 200,
+            body: [projectCard(), projectCard({ id: "beta", name: "Beta" })],
+          },
+    );
+    const { app, timers } = harness({ fetchImpl: flaky });
+    const unhandled: unknown[] = [];
+    const listener = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", listener);
+
+    app.start();
+    await flush();
+    expect(textsOf(root(), ".card-name")).toStrictEqual(["Alpha", "Beta"]);
+
+    second = true;
+    timers.runLast();
+    await flush();
+
+    expect(timers.scheduled).toHaveLength(1);
+    expect(textsOf(root(), ".card-name")).toStrictEqual(["Alpha", "Beta"]);
+    expect(textOf(root().querySelector(".note"))).toBe("offline, retrying");
+    expect(unhandled).toStrictEqual([]);
+    process.off("unhandledRejection", listener);
+    app.stop();
+  });
+
+  it("keeps the last good lanes when the wave comes back without one", async () => {
+    let second = false;
+    const flaky = fetchStub((path) => {
+      if (path.endsWith("/waves")) {
+        return { status: 200, body: [waveSummary()] };
+      }
+      return second
+        ? { status: 200, body: {} }
+        : { status: 200, body: waveView() };
+    });
+    const { app, timers } = harness({ pathname: "/p/alpha", fetchImpl: flaky });
+    const unhandled: unknown[] = [];
+    const listener = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", listener);
+
+    app.start();
+    await flush();
+    expect(textsOf(root(), "tbody tr")).toHaveLength(2);
+
+    second = true;
+    timers.runLast();
+    await flush();
+
+    expect(timers.scheduled).toHaveLength(1);
+    expect(textsOf(root(), "tbody tr")).toHaveLength(2);
+    expect(textOf(root().querySelector(".note"))).toBe("offline, retrying");
+    expect(unhandled).toStrictEqual([]);
+    process.off("unhandledRejection", listener);
+    app.stop();
+  });
+
+  it("says it is offline when the very first wave is not a wave at all", async () => {
+    const { app, timers } = harness({
+      pathname: "/p/alpha",
+      fetchImpl: fetchStub((path) =>
+        path.endsWith("/waves")
+          ? { status: 200, body: [waveSummary()] }
+          : { status: 200, body: {} },
+      ),
+    });
+    app.start();
+    await flush();
+    expect(timers.scheduled).toHaveLength(1);
+    expect(textsOf(root(), ".empty")).toStrictEqual(["offline, retrying"]);
+    app.stop();
+  });
+
   it("refreshes on whatever interval it is given", async () => {
     const { app, timers } = harness({
       fetchImpl: fetchStub(listing(projectCard())),

@@ -29,21 +29,32 @@ const TEXT_PAYLOADS = [IMG, SCRIPT, HANDLER, CLOSING_DETAILS] as const;
 
 /**
  * How many times one payload appears in the rendered *text* of a project card:
- * the name, the id and the repository. `lastPush` is fed the payload too, but a
- * timestamp reaches the document as a `title` attribute, not as text, and
- * `assertNoInjectedMarkup` is what holds attribute values to the no-`<` rule.
+ * the name, the id and the repository. `lastPush` is fed the payload too, and
+ * reaches the document as a `title` attribute instead, which `CARD_TITLES`
+ * counts; `assertNoInjectedMarkup` only checks attribute *names*.
  */
 const CARD_OCCURRENCES = 3;
 
+/** The `title` attributes in that card that hold the payload: `lastPush`. */
+const CARD_TITLES = 1;
+
 /**
  * How many times one payload appears in the rendered text of a wave panel: the
- * project in the heading, the wave in the list, the wave in the lane-panel
- * heading, the lane id, the seat, the stage, the event, the one detail value,
- * the pull-request state, the pull-request checks, the plan review, the risk,
- * the one disagreement, the `generatedAt` in the tail label and the tail. The
- * timestamps and the wave id reach the document as attributes, not as text.
+ * project in the heading, the wave id in the wave list, the wave id again in the
+ * lane-panel heading, the lane id, the seat, the stage, the event, the one
+ * detail value, the pull-request state, the pull-request checks, the plan
+ * review, the risk, the one disagreement, the `generatedAt` in the tail label
+ * and the tail. The three timestamps reach the document as attributes, not as
+ * text, and `LANE_TITLES` counts those.
  */
 const LANE_OCCURRENCES = 15;
+
+/**
+ * The `title` attributes holding the payload: the wave's `receivedAt` in the
+ * wave list, the view's `receivedAt` in the lane-panel heading, and the lane's
+ * reported `ts` in its reported cell.
+ */
+const LANE_TITLES = 3;
 
 function documentText(): string {
   return document.body.textContent ?? "";
@@ -54,8 +65,20 @@ function occurrencesOf(payload: string): number {
   return documentText().split(payload).length - 1;
 }
 
-function expectVerbatim(payload: string, times: number): void {
-  expect(occurrencesOf(payload)).toBe(times);
+/** How many `title` attributes hold the payload verbatim, exactly. */
+function titledWith(payload: string): number {
+  return Array.from(document.querySelectorAll("[title]")).filter(
+    (element) => element.getAttribute("title") === payload,
+  ).length;
+}
+
+function expectVerbatim(
+  payload: string,
+  textTimes: number,
+  titleTimes: number,
+): void {
+  expect(occurrencesOf(payload)).toBe(textTimes);
+  expect(titledWith(payload)).toBe(titleTimes);
 }
 
 /** Every field that reaches the DOM, each carrying the payload it was given. */
@@ -130,7 +153,7 @@ describe("the project list against stored markup", () => {
       expect(textsOf(host, "h2 a")).toStrictEqual([payload]);
       expect(textsOf(host, "code")).toStrictEqual([payload]);
       expect(textsOf(host, "dd span[title]")).toStrictEqual(["unknown"]);
-      expectVerbatim(payload, CARD_OCCURRENCES);
+      expectVerbatim(payload, CARD_OCCURRENCES, CARD_TITLES);
     }
   });
 
@@ -144,7 +167,7 @@ describe("the project list against stored markup", () => {
       expect(host.querySelectorAll("a[href^='data:']")).toHaveLength(0);
       expect(host.querySelectorAll("a[href*='@']")).toHaveLength(0);
       expect(textsOf(host, "dd")[1]).toBe(payload);
-      expectVerbatim(payload, 1);
+      expectVerbatim(payload, 1, 0);
     }
   });
 
@@ -156,7 +179,7 @@ describe("the project list against stored markup", () => {
     expect(host.querySelector("h2 a")?.getAttribute("href")).toBe(
       "/p/%22%3E%3Cscript%3Ealert(1)%3C%2Fscript%3E",
     );
-    expectVerbatim(SCRIPT, 1);
+    expectVerbatim(SCRIPT, 1, 0);
   });
 });
 
@@ -182,7 +205,7 @@ describe("the wave panel against stored markup", () => {
       expect(host.querySelectorAll("img")).toHaveLength(0);
       expect(host.querySelectorAll("script")).toHaveLength(0);
       expect(host.querySelectorAll("details").length).toBe(1);
-      expectVerbatim(payload, LANE_OCCURRENCES);
+      expectVerbatim(payload, LANE_OCCURRENCES, LANE_TITLES);
     }
   });
 
@@ -252,6 +275,6 @@ describe("the wave panel against stored markup", () => {
     expect(host.querySelectorAll("details")).toHaveLength(1);
     expect(host.querySelectorAll("details > *")).toHaveLength(2);
     expect(textsOf(host, "pre")).toStrictEqual([CLOSING_DETAILS]);
-    expectVerbatim(CLOSING_DETAILS, 1);
+    expectVerbatim(CLOSING_DETAILS, 1, 0);
   });
 });

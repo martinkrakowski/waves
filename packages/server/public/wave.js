@@ -1,11 +1,17 @@
 import { el, internalLink, stamp, text } from "./dom.js";
 import { laneCountText, waveCountText } from "./format.js";
-import { laneTable } from "./lanes.js";
+import { drawableLanes, laneTable } from "./lanes.js";
 
 const PAST_RETENTION = "past retention";
 
+/** The waves the list can show: the ones the API could actually describe. */
+function presentWaves(waves) {
+  return waves.filter((head) => head !== null && head !== undefined);
+}
+
 export function visibleWaves(waves, showAll) {
-  return showAll ? waves : waves.filter((head) => head.retained);
+  const kept = presentWaves(waves);
+  return showAll ? kept : kept.filter((head) => head.retained);
 }
 
 function badge(label, className) {
@@ -79,7 +85,7 @@ function waveHeading(view, nowMs) {
       el("span", {
         attrs: { class: "meta" },
         children: [
-          text(` · ${laneCountText(view.envelope.lanes.length)}`),
+          text(` · ${laneCountText(drawableLanes(view).length)}`),
           text(" "),
           stamp(view.receivedAt, nowMs),
         ],
@@ -113,7 +119,8 @@ function lanePanel(model, nowMs) {
 }
 
 export function wavePanel(model, nowMs, handlers) {
-  const retained = model.waves.filter((head) => head.retained).length;
+  const kept = presentWaves(model.waves);
+  const retained = kept.filter((head) => head.retained).length;
   return el("section", {
     attrs: { class: "view" },
     children: [
@@ -129,7 +136,11 @@ export function wavePanel(model, nowMs, handlers) {
         children: [
           el("h2", { text: "Waves" }),
           waveList(model, nowMs, handlers.onSelect),
-          ...retentionToggle(model, retained, handlers.onToggleAll),
+          ...retentionToggle(
+            { ...model, waves: kept },
+            retained,
+            handlers.onToggleAll,
+          ),
         ],
       }),
       lanePanel(model, nowMs),

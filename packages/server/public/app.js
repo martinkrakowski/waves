@@ -1,6 +1,6 @@
 import { createApi } from "./api.js";
 import { el } from "./dom.js";
-import { projectList } from "./projects.js";
+import { drawableProjects, projectList } from "./projects.js";
 import { visibleWaves, wavePanel } from "./wave.js";
 
 export const REFRESH_MS = 10_000;
@@ -55,8 +55,8 @@ export function createApp(deps) {
   async function load() {
     if (route.kind === "projects") {
       const projects = await api.projects();
-      if (!Array.isArray(projects)) {
-        throw new Error("the project list is not a list");
+      if (!drawableProjects(projects)) {
+        throw new Error("the project list is not a list of projects");
       }
       return { kind: "projects", projects };
     }
@@ -128,12 +128,21 @@ export function createApp(deps) {
     root.replaceChildren(...children);
   }
 
+  /**
+   * Loads, then draws, and never leaves a render failure half-applied: a `draw`
+   * that throws on the data it was just handed puts the last data that did draw
+   * back, says the page is offline, and draws that instead. A payload the views
+   * cannot render therefore never reaches the document and never reaches
+   * `onToggleAll`, which draws straight from the data kept here.
+   */
   async function refresh() {
+    const previous = data;
     try {
       data = await load();
       note = "";
       draw();
     } catch {
+      data = previous;
       note = OFFLINE_NOTE;
       draw();
     }
@@ -166,7 +175,7 @@ export function createApp(deps) {
     }
     timer = setTimer(() => {
       timer = undefined;
-      void refreshOnce().then(schedule);
+      void refreshOnce().then(schedule, schedule);
     }, refreshMs);
   }
 
@@ -178,15 +187,14 @@ export function createApp(deps) {
       }
       return;
     }
-    void refreshOnce().then(schedule);
+    void refreshOnce().then(schedule, schedule);
   }
 
   function start() {
     stopped = false;
     doc.addEventListener("visibilitychange", onVisibility);
     draw();
-    void refreshOnce();
-    schedule();
+    void refreshOnce().then(schedule, schedule);
   }
 
   function stop() {
