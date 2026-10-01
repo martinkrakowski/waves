@@ -56,6 +56,10 @@ async function seeded(): Promise<StorePort<Project, StoredSnapshot>> {
   return store;
 }
 
+function bodyOf(raw: string): string {
+  return raw.split("\r\n\r\n").slice(1).join("\r\n\r\n");
+}
+
 afterEach(cleanupHarnesses);
 
 describe("the API surface", () => {
@@ -305,6 +309,32 @@ describe("failures", () => {
 
     expect(response).toContain("414");
     expect(response).toContain("uri too long");
+  });
+
+  it("answers 431 with the security headers for an oversized header block", async () => {
+    const started = await startHarness({ store: await seeded() });
+
+    const response = await started.raw("GET /healthz HTTP/1.1", [
+      `X-Big: ${"a".repeat(20_000)}`,
+    ]);
+
+    expect(response).toContain("431 Request Header Fields Too Large");
+    expect(response).toContain(
+      "Content-Security-Policy: default-src 'none'; script-src 'self';",
+    );
+    expect(response).toContain("X-Content-Type-Options: nosniff");
+    expect(response).toContain("Referrer-Policy: no-referrer");
+    expect(response).toContain("Connection: close");
+    expect(bodyOf(response)).toBe("");
+  });
+
+  it("answers 400 with the security headers for a malformed request", async () => {
+    const started = await startHarness({ store: await seeded() });
+
+    const response = await started.raw("NOT-A-REQUEST");
+
+    expect(response).toContain("400 Bad Request");
+    expect(response).toContain("X-Content-Type-Options: nosniff");
   });
 
   it("answers 500 with a generic body when the store fails", async () => {

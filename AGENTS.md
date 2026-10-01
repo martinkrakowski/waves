@@ -18,8 +18,12 @@ Every package is split into three layers under `src/`:
 
 `domain/` and `application/` import **nothing** from `node:*`, from any npm or
 scoped package, and nothing from `infrastructure/`. Every such dependency
-belongs in an adapter under `src/infrastructure/`. `eslint.config.js` enforces
-this with `no-restricted-imports`; a violation is a lint error, not a style note.
+belongs in an adapter under `src/infrastructure/`. The one exception is the
+project's own kernel, `@hexagen-monaco/waves-contract`, which is pure and
+dependency-free: `domain/` and `application/` may import it and its subpaths
+directly, so its types and rules are never copied into them. `eslint.config.js`
+enforces this with `no-restricted-imports`; a violation is a lint error, not a
+style note.
 
 ## After any edit
 

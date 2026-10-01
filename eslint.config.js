@@ -9,6 +9,10 @@ const LAYER_FILES = [
 const ADAPTER_MESSAGE =
   "This dependency belongs in an infrastructure adapter under src/infrastructure/.";
 
+const KERNEL = "@hexagen-monaco/waves-contract";
+
+const OTHER_PACKAGE_PATTERN = `^(?!${KERNEL}(/|$))[^./]`;
+
 const PORT_MESSAGE =
   "Domain and application code takes dependencies through ports, never dynamic imports or require.";
 
@@ -34,7 +38,10 @@ export default tseslint.config(
         {
           patterns: [
             { regex: "^node:", message: ADAPTER_MESSAGE },
-            { regex: "^[^./]", message: ADAPTER_MESSAGE },
+            {
+              regex: OTHER_PACKAGE_PATTERN,
+              message: `${ADAPTER_MESSAGE} The one exception is the project's own kernel, ${KERNEL}.`,
+            },
             { group: ["**/infrastructure/**"], message: ADAPTER_MESSAGE },
           ],
         },

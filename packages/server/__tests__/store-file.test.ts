@@ -57,6 +57,14 @@ describe("FileStore durability", () => {
       await expect(reopened.listSnapshots("alpha")).resolves.toEqual([
         snapshot("wv1"),
       ]);
+      await expect(reopened.listSnapshotHeads("alpha")).resolves.toEqual([
+        {
+          wave: "wv1",
+          receivedAt: "2026-10-01T12:00:01Z",
+          intervalSeconds: 10,
+          lanes: 0,
+        },
+      ]);
     } finally {
       await dispose();
     }
@@ -112,6 +120,10 @@ describe("FileStore durability", () => {
       expect(statSync(join(dataDir, "projects.json")).mode & 0o777).toBe(0o600);
       expect(
         statSync(join(dataDir, "snapshots", "alpha", "wv1.json")).mode & 0o777,
+      ).toBe(0o600);
+      expect(
+        statSync(join(dataDir, "snapshots", "alpha", "wv1.head.json")).mode &
+          0o777,
       ).toBe(0o600);
       expect(statSync(join(dataDir, "snapshots")).mode & 0o777).toBe(0o700);
       expect(statSync(join(dataDir, "snapshots", "alpha")).mode & 0o777).toBe(

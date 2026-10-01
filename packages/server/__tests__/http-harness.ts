@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import type { Server } from "node:http";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
@@ -16,11 +16,13 @@ const INDEX_HTML = "<!doctype html><title>waves</title>\n";
 const APP_JS = '"use strict";\n';
 const APP_CSS = "body { color: black; }\n";
 const OUTSIDE_PACKAGE = '{ "name": "not-public" }\n';
+const CANARY = "canary-outside-the-public-directory\n";
 
 export interface HarnessOptions {
   readonly store?: StorePort<Project, StoredSnapshot>;
   readonly readToken?: string;
   readonly now?: () => number;
+  readonly publicDir?: string;
 }
 
 export interface Started {
@@ -51,6 +53,10 @@ async function publicDir(): Promise<string> {
   await writeFile(join(root, "app.js"), APP_JS, "utf8");
   await writeFile(join(root, "app.css"), APP_CSS, "utf8");
   await writeFile(join(parent, "package.json"), OUTSIDE_PACKAGE, "utf8");
+  const canary = join(parent, "canary.json");
+  await writeFile(canary, CANARY, "utf8");
+  await symlink(canary, join(root, "escape.json"));
+  await symlink(join(root, "app.js"), join(root, "inside.js"));
   return root;
 }
 
@@ -90,7 +96,7 @@ export async function startHarness(
   const server: Server = createHttpServer({
     store: options.store ?? new MemoryStore(),
     now: options.now ?? (() => NOW_MS),
-    publicDir: await publicDir(),
+    publicDir: options.publicDir ?? (await publicDir()),
     readToken: options.readToken,
     log: (line) => {
       lines.push(line);

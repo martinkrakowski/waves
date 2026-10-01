@@ -2,14 +2,11 @@ import { createServer } from "node:http";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import { resolve } from "node:path";
 
+import type { Project, StoredSnapshot } from "@hexagen-monaco/waves-contract";
+
 import type { Now } from "../application/read-model.js";
 import { createReadModel, type ReadModel } from "../application/read-model.js";
-import type {
-  ProjectRecord,
-  StoredSnapshotRecord,
-} from "../application/ports/model.js";
 import type { StorePort } from "../application/ports/store.js";
-import { contractStaleness } from "./contract-staleness.js";
 import {
   ALLOW_GET_HEAD,
   authorised,
@@ -17,7 +14,9 @@ import {
   type Headers,
   jsonReply,
   NO_STORE,
+  parserRefusal,
   type Reply,
+  refuseParsedRequest,
   send,
   sha256,
 } from "./http-security.js";
@@ -29,23 +28,38 @@ import {
   type Route,
   route,
 } from "./http-routes.js";
-import { HTML_TYPE, readStaticFile, type StaticFile } from "./http-static.js";
+import {
+  HTML_TYPE,
+  readStaticFile,
+  realRootOf,
+  type StaticFile,
+} from "./http-static.js";
 
 const INDEX_FILE = "index.html";
 const READ_METHODS: ReadonlySet<string> = new Set(["GET", "HEAD"]);
 
+const HEADERS_TIMEOUT_MS = 10_000;
+const REQUEST_TIMEOUT_MS = 30_000;
+const MAX_HEADER_BYTES = 16_384;
+
 const NOT_FOUND: Reply = jsonReply(404, { error: "not found" });
 
 export interface HttpServerDeps {
-  readonly store: StorePort<ProjectRecord, StoredSnapshotRecord>;
+  readonly store: StorePort<Project, StoredSnapshot>;
   readonly now: Now;
   readonly publicDir: string;
   readonly log: (line: string) => void;
   readonly readToken?: string;
 }
 
-async function staticReply(file: StaticFile): Promise<Reply> {
-  const body = await readStaticFile(file);
+async function staticReply(
+  realRoot: string | undefined,
+  file: StaticFile,
+): Promise<Reply> {
+  if (realRoot === undefined) {
+    return NOT_FOUND;
+  }
+  const body = await readStaticFile(realRoot, file);
   if (body === undefined) {
     return NOT_FOUND;
   }
@@ -56,6 +70,7 @@ async function replyFor(
   matched: Route,
   readModel: ReadModel,
   root: string,
+  realRoot: string | undefined,
 ): Promise<Reply> {
   switch (matched.kind) {
     case "health":
@@ -71,9 +86,12 @@ async function replyFor(
       return view === undefined ? NOT_FOUND : jsonReply(200, view);
     }
     case "index":
-      return staticReply({ path: resolve(root, INDEX_FILE), type: HTML_TYPE });
+      return staticReply(realRoot, {
+        path: resolve(root, INDEX_FILE),
+        type: HTML_TYPE,
+      });
     case "file":
-      return staticReply(matched.file);
+      return staticReply(realRoot, matched.file);
     case "missing":
       return NOT_FOUND;
   }
@@ -89,11 +107,8 @@ export function createHttpServer(deps: HttpServerDeps): Server {
   const { store, now, publicDir, log, readToken } = deps;
   const root = resolve(publicDir);
   const expected = readToken === undefined ? undefined : sha256(readToken);
-  const readModel = createReadModel({
-    store,
-    now,
-    staleness: contractStaleness,
-  });
+  const readModel = createReadModel({ store, now });
+  const realRoot = realRootOf(root);
 
   const respond = async (
     req: IncomingMessage,
@@ -129,7 +144,12 @@ export function createHttpServer(deps: HttpServerDeps): Server {
         { ...extra, ...ALLOW_GET_HEAD },
       );
     }
-    const reply = await replyFor(route(pathname, root), readModel, root);
+    const reply = await replyFor(
+      route(pathname, root),
+      readModel,
+      root,
+      await realRoot,
+    );
     return send(res, reply, method, extra);
   };
 
@@ -169,7 +189,18 @@ export function createHttpServer(deps: HttpServerDeps): Server {
     );
   };
 
-  return createServer((req, res) => {
-    void handle(req, res);
+  const server = createServer(
+    {
+      headersTimeout: HEADERS_TIMEOUT_MS,
+      requestTimeout: REQUEST_TIMEOUT_MS,
+      maxHeaderSize: MAX_HEADER_BYTES,
+    },
+    (req, res) => {
+      void handle(req, res);
+    },
+  );
+  server.on("clientError", (error, socket) => {
+    refuseParsedRequest(socket, parserRefusal(error));
   });
+  return server;
 }

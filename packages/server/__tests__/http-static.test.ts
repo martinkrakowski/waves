@@ -1,3 +1,4 @@
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -97,11 +98,41 @@ describe("the static file rules", () => {
 describe("the file reader", () => {
   it("propagates a file system error it does not model", async () => {
     await expect(
-      readStaticFile({
+      readStaticFile(tmpdir(), {
         path: join(tmpdir(), `${"a".repeat(5000)}.js`),
         type: "text/javascript; charset=utf-8",
       }),
     ).rejects.toThrow(/ENAMETOOLONG/);
+  });
+});
+
+describe("links inside the public directory", () => {
+  it("refuses a link that leaves the directory", async () => {
+    const started = await startHarness();
+
+    const response = await fetch(`${started.origin}/escape.json`);
+
+    expect(response.status).toBe(404);
+    expect(await response.text()).not.toContain("canary-outside");
+  });
+
+  it("serves a link that stays inside the directory", async () => {
+    const started = await startHarness();
+
+    const response = await fetch(`${started.origin}/inside.js`);
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("use strict");
+  });
+
+  it("serves nothing at all when the public directory is absent", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "waves-absent-"));
+    const started = await startHarness({ publicDir: join(parent, "gone") });
+
+    expect((await fetch(`${started.origin}/`)).status).toBe(404);
+    expect((await fetch(`${started.origin}/app.js`)).status).toBe(404);
+    expect((await fetch(`${started.origin}/healthz`)).status).toBe(200);
+    await rm(parent, { recursive: true, force: true });
   });
 });
 

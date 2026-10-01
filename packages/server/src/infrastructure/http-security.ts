@@ -78,3 +78,61 @@ export function authorised(req: IncomingMessage, expected: Buffer): boolean {
   }
   return timingSafeEqual(sha256(password), expected);
 }
+
+export interface ParserRefusal {
+  readonly status: number;
+  readonly reason: string;
+}
+
+const BAD_REQUEST: ParserRefusal = { status: 400, reason: "Bad Request" };
+
+const PARSER_REFUSALS: Readonly<Record<string, ParserRefusal>> = {
+  HPE_HEADER_OVERFLOW: {
+    status: 431,
+    reason: "Request Header Fields Too Large",
+  },
+  ERR_HTTP_REQUEST_TIMEOUT: { status: 408, reason: "Request Timeout" },
+};
+
+export interface RawSocket {
+  readonly writable: boolean;
+  end(data: string): unknown;
+  destroy(): unknown;
+}
+
+/**
+ * The answer for a request Node refused before it became one: an oversized
+ * header block, a request that took too long, or anything else the parser
+ * rejected.
+ */
+export function parserRefusal(error: unknown): ParserRefusal {
+  const code = String((error as NodeJS.ErrnoException).code);
+  return PARSER_REFUSALS[code] ?? BAD_REQUEST;
+}
+
+/**
+ * Answers a request the parser never produced. Node's own default answer would
+ * carry no security headers, so the same three headers are written by hand
+ * before the socket is dropped. The body is empty: nothing about the request is
+ * echoed back.
+ */
+export function refuseParsedRequest(
+  socket: RawSocket,
+  refusal: ParserRefusal,
+): void {
+  if (socket.writable) {
+    socket.end(
+      [
+        `HTTP/1.1 ${refusal.status} ${refusal.reason}`,
+        `Content-Security-Policy: ${CONTENT_SECURITY_POLICY}`,
+        "X-Content-Type-Options: nosniff",
+        "Referrer-Policy: no-referrer",
+        "Content-Length: 0",
+        "Connection: close",
+        "",
+        "",
+      ].join("\r\n"),
+    );
+  }
+  socket.destroy();
+}

@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import type { StoredSnapshot } from "@hexagen-monaco/waves-contract";
 
 import { createReadModel } from "../src/application/read-model.js";
-import { contractStaleness } from "../src/infrastructure/contract-staleness.js";
 import { MemoryStore } from "../src/infrastructure/memory-store.js";
 import { project, snapshot } from "./store-contract.js";
 
@@ -29,7 +28,6 @@ function model(store: MemoryStore, nowMs: number = NOW_MS) {
   return createReadModel({
     store,
     now: () => nowMs,
-    staleness: contractStaleness,
   });
 }
 

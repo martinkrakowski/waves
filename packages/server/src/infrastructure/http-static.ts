@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { realpath, readFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 
 export const HTML_TYPE = "text/html; charset=utf-8";
@@ -15,7 +15,7 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
 
 const ENCODED_SLASH = /%2f/i;
 
-const UNREADABLE_CODES: ReadonlySet<string> = new Set([
+const UNRESOLVABLE_CODES: ReadonlySet<string> = new Set([
   "ENOENT",
   "ENOTDIR",
   "EISDIR",
@@ -41,6 +41,10 @@ function decodeOnce(pathname: string): string | undefined {
 
 function insideRoot(root: string, target: string): boolean {
   return target.startsWith(root + sep);
+}
+
+function code(error: unknown): string {
+  return String((error as NodeJS.ErrnoException).code);
 }
 
 /**
@@ -76,18 +80,37 @@ export function resolveStaticFile(
   return { path: target, type };
 }
 
-function unreadable(error: unknown): boolean {
-  const code = (error as NodeJS.ErrnoException).code;
-  return UNREADABLE_CODES.has(String(code));
+/**
+ * The real location of the directory the page is served from, or nothing when it
+ * does not exist. Everything a request may read is compared against this path
+ * rather than against the configured one, so a symbolic link inside the
+ * directory cannot lead out of it.
+ */
+export async function realRootOf(dir: string): Promise<string | undefined> {
+  try {
+    return await realpath(dir);
+  } catch {
+    return undefined;
+  }
 }
 
+/**
+ * Reads a resolved file, but only once the path it really points at is still
+ * under the real root, and then reads that real path, so the file that is served
+ * is the file that was checked.
+ */
 export async function readStaticFile(
+  realRoot: string,
   file: StaticFile,
 ): Promise<Buffer | undefined> {
   try {
-    return await readFile(file.path);
+    const real = await realpath(file.path);
+    if (!insideRoot(realRoot, real)) {
+      return undefined;
+    }
+    return await readFile(real);
   } catch (error) {
-    if (unreadable(error)) {
+    if (UNRESOLVABLE_CODES.has(code(error))) {
       return undefined;
     }
     throw error;

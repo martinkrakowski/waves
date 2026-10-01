@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { type Config, parseConfig } from "./application/config.js";
 import { FileStore } from "./infrastructure/file-store.js";
 import { createHttpServer } from "./infrastructure/http-server.js";
+import { listen } from "./infrastructure/listen.js";
 import { readReadToken } from "./infrastructure/read-token.js";
 
 const SHUTDOWN_MS = 5000;
@@ -75,9 +76,11 @@ async function start(): Promise<number> {
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);
 
-  await new Promise<void>((listening) => {
-    server.listen(config.port, config.host, listening);
-  });
+  const bound = await listen(server, config.host, config.port);
+  if (!bound.ok) {
+    io.err(`waves: ${bound.message}`);
+    return EXIT_INVALID_ENVIRONMENT;
+  }
   io.out(`waves: listening on ${config.host}:${config.port}`);
   return 0;
 }
