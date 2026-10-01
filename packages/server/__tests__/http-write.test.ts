@@ -239,6 +239,21 @@ function streamChunked(
   });
 }
 
+/**
+ * How long it took the server to drop its socket, in milliseconds, so a test can
+ * say that a connection went on the flush rather than on a timer.
+ */
+async function firstDestroyed(started: Started): Promise<number> {
+  const at = Date.now();
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    if (started.sockets().some((socket) => socket.destroyed)) {
+      return Date.now() - at;
+    }
+    await delay(1);
+  }
+  return Number.POSITIVE_INFINITY;
+}
+
 afterEach(cleanupHarnesses);
 
 describe("pushing a wave", () => {
@@ -727,12 +742,28 @@ describe("reading the body", () => {
     const before = await stateOf(store);
     const bytesBefore = started.bytesRead();
 
-    // The client offers its head and nothing else, so whatever the server reads
-    // of the body it read on its own initiative. A server that authenticates
-    // first answers without touching the body, and a client whose write is
-    // refused mid-stream sees a reset rather than the answer on some platforms,
-    // so either counts as the refusal.
-    const result = await started.headOnly(
+    // The whole body goes out, because a client does not know it is about to be
+    // refused. A server that authenticates first answers without reading it; a
+    // client whose write is cut sees a reset rather than the answer on some
+    // platforms, so either counts as the refusal.
+    const response = await put(started, "x".repeat(PUT_CAP), {
+      headers: { authorization: `Bearer ${UNKNOWN_TOKEN}` },
+    }).catch((error: NodeJS.ErrnoException) => error);
+
+    if (response instanceof Error) {
+      expect(["ECONNRESET", "EPIPE", "UND_ERR_SOCKET"]).toContain(
+        response.code,
+      );
+    } else {
+      expect(response.status).toBe(401);
+    }
+    expect(started.bytesRead() - bytesBefore).toBeLessThan(PUT_CAP);
+    expect(await stateOf(store)).toEqual(before);
+  });
+
+  it("drops a refused connection as soon as the answer has flushed", async () => {
+    const started = await startHarness({ store: await seeded() });
+    const held = started.sendAndHold(
       `PUT ${wavePath()} HTTP/1.1`,
       [
         "Content-Type: application/json",
@@ -742,36 +773,47 @@ describe("reading the body", () => {
       Buffer.alloc(PUT_CAP, 0x78),
     );
 
+    // The client keeps the socket open and keeps writing into it, so the only way
+    // the server socket can end is the server ending it: on the flush of the
+    // refusal, with nothing left to read off it.
+    const droppedAt = await firstDestroyed(started);
+    const readAtDrop = started.bytesRead();
+    await delay(200);
+    const readLater = started.bytesRead();
+    const result = await held;
+
     expect(result.status).toBe("HTTP/1.1 401");
-    expect(started.bytesRead() - bytesBefore).toBeLessThan(PUT_CAP);
-    expect(result.failed || result.read < PUT_CAP).toBe(true);
-    expect(await stateOf(store)).toEqual(before);
+    expect(droppedAt).toBeLessThan(500);
+    expect(readLater).toBe(readAtDrop);
   });
 
-  it("ends a refused connection politely, then drops it a second later", async () => {
+  it("answers a request with no body at all on the same socket", async () => {
     const started = await startHarness({ store: await seeded() });
 
     const result = await started.expecting(
-      `PUT ${wavePath()} HTTP/1.1`,
-      [
-        "Content-Type: application/json",
-        `Authorization: Bearer ${UNKNOWN_TOKEN}`,
-        "Content-Length: 0",
-      ],
+      `DELETE ${wavePath()} HTTP/1.1`,
+      [`Authorization: Bearer ${PROJECT_TOKEN}`],
       "",
     );
-    const justAfter = started.sockets();
-    await delay(1_100);
-    const later = started.sockets();
 
-    // The answer arrived, whole, over a graceful end rather than a reset, so a
-    // client that was mid-body can read what it was refused; the socket is ended,
-    // left alone for a second and only then dropped, rather than reset under it.
-    expect(result.status).toBe("HTTP/1.1 401");
-    expect(result.body).toContain("unauthorized");
-    expect(result.reset).toBe(false);
-    expect(justAfter.every((socket) => socket.writableEnded)).toBe(true);
-    expect(later.every((socket) => socket.destroyed)).toBe(true);
+    // Nothing to read and nothing to wait for: the refusal is the whole answer.
+    expect(result.status).toBe("HTTP/1.1 404");
+    expect(result.sent).toBe(0);
+  });
+
+  it("answers a read that asked to wait, without a 100 and without hanging", async () => {
+    const started = await startHarness({ store: await seeded() });
+
+    const result = await started.expecting(
+      "GET /api/v1/projects HTTP/1.1",
+      ["Expect: 100-continue"],
+      "",
+    );
+
+    // A read has no body to wait for, so the expectation has nothing to do and
+    // the answer is the read: one status line, no 100, nothing sent.
+    expect(statusLines(result.body)).toEqual(["HTTP/1.1 200"]);
+    expect(result.sent).toBe(0);
   });
 
   it("refuses a request that asked to wait before its body, without a 100", async () => {

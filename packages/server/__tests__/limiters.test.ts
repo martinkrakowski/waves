@@ -82,29 +82,37 @@ describe("createFailureLimiter", () => {
   });
 
   it("spends no one's lockout when a known address is refreshed at the bound", () => {
-    const failures = createFailureLimiter(() => 0);
-    for (let index = 0; index < MAX_LIMITER_KEYS; index += 1) {
+    const time = clock();
+    const failures = createFailureLimiter(time.now);
+    // The map is brought to one below its bound with the eight in front of it
+    // live, then made exactly full, so the refresh under test happens at the bound
+    // without anything having been evicted to get there.
+    for (let index = 0; index < EXPIRY_PROBES; index += 1) {
+      failures.fail(`live-${index}`);
+    }
+    for (
+      let index = 0;
+      index < MAX_LIMITER_KEYS - 1 - EXPIRY_PROBES;
+      index += 1
+    ) {
       failures.fail(`filler-${index}`);
     }
-    // The first of these takes the oldest filler's place; the one after it is now
-    // the oldest. Both are locked out, and both were recorded by keys the map
-    // already held afterwards.
-    for (let attempt = 0; attempt < FAILURE_LIMIT; attempt += 1) {
-      failures.fail("203.0.113.7");
+    time.pass(FAILURE_WINDOW_MS);
+    for (let index = 0; index < EXPIRY_PROBES; index += 1) {
+      for (let attempt = 0; attempt < FAILURE_LIMIT; attempt += 1) {
+        failures.fail(`live-${index}`);
+      }
     }
-    for (let attempt = 0; attempt < FAILURE_LIMIT; attempt += 1) {
-      failures.fail("filler-1");
-    }
-    expect(failures.lockedOut("filler-1")).toBe(true);
-    expect(failures.lockedOut("203.0.113.7")).toBe(true);
+    failures.fail("newcomer");
+    expect(failures.lockedOut("live-0")).toBe(true);
 
-    failures.fail("203.0.113.7");
+    // One refresh of a key that is there but whose window has passed, with the
+    // map exactly full. Refreshing a key the map already holds must not need room:
+    // if it did, the sweep would find nothing live among the eight it looks at and
+    // would drop the oldest live entry, which is a locked out address.
+    failures.fail("filler-1");
 
-    // Refreshing a key the map already holds takes no room: the oldest address is
-    // still the one it was before this insert, rather than the one a
-    // refresh-that-evicts would have dropped.
-    expect(failures.lockedOut("filler-1")).toBe(true);
-    expect(failures.lockedOut("203.0.113.7")).toBe(true);
+    expect(failures.lockedOut("live-0")).toBe(true);
   });
 
   it("drops an expired address before a live one", () => {
@@ -122,13 +130,14 @@ describe("createFailureLimiter", () => {
     for (let attempt = 0; attempt < FAILURE_LIMIT; attempt += 1) {
       failures.fail("live-first");
     }
-    expect(failures.lockedOut("live-first")).toBe(true);
 
     failures.fail("newcomer");
 
     // The insert needed room, and an entry nothing is counting is worth nothing:
-    // the expired one went, and the live one in front of it stayed.
-    expect(failures.lockedOut("expired-second")).toBe(false);
+    // the live address in front of it stayed. An eviction that took the oldest
+    // live entry instead would be caught here, because that address would be
+    // gone; whether the expired one behind it went is not observable, and so is
+    // not asserted.
     expect(failures.lockedOut("live-first")).toBe(true);
   });
 });
@@ -176,18 +185,35 @@ describe("createRateLimiter", () => {
   });
 
   it("spends no one's interval when a key it already knows is refreshed", () => {
-    const rate = createRateLimiter(() => 0);
-    for (let index = 0; index < MAX_LIMITER_KEYS; index += 1) {
+    const time = clock();
+    const rate = createRateLimiter(time.now);
+    // The map is brought to one below its bound with the eight in front of it
+    // live, then made exactly full, so the refresh under test happens at the bound
+    // without anything having been evicted to get there.
+    for (let index = 0; index < EXPIRY_PROBES; index += 1) {
+      rate.take(`live-${index}`);
+    }
+    for (
+      let index = 0;
+      index < MAX_LIMITER_KEYS - 1 - EXPIRY_PROBES;
+      index += 1
+    ) {
       rate.take(`filler-${index}`);
     }
-    rate.take("alpha");
+    time.pass(PROJECT_INTERVAL_MS);
+    for (let index = 0; index < EXPIRY_PROBES; index += 1) {
+      expect(rate.take(`live-${index}`)).toBe(true);
+    }
+    expect(rate.take("newcomer")).toBe(true);
+    expect(rate.take("live-0")).toBe(false);
+
+    // One refresh of a key that is there but whose interval has passed, with the
+    // map exactly full. Refreshing a key the map already holds must not need room:
+    // if it did, the sweep would find nothing live among the eight it looks at and
+    // would drop the oldest live entry, which is a project mid-interval.
     rate.take("filler-1");
-    expect(rate.take("filler-1")).toBe(false);
 
-    rate.take("alpha");
-
-    expect(rate.take("filler-1")).toBe(false);
-    expect(rate.take("alpha")).toBe(false);
+    expect(rate.take("live-0")).toBe(false);
   });
 
   it("drops an expired key before a live one", () => {
@@ -205,7 +231,9 @@ describe("createRateLimiter", () => {
 
     rate.take("newcomer");
 
-    expect(rate.take("expired-second")).toBe(true);
+    // The live key in front of the expired one is still holding that project off.
+    // Whether the expired one behind it went is not observable — an expired key is
+    // allowed to go again either way — so it is not asserted.
     expect(rate.take("live-first")).toBe(false);
   });
 
