@@ -50,6 +50,11 @@ spec:
               value: /data/store
             - name: WAVES_PORT
               value: "8080"
+            # The admin token, as a file rather than an environment variable, where
+            # any co-tenant of the node could read it from /proc. The file is read
+            # once at startup, so a rotated token needs a restart to take effect.
+            - name: WAVES_ADMIN_TOKEN_FILE
+              value: /run/secrets/waves-admin/token
           ports:
             - name: http
               containerPort: 8080
@@ -72,9 +77,16 @@ spec:
               mountPath: /data
             - name: tmp
               mountPath: /tmp
+            - name: admin
+              mountPath: /run/secrets/waves-admin
+              readOnly: true
           readinessProbe:
+            # Readiness is the store being readable, not the process being alive:
+            # a pod whose volume the store refuses answers 200 to /healthz and 500
+            # to everything else, and a liveness probe must not restart it for
+            # that. So liveness stays /healthz and readiness asks /readyz.
             httpGet:
-              path: /healthz
+              path: /readyz
               port: http
             periodSeconds: 10
             timeoutSeconds: 2
@@ -95,3 +107,12 @@ spec:
         # expects is a volume of its own.
         - name: tmp
           emptyDir: {}
+        # Optional: without this Secret the admin routes are disabled and answer
+        # 404 exactly as an unknown path does, which is what a service that has
+        # not been given one should do. Group readable and not world readable;
+        # fsGroup makes the group the one the server runs as.
+        - name: admin
+          secret:
+            secretName: waves-admin
+            optional: true
+            defaultMode: 0440

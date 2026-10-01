@@ -1,11 +1,12 @@
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import type { Server } from "node:http";
-import { connect } from "node:net";
+import { connect, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { Project, StoredSnapshot } from "@hexagen-monaco/waves-contract";
 
+import type { DigestComparer } from "../src/application/bearer.js";
 import type { StorePort } from "../src/application/ports/store.js";
 import { createHttpServer } from "../src/infrastructure/http-server.js";
 import { MemoryStore } from "../src/infrastructure/memory-store.js";
@@ -21,6 +22,10 @@ const CANARY = "canary-outside-the-public-directory\n";
 export interface HarnessOptions {
   readonly store?: StorePort<Project, StoredSnapshot>;
   readonly readToken?: string;
+  readonly adminToken?: string;
+  readonly trustProxy?: boolean;
+  readonly compare?: DigestComparer;
+  readonly mint?: () => string;
   readonly now?: () => number;
   readonly publicDir?: string;
 }
@@ -32,11 +37,35 @@ export interface Started {
   readonly raw: (
     requestLine: string,
     headers?: readonly string[],
+    body?: string | Buffer,
   ) => Promise<string>;
+  /**
+   * The bytes the server has taken off its own sockets, which is how a test
+   * shows that a request body was never read rather than merely refused.
+   */
+  readonly bytesRead: () => number;
   readonly stop: () => Promise<void>;
 }
 
 const cleanups: (() => Promise<void>)[] = [];
+
+/**
+ * Every log line every harness in this file has written, and every secret any
+ * test in this file used. A test at the end of each file asserts that none of
+ * the lines carries one of the secrets, which is the only way to show that no
+ * log statement anywhere echoes a token, a header or a body.
+ */
+const allLines: string[] = [];
+const secrets = new Set<string>();
+
+export function watchSecret(secret: string): void {
+  secrets.add(secret);
+}
+
+export function logLeaks(): string[] {
+  const written = allLines.join("\n");
+  return [...secrets].filter((secret) => written.includes(secret));
+}
 
 export async function cleanupHarnesses(): Promise<void> {
   await Promise.all(cleanups.splice(0).map((clean) => clean()));
@@ -64,6 +93,7 @@ async function rawRequest(
   port: number,
   requestLine: string,
   headers: readonly string[],
+  body: string | Buffer = "",
 ): Promise<string> {
   const socket = connect(port, "127.0.0.1");
   socket.setEncoding("utf8");
@@ -72,15 +102,19 @@ async function rawRequest(
   await new Promise<void>((ready) => {
     socket.on("connect", () => ready());
   });
+  const head = [
+    requestLine,
+    "Host: localhost",
+    ...headers,
+    "Connection: close",
+    "",
+    "",
+  ].join("\r\n");
   socket.write(
-    [
-      requestLine,
-      "Host: localhost",
-      ...headers,
-      "Connection: close",
-      "",
-      "",
-    ].join("\r\n"),
+    Buffer.concat([
+      Buffer.from(head, "utf8"),
+      Buffer.isBuffer(body) ? body : Buffer.from(body, "utf8"),
+    ]),
   );
   await new Promise<void>((ended) => {
     socket.on("close", () => ended());
@@ -93,14 +127,23 @@ export async function startHarness(
   options: HarnessOptions = {},
 ): Promise<Started> {
   const lines: string[] = [];
+  const sockets: Socket[] = [];
   const server: Server = createHttpServer({
     store: options.store ?? new MemoryStore(),
     now: options.now ?? (() => NOW_MS),
     publicDir: options.publicDir ?? (await publicDir()),
     readToken: options.readToken,
+    adminToken: options.adminToken,
+    trustProxy: options.trustProxy,
+    compare: options.compare,
+    mint: options.mint,
     log: (line) => {
       lines.push(line);
+      allLines.push(line);
     },
+  });
+  server.on("connection", (socket) => {
+    sockets.push(socket);
   });
   await new Promise<void>((listening) => {
     server.listen(0, "127.0.0.1", listening);
@@ -108,22 +151,25 @@ export async function startHarness(
   const address = server.address();
   const port =
     typeof address === "object" && address !== null ? address.port : 0;
-  cleanups.push(
-    () =>
-      new Promise<void>((closed) => {
-        server.close(() => closed());
-        server.closeAllConnections();
-      }),
-  );
+  for (const secret of [options.readToken, options.adminToken]) {
+    if (secret !== undefined) {
+      watchSecret(secret);
+    }
+  }
+  const close = (): Promise<void> =>
+    new Promise<void>((closed) => {
+      server.close(() => closed());
+      server.closeAllConnections();
+    });
+  cleanups.push(close);
   return {
     origin: `http://127.0.0.1:${port}`,
     port,
     logLines: () => [...lines],
-    raw: (requestLine, headers = []) => rawRequest(port, requestLine, headers),
-    stop: () =>
-      new Promise<void>((closed) => {
-        server.close(() => closed());
-        server.closeAllConnections();
-      }),
+    raw: (requestLine, headers = [], body = "") =>
+      rawRequest(port, requestLine, headers, body),
+    bytesRead: () =>
+      sockets.reduce((total, socket) => total + socket.bytesRead, 0),
+    stop: close,
   };
 }

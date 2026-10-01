@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import type { Socket } from "node:net";
 
 export const CONTENT_SECURITY_POLICY =
   "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
@@ -7,8 +8,8 @@ export const CONTENT_SECURITY_POLICY =
 export const BASIC_PREFIX = "Basic ";
 export const CHALLENGE = 'Basic realm="waves", charset="UTF-8"';
 export const JSON_TYPE = "application/json; charset=utf-8";
+export const JSON_MEDIA = "application/json";
 export const NO_STORE = { "Cache-Control": "no-store" } as const;
-export const ALLOW_GET_HEAD = { Allow: "GET, HEAD" } as const;
 
 const BASE_HEADERS: Readonly<Record<string, string>> = {
   "Content-Security-Policy": CONTENT_SECURITY_POLICY,
@@ -34,19 +35,49 @@ export function jsonReply(status: number, payload: unknown): Reply {
   };
 }
 
+/**
+ * A 204 has no body and says so by not carrying a body or its type at all.
+ */
+export const NO_CONTENT: Reply = {
+  status: 204,
+  type: JSON_TYPE,
+  body: Buffer.alloc(0),
+};
+
+export interface SendOptions {
+  readonly method: string;
+  readonly extra?: Headers;
+  /**
+   * When given, the answer declares `Connection: close` and this socket is
+   * dropped once the answer has flushed. It is how a refusal that arrives before
+   * the request body was read ends the connection, so Node never has to drain a
+   * body nobody is going to read.
+   */
+  readonly socket?: Socket;
+}
+
 export function send(
   res: ServerResponse,
   reply: Reply,
-  method: string,
-  extra: Headers,
+  options: SendOptions,
 ): number {
+  const socket = options.socket;
   res.writeHead(reply.status, {
     ...BASE_HEADERS,
-    ...extra,
-    "Content-Type": reply.type,
-    "Content-Length": String(reply.body.byteLength),
+    ...(socket === undefined ? {} : { Connection: "close" }),
+    ...options.extra,
+    ...(reply.status === 204
+      ? {}
+      : {
+          "Content-Type": reply.type,
+          "Content-Length": String(reply.body.byteLength),
+        }),
   });
-  res.end(method === "HEAD" ? undefined : reply.body);
+  res.end(options.method === "HEAD" ? undefined : reply.body, () => {
+    if (socket !== undefined) {
+      socket.destroy();
+    }
+  });
   return reply.status;
 }
 

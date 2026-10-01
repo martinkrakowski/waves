@@ -1,0 +1,17 @@
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  # The name the ingress references, `waves-redirect-https@kubernetescrd`. A
+  # middleware nothing routes to is not an error the proxy will report, so the
+  # two names have to be one name.
+  name: waves-redirect-https
+  labels:
+    app.kubernetes.io/name: waves
+# The service speaks plain HTTP and its write routes only answer a request that
+# arrived as https, so a client that reaches the pod over web instead of
+# websecure is sent to websecure rather than being answered and dropped. The
+# redirect is permanent: the scheme of this service never changes back.
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
