@@ -9,6 +9,9 @@ const LAYER_FILES = [
 const ADAPTER_MESSAGE =
   "This dependency belongs in an infrastructure adapter under src/infrastructure/.";
 
+const PORT_MESSAGE =
+  "Domain and application code takes dependencies through ports, never dynamic imports or require.";
+
 export default tseslint.config(
   {
     ignores: ["**/dist/**", "**/coverage/**", ".yarn/**"],
@@ -34,6 +37,14 @@ export default tseslint.config(
             { regex: "^[^./]", message: ADAPTER_MESSAGE },
             { group: ["**/infrastructure/**"], message: ADAPTER_MESSAGE },
           ],
+        },
+      ],
+      "no-restricted-syntax": [
+        "error",
+        { selector: "ImportExpression", message: PORT_MESSAGE },
+        {
+          selector: "CallExpression[callee.name='require']",
+          message: PORT_MESSAGE,
         },
       ],
     },

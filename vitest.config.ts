@@ -21,7 +21,6 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["packages/*/src/**/*.ts"],
-      exclude: ["packages/client/src/cli.ts"],
       reporter: ["text", "json-summary"],
       thresholds: {
         lines: 100,
