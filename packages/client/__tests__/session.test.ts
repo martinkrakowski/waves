@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { UsageError } from "../src/application/errors.js";
+import { FileRefusal } from "../src/application/ports.js";
 import {
   openSession,
   readProject,
@@ -176,15 +177,6 @@ describe("readProjectToken", () => {
     ).rejects.toThrow("no token for waves-demo at /run/waves/waves-demo.token");
   });
 
-  it("refuses a token file anyone else can read, and says which mode it is", async () => {
-    const files = fakeFiles({
-      "/run/waves/waves-demo.token": { text: PROJECT_TOKEN, mode: 0o644 },
-    });
-    await expect(readProjectToken(session, files.files, env)).rejects.toThrow(
-      "/run/waves/waves-demo.token is mode 0o644; it must be 0600 or stricter",
-    );
-  });
-
   it("refuses an empty token file", async () => {
     const files = fakeFiles({
       "/run/waves/waves-demo.token": { text: "\n", mode: 0o600 },
@@ -205,6 +197,23 @@ describe("readProjectToken", () => {
       project: PROJECT,
       token: PROJECT_TOKEN,
     });
+  });
+
+  it("passes on the refusal of an adapter that will not open the file", async () => {
+    const refusal = new FileRefusal("/run/waves/waves-demo.token: ELOOP");
+    const files = fakeFiles();
+    await expect(
+      readProjectToken(
+        session,
+        {
+          ...files.files,
+          readSecret: async () => {
+            throw refusal;
+          },
+        },
+        env,
+      ),
+    ).rejects.toBe(refusal);
   });
 });
 

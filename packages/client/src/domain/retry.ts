@@ -1,14 +1,22 @@
-/** How many times a throttled, failing or unanswered request is repeated. */
+/** How many times a failing or unanswered request is repeated. */
 export const MAX_RETRIES = 2;
+
+/**
+ * How many times a throttled request is repeated. Its own budget, because a
+ * server that answers 429 with a Retry-After is telling the client to come
+ * back, and a client that gives up after two seconds of politeness would fail
+ * the very pushes it is being asked to slow down for.
+ */
+export const MAX_THROTTLE_RETRIES = 3;
 
 export const FIRST_BACKOFF_MS = 1000;
 export const SECOND_BACKOFF_MS = 2000;
 
 /** The longest a server may hold a retry back, whatever its Retry-After says. */
-export const MAX_RETRY_AFTER_MS = 5000;
+export const MAX_RETRY_AFTER_SECONDS = 60;
 
 const SECONDS = 1000;
-const INTEGER = /^\d{1,5}$/;
+const DELTA_SECONDS = /^\d{1,9}$/;
 
 /**
  * What the last attempt came back with, as far as the retry policy cares:
@@ -20,40 +28,76 @@ const INTEGER = /^\d{1,5}$/;
  *   it would only send the same bad snapshot again.
  */
 export type RetryOutcome =
-  | { readonly kind: "throttled"; readonly retryAfter: string | undefined }
+  | {
+      readonly kind: "throttled";
+      readonly retryAfter: string | undefined;
+      /** The client's own clock, so an HTTP-date can be read as a delay. */
+      readonly now: number;
+    }
   | { readonly kind: "network" }
   | { readonly kind: "server" }
   | { readonly kind: "refused" };
 
-/** How long to wait before the retry numbered `retry` (0 is the first), or undefined to give up. */
-export function retryDelay(
+export type RetryDecision =
+  | { readonly kind: "wait"; readonly ms: number }
+  | { readonly kind: "tooLong"; readonly seconds: number }
+  | { readonly kind: "stop" };
+
+/**
+ * What to do after `retries` retries have already happened — `retries` is 0 for
+ * the decision about the first repeat. `tooLong` is its own answer because a
+ * server that asks for a longer wait than the cap must not be retried early:
+ * the only correct reply is to stop and say what it asked for.
+ */
+export function decideRetry(
   outcome: RetryOutcome,
-  retry: number,
-): number | undefined {
-  if (outcome.kind === "refused" || retry >= MAX_RETRIES) {
-    return undefined;
+  retries: number,
+): RetryDecision {
+  if (outcome.kind === "refused") {
+    return { kind: "stop" };
   }
   if (outcome.kind === "throttled") {
-    return capRetryAfter(
-      parseRetryAfter(outcome.retryAfter) ?? backoffMs(retry),
-    );
+    if (retries >= MAX_THROTTLE_RETRIES) {
+      return { kind: "stop" };
+    }
+    const seconds = askedToWait(outcome.retryAfter, outcome.now);
+    if (seconds !== undefined) {
+      if (seconds > MAX_RETRY_AFTER_SECONDS) {
+        return { kind: "tooLong", seconds };
+      }
+      return { kind: "wait", ms: seconds * SECONDS };
+    }
+    return { kind: "wait", ms: backoffMs(retries) };
   }
-  return backoffMs(retry);
+  if (retries >= MAX_RETRIES) {
+    return { kind: "stop" };
+  }
+  return { kind: "wait", ms: backoffMs(retries) };
 }
 
-/** The backoff is one second, then two. `retry` is below `MAX_RETRIES` here. */
-function backoffMs(retry: number): number {
-  return retry === 0 ? FIRST_BACKOFF_MS : SECOND_BACKOFF_MS;
-}
-
-/** `Retry-After` is delta-seconds; an HTTP-date is not honoured and the backoff stands. */
-function parseRetryAfter(header: string | undefined): number | undefined {
-  if (header === undefined || !INTEGER.test(header)) {
+/**
+ * The seconds `Retry-After` asks for, or `undefined` when it names nothing this
+ * client can read. Both forms of the header are accepted: delta-seconds, and an
+ * HTTP-date read against the clock.
+ */
+export function askedToWait(
+  header: string | undefined,
+  now: number,
+): number | undefined {
+  if (header === undefined) {
     return undefined;
   }
-  return Number(header) * SECONDS;
+  if (DELTA_SECONDS.test(header)) {
+    return Number(header);
+  }
+  const date = Date.parse(header);
+  if (Number.isNaN(date)) {
+    return undefined;
+  }
+  return Math.max(0, Math.ceil((date - now) / SECONDS));
 }
 
-function capRetryAfter(ms: number): number {
-  return Math.min(ms, MAX_RETRY_AFTER_MS);
+/** The backoff is one second, then two. `retries` is below the budget here. */
+function backoffMs(retries: number): number {
+  return retries === 0 ? FIRST_BACKOFF_MS : SECOND_BACKOFF_MS;
 }

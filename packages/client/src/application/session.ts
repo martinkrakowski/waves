@@ -5,7 +5,6 @@ import {
   readEndpoint,
   type Endpoint,
 } from "../domain/endpoint.js";
-import { isTightMode, modeText } from "../domain/secret.js";
 import { UsageError } from "./errors.js";
 import type { Environment, Files, Transport, UseCaseDeps } from "./ports.js";
 
@@ -110,9 +109,10 @@ export function readProject(env: Environment): string {
 }
 
 /**
- * The token of `WAVES_PROJECT`, read from the config directory. A file that
- * anyone but the owner can read is refused, and the refusal names the mode the
- * user is actually looking at.
+ * The token of `WAVES_PROJECT`, read from the config directory. Whether the file
+ * can be trusted at all — a link, another owner, a loose mode — is settled by
+ * the adapter that opens it, which refuses with the reason rather than handing
+ * over whatever it found.
  */
 export async function readProjectToken(
   session: Session,
@@ -125,11 +125,6 @@ export async function readProjectToken(
   if (file === undefined) {
     throw new UsageError(
       `no token for ${project} at ${path}; run waves register first`,
-    );
-  }
-  if (!isTightMode(file.mode)) {
-    throw new UsageError(
-      `${path} is mode ${modeText(file.mode)}; it must be 0600 or stricter`,
     );
   }
   const token = file.text.trim();

@@ -1,6 +1,7 @@
 import { isProjectId, isWaveId } from "@hexagen-monaco/waves-contract";
 
-import { isHttpsUrl } from "./endpoint.js";
+import { readProjectRequest } from "./project-request.js";
+import { carriesCredentials } from "./endpoint.js";
 
 export const USAGE = [
   "usage:",
@@ -77,7 +78,6 @@ const PUSH_FLAGS: readonly string[] = [
 ];
 const DELETE_FLAGS: readonly string[] = ["--wave"];
 
-const MAX_NAME_CHARS = 200;
 const MIN_INTERVAL_SECONDS = 1;
 const MAX_INTERVAL_SECONDS = 300;
 const INTEGER = /^\d{1,3}$/;
@@ -171,15 +171,20 @@ function readRegister(tokens: Tokens): ParseResult {
     return { ok: false, error: `${id} is not a project id` };
   }
   const name = (tokens.values.get("--name") ?? "").trim();
-  if (name === "" || name.length > MAX_NAME_CHARS) {
+  const repo = tokens.values.get("--repo");
+  const refused = readProjectRequest({ id, name, repo });
+  if (refused.length > 0) {
     return {
       ok: false,
-      error: `--name must be 1 to ${MAX_NAME_CHARS} characters`,
+      error: refused
+        .map((issue) => `${issue.path}: ${issue.message}`)
+        .join("; "),
     };
   }
-  const repo = tokens.values.get("--repo");
-  if (repo !== undefined && !isHttpsUrl(repo)) {
-    return { ok: false, error: "--repo must be an absolute https URL" };
+  // The contract would store a repo URL that carries a password; the status page
+  // would then render it.
+  if (repo !== undefined && carriesCredentials(repo)) {
+    return { ok: false, error: "--repo must not carry a user or a password" };
   }
   const adminToken = readAdminTokenSource(tokens);
   if (typeof adminToken === "string") {

@@ -1,4 +1,12 @@
-import { chmod, readFile, rm, stat, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
@@ -45,6 +53,7 @@ let configDir: string;
 interface Options {
   readonly project?: string;
   readonly stdin?: string;
+  readonly file?: string;
   readonly now?: number;
   readonly adminFile?: string;
   readonly adminText?: string;
@@ -123,13 +132,26 @@ function tokenFile(project: string): string {
   return join(configDir, `${project}.token`);
 }
 
-function putBodies(wave: string): readonly string[] {
-  return stub.requests
-    .filter(
-      (entry) =>
-        entry.method === "PUT" && entry.path.endsWith(`/waves/${wave}`),
-    )
-    .map((entry) => entry.body);
+function puts(wave: string): readonly {
+  readonly method: string;
+  readonly expect: string | undefined;
+  readonly origin: string | undefined;
+  readonly authorization: string | undefined;
+  readonly contentType: string | undefined;
+  readonly body: string;
+}[] {
+  return stub.requests.filter(
+    (entry) => entry.method === "PUT" && entry.path.endsWith(`/waves/${wave}`),
+  );
+}
+
+/** The body of the push the stub was willing to read: the first attempt is throttled on its headers. */
+function bodyOf(wave: string): string {
+  const carried = puts(wave).find((entry) => entry.body !== "");
+  if (carried === undefined) {
+    throw new Error(`the stub never read the body of ${wave}`);
+  }
+  return carried.body;
 }
 
 describe("a real loopback server", () => {
@@ -161,11 +183,10 @@ describe("a real loopback server", () => {
     );
     expect(pushed.err).toEqual([]);
 
-    const put = stub.requests.filter(
-      (entry) =>
-        entry.method === "PUT" && entry.path.endsWith(`/waves/${WAVE}`),
-    );
+    // The stub throttles the first attempt, so a wave arrives twice.
+    const put = puts(WAVE);
     expect(put).toHaveLength(2);
+    expect(put[0]?.expect).toBe("100-continue");
     expect(put[0]?.origin).toBeUndefined();
     expect(put[0]?.authorization).toBe(`Bearer ${stub.tokenOf(project)}`);
     expect(put[0]?.contentType).toBe("application/json");
@@ -206,7 +227,7 @@ describe("a real loopback server", () => {
     );
     expect([plain.code, kept.code]).toEqual([0, 0]);
 
-    const without = JSON.parse(putBodies("wv5")[0] ?? "{}") as {
+    const without = JSON.parse(bodyOf("wv5")) as {
       readonly intervalSeconds: number | null;
       readonly lanes: readonly {
         readonly derived: { readonly log?: { readonly tail?: string } };
@@ -215,7 +236,7 @@ describe("a real loopback server", () => {
     expect(without.lanes[0]?.derived.log?.tail).toBeUndefined();
     expect(without.intervalSeconds).toBeNull();
 
-    const with_ = JSON.parse(putBodies("wv6")[0] ?? "{}") as {
+    const with_ = JSON.parse(bodyOf("wv6")) as {
       readonly intervalSeconds: number | null;
       readonly lanes: readonly {
         readonly derived: { readonly log?: { readonly tail?: string } };
@@ -290,6 +311,47 @@ describe("a real loopback server", () => {
     ]);
   });
 
+  it("prints the reason of a 401 on a snapshot too big to send", async () => {
+    // A project the server has never heard of, so the refusal lands on the
+    // headers alone and the snapshot behind them is never read.
+    const project = "waves-big";
+    await mkdir(configDir, { recursive: true, mode: 0o700 });
+    await writeFile(tokenFile(project), "waves-never-registered", {
+      mode: 0o600,
+    });
+    const lanes = JSON.stringify({
+      lanes: Array.from({ length: 200 }, (_unused, index) => ({
+        id: `lane-${index}`,
+        derived: {
+          alive: false,
+          log: {
+            bytes: 4096,
+            mtimeMs: 1_772_000_000_000,
+            tail: "x".repeat(4000),
+          },
+        },
+        disagreements: [],
+      })),
+    });
+    const big = join(directory, "big.json");
+    await writeFile(big, lanes, { mode: 0o644 });
+    expect(Buffer.byteLength(lanes)).toBeGreaterThan(64 * 1024);
+
+    const refused = await waves(
+      ["push", "--wave", "wv-big", "--file", big, "--include-tails"],
+      { project },
+    );
+
+    // The server refused on the headers, so the snapshot was never written and
+    // the answer is the refusal, not a socket that died mid-transfer.
+    expect(refused.code).toBe(1);
+    expect(refused.err).toEqual([
+      "waves push: push failed: 401 Unauthorized\n  the project token was refused",
+    ]);
+    expect(puts("wv-big")).toHaveLength(1);
+    expect(puts("wv-big")[0]?.body).toBe("");
+  });
+
   it("refuses to push with a token file anyone else can read", async () => {
     const project = "waves-mode";
     await waves(register(project));
@@ -302,5 +364,41 @@ describe("a real loopback server", () => {
     expect(refused.err).toEqual([
       `waves push: ${tokenFile(project)} is mode 0o644; it must be 0600 or stricter`,
     ]);
+  });
+
+  it("refuses a token file that is a link", async () => {
+    const project = "waves-link";
+    await waves(register(project));
+    const target = join(directory, "elsewhere.token");
+    await writeFile(target, stub.tokenOf(project) ?? "", { mode: 0o600 });
+    await rm(tokenFile(project));
+    await symlink(target, tokenFile(project));
+
+    const refused = await waves(["push", "--wave", WAVE, "--stdin"], {
+      project,
+      stdin: LANES,
+    });
+    expect(refused.code).toBe(2);
+    expect(refused.err[0]).toContain("ELOOP");
+  });
+
+  it("refuses a config directory anyone else can reach, and says what to run", async () => {
+    const project = "waves-dir";
+    await mkdir(configDir, { recursive: true, mode: 0o750 });
+    const refused = await waves(register(project));
+    expect(refused.code).toBe(2);
+    expect(refused.err[0]).toContain(`run chmod 700 ${configDir}`);
+    expect((await stat(configDir)).mode & 0o777).toBe(0o750);
+  });
+
+  it("refuses a config directory that is a link", async () => {
+    const project = "waves-dirlink";
+    const real = join(directory, "real");
+    await mkdir(real, { mode: 0o700 });
+    await symlink(real, configDir);
+    const refused = await waves(register(project));
+    expect(refused.code).toBe(2);
+    expect(refused.err[0]).toContain("is a symbolic link");
+    await rm(configDir);
   });
 });

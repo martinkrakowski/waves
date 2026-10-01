@@ -29,9 +29,15 @@ export default defineConfig({
         },
       },
       {
+        resolve: {
+          alias: {
+            "@hexagen-monaco/waves-contract": contractSource,
+          },
+        },
         test: {
           name: "client",
           include: ["packages/client/__tests__/**/*.test.ts"],
+          setupFiles: ["packages/client/__tests__/support/leak-guard.ts"],
           environment: "node",
         },
       },

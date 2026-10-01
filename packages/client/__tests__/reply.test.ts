@@ -1,13 +1,18 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  MAX_SERVER_TEXT,
   issueLines,
   readIssues,
   readReceivedAt,
   readToken,
   reasonPhrase,
+  safeText,
   serverFailure,
 } from "../src/domain/reply.js";
+
+const ESCAPE = String.fromCharCode(27);
+const CLEAR = `${ESCAPE}[2J${ESCAPE}[H`;
 
 describe("readIssues", () => {
   it("reads the pointers of a 422", () => {
@@ -21,10 +26,24 @@ describe("readIssues", () => {
     ]);
   });
 
-  it("reads a single message when the server sent one", () => {
-    expect(readIssues('{"message":"admin registration is disabled"}')).toEqual([
+  it("reads the {error} the server sends for everything else", () => {
+    expect(readIssues('{"error":"admin registration is disabled"}')).toEqual([
       { path: "", message: "admin registration is disabled" },
     ]);
+  });
+
+  it("still reads a {message}", () => {
+    expect(readIssues('{"message":"the admin token was refused"}')).toEqual([
+      { path: "", message: "the admin token was refused" },
+    ]);
+  });
+
+  it("prefers pointers to a single message", () => {
+    expect(
+      readIssues(
+        '{"error":"refused","errors":[{"path":"/wave","message":"bad"}]}',
+      ),
+    ).toEqual([{ path: "/wave", message: "bad" }]);
   });
 
   it("keeps only the pointers that are pointers", () => {
@@ -40,6 +59,53 @@ describe("readIssues", () => {
     expect(readIssues("not json")).toEqual([]);
     expect(readIssues("[1,2]")).toEqual([]);
     expect(readIssues("{}")).toEqual([]);
+  });
+});
+
+describe("safeText", () => {
+  it("leaves ordinary text alone", () => {
+    expect(safeText("the admin token was refused")).toBe(
+      "the admin token was refused",
+    );
+  });
+
+  it("removes an escape sequence and the line it would have drawn", () => {
+    expect(safeText(`${CLEAR}the project is registered`)).toBe(
+      "the project is registered",
+    );
+  });
+
+  it("removes a lone escape, and an unfinished sequence", () => {
+    expect(safeText(`before${ESCAPE}after`)).toBe("beforeafter");
+    expect(safeText(`before${ESCAPE}[38;5after`)).toBe("beforefter");
+    // An unfinished sequence has no end to find, so nothing after it is trusted.
+    expect(safeText(`before${ESCAPE}[38;5`)).toBe("before");
+  });
+
+  it("turns a control into a space rather than letting it through", () => {
+    const nul = String.fromCharCode(0);
+    expect(safeText(`refused${nul}more`)).toBe("refused more");
+    expect(safeText("a\nb")).toBe("a b");
+    expect(safeText(`a${String.fromCharCode(133)}b`)).toBe("a b");
+  });
+
+  it("caps what a server can make a terminal print", () => {
+    const long = safeText("x".repeat(500));
+    expect(long).toHaveLength(MAX_SERVER_TEXT);
+    expect(long.endsWith("…")).toBe(true);
+  });
+
+  it("makes every printed part of an answer safe", () => {
+    expect(serverFailure(JSON.stringify({ error: `${CLEAR}nope` }))).toBe(
+      "\n  nope",
+    );
+    expect(
+      serverFailure(
+        JSON.stringify({
+          errors: [{ path: `${CLEAR}/a`, message: `x${CLEAR}` }],
+        }),
+      ),
+    ).toBe("\n  /a: x");
   });
 });
 
@@ -59,6 +125,7 @@ describe("serverFailure", () => {
     expect(serverFailure('{"errors":[{"path":"/wave","message":"bad"}]}')).toBe(
       "\n  /wave: bad",
     );
+    expect(serverFailure('{"error":"slow down"}')).toBe("\n  slow down");
     expect(serverFailure("")).toBe("");
   });
 });
@@ -82,6 +149,11 @@ describe("the body of a success", () => {
     expect(readToken("[]")).toBeUndefined();
   });
 
+  it("writes a token down exactly as it arrived", () => {
+    const token = `one${ESCAPE}[2Jtwo`;
+    expect(readToken(JSON.stringify({ token }))).toBe(token);
+  });
+
   it("reads a receivedAt, and refuses anything that is not one", () => {
     expect(readReceivedAt('{"receivedAt":"2026-02-03T04:05:07.000Z"}')).toBe(
       "2026-02-03T04:05:07.000Z",
@@ -89,5 +161,11 @@ describe("the body of a success", () => {
     expect(readReceivedAt("{}")).toBeUndefined();
     expect(readReceivedAt("not json")).toBeUndefined();
     expect(readReceivedAt("7")).toBeUndefined();
+  });
+
+  it("makes a receivedAt safe to print", () => {
+    expect(readReceivedAt(JSON.stringify({ receivedAt: `${CLEAR}2026` }))).toBe(
+      "2026",
+    );
   });
 });

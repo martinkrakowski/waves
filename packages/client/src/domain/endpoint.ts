@@ -132,6 +132,20 @@ export function isHttpsUrl(value: string): boolean {
   );
 }
 
+/**
+ * Whether a URL carries a user or a password. The contract does not mind, but
+ * the server stores this URL and renders it on the status page, so a password in
+ * one would end up in front of everyone who looks.
+ */
+export function carriesCredentials(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.username !== "" || url.password !== "";
+  } catch {
+    return false;
+  }
+}
+
 /** The collection endpoint, with `rotate` asking the server for a new token. */
 export function projectsPath(rotate: boolean): string {
   return rotate ? `${API_PREFIX}?rotate=1` : API_PREFIX;

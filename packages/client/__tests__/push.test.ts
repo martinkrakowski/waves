@@ -202,16 +202,6 @@ describe("push", () => {
     expect(built.sent()).toBe(0);
   });
 
-  it("refuses to send a token file anyone else can read", async () => {
-    const built = harness({
-      files: { [tokenPath]: { text: PROJECT_TOKEN, mode: 0o644 } },
-    });
-    await expect(push(command(), built.deps)).rejects.toThrow(
-      `${tokenPath} is mode 0o644; it must be 0600 or stricter`,
-    );
-    expect(built.sent()).toBe(0);
-  });
-
   it("wants a project, a token and a server before it sends anything", async () => {
     const noProject = harness({
       vars: { WAVES_PROJECT: undefined },
@@ -243,7 +233,7 @@ describe("the retry policy of a push", () => {
   it("waits for Retry-After when the server throttles it", async () => {
     const built = harness({
       script: [
-        reply(429, '{"message":"slow down"}', { "retry-after": "1" }),
+        reply(429, '{"error":"slow down"}', { "retry-after": "1" }),
         reply(200, ACCEPTED),
       ],
       stdin: lanesOnly("noisy\n"),
@@ -255,10 +245,26 @@ describe("the retry policy of a push", () => {
     expect(built.sent()).toBe(2);
   });
 
-  it("gives up after two throttles", async () => {
+  it("waits for an HTTP-date the server sent instead", async () => {
+    const built = harness({
+      script: [
+        reply(429, "", {
+          "retry-after": "Tue, 03 Feb 2026 04:05:09 GMT",
+        }),
+        reply(200, ACCEPTED),
+      ],
+      stdin: lanesOnly("noisy\n"),
+      files: { [tokenPath]: { text: PROJECT_TOKEN, mode: 0o600 } },
+    });
+
+    expect(await push(command(), built.deps)).toBe(0);
+    expect(built.waits).toEqual([3000]);
+  });
+
+  it("gives up after three throttles", async () => {
     const throttled = reply(429, "", { "retry-after": "1" });
     const built = harness({
-      script: [throttled, throttled, throttled],
+      script: [throttled, throttled, throttled, throttled],
       stdin: lanesOnly("noisy\n"),
       files: { [tokenPath]: { text: PROJECT_TOKEN, mode: 0o600 } },
     });
@@ -266,8 +272,22 @@ describe("the retry policy of a push", () => {
     await expect(push(command(), built.deps)).rejects.toThrow(
       "push failed: 429 Too Many Requests",
     );
-    expect(built.sent()).toBe(3);
-    expect(built.waits).toEqual([1000, 1000]);
+    expect(built.sent()).toBe(4);
+    expect(built.waits).toEqual([1000, 1000, 1000]);
+  });
+
+  it("never retries early when the server asks for longer than a minute", async () => {
+    const built = harness({
+      script: [reply(429, "", { "retry-after": "600" }), reply(200, ACCEPTED)],
+      stdin: lanesOnly("noisy\n"),
+      files: { [tokenPath]: { text: PROJECT_TOKEN, mode: 0o600 } },
+    });
+
+    await expect(push(command(), built.deps)).rejects.toThrow(
+      "push failed: 429 Too Many Requests; the server asked to wait 600s",
+    );
+    expect(built.sent()).toBe(1);
+    expect(built.waits).toEqual([]);
   });
 
   it("retries a 5xx once and then twice, with a backoff", async () => {
@@ -324,7 +344,7 @@ describe("the retry policy of a push", () => {
   it("never repeats a request the server refused", async () => {
     const built = harness({
       script: [
-        reply(403, '{"message":"another project\'s token"}'),
+        reply(403, '{"error":"another project\'s token"}'),
         reply(200, ACCEPTED),
       ],
       stdin: lanesOnly("noisy\n"),
@@ -333,6 +353,27 @@ describe("the retry policy of a push", () => {
 
     await expect(push(command(), built.deps)).rejects.toThrow(
       "push failed: 403 Forbidden\n  another project's token",
+    );
+    expect(built.sent()).toBe(1);
+    expect(built.waits).toEqual([]);
+  });
+
+  it("keeps a refusal whose body the connection cut short", async () => {
+    const built = harness({
+      script: [
+        reply(401, '{"error":"the project token was ref', {
+          "www-authenticate": 'Bearer realm="waves"',
+        }),
+        reply(200, ACCEPTED),
+      ],
+      stdin: lanesOnly("noisy\n"),
+      files: { [tokenPath]: { text: PROJECT_TOKEN, mode: 0o600 } },
+    });
+
+    // The status is the verdict; a half-read explanation is simply not there to
+    // print, and the refusal is not repeated.
+    await expect(push(command(), built.deps)).rejects.toThrow(
+      "push failed: 401 Unauthorized",
     );
     expect(built.sent()).toBe(1);
     expect(built.waits).toEqual([]);

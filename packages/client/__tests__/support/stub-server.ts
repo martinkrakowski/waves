@@ -6,20 +6,27 @@ import {
 } from "node:http";
 import { isProjectId, validateEnvelope } from "@hexagen-monaco/waves-contract";
 
+import { registerSecret } from "./harness.js";
+
 export const STUB_ADMIN_TOKEN = "waves-stub-admin-t0ken-1a2b3c";
+
+registerSecret(STUB_ADMIN_TOKEN);
 
 const MAX_BODY_BYTES = 1_048_576;
 const JSON_TYPE = "application/json";
 const RETRY_AFTER_SECONDS = "1";
+const CHALLENGE = 'Bearer realm="waves"';
 const STUB_CLOCK = Date.parse("2026-02-03T00:00:00.000Z");
 const CLOCK_TOLERANCE_MS = 400 * 24 * 60 * 60 * 1000;
 
 export interface StubRequest {
   readonly method: string;
   readonly path: string;
-  readonly body: string;
+  /** Filled in only for a request the stub was willing to read to the end. */
+  body: string;
   readonly authorization: string | undefined;
   readonly contentType: string | undefined;
+  readonly expect: string | undefined;
   readonly origin: string | undefined;
 }
 
@@ -28,14 +35,9 @@ export interface Stub {
   readonly requests: StubRequest[];
   /** The token of a project, once it has been registered. */
   tokenOf(project: string): string | undefined;
+  /** The requests that carried a body, which is every accepted push. */
+  bodies(): readonly string[];
   stop(): Promise<void>;
-}
-
-interface Recorded {
-  readonly body: string;
-  readonly headers: Record<string, string | string[] | undefined>;
-  readonly method: string;
-  readonly url: URL;
 }
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -58,18 +60,34 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
-function send(res: ServerResponse, status: number, payload: unknown): void {
+/** `{error}` for everything but a 422, which the contract answers with pointers. */
+function send(
+  res: ServerResponse,
+  status: number,
+  error: string,
+  headers: Record<string, string> = {},
+): void {
+  sendJson(res, status, { error }, headers);
+}
+
+function sendJson(
+  res: ServerResponse,
+  status: number,
+  payload: unknown,
+  headers: Record<string, string> = {},
+): void {
   const body = Buffer.from(JSON.stringify(payload));
   res.writeHead(status, {
     "Content-Type": JSON_TYPE,
     "Content-Length": String(body.byteLength),
+    ...headers,
   });
   res.end(body);
 }
 
-function bearer(headers: Recorded["headers"]): string | undefined {
-  const header = headers.authorization;
-  if (typeof header !== "string" || !header.startsWith("Bearer ")) {
+function bearer(req: IncomingMessage): string | undefined {
+  const header = req.headers.authorization;
+  if (header === undefined || !header.startsWith("Bearer ")) {
     return undefined;
   }
   return header.slice("Bearer ".length);
@@ -77,9 +95,11 @@ function bearer(headers: Recorded["headers"]): string | undefined {
 
 /**
  * A stand-in for the server the other lane is building: the three endpoints the
- * client calls, the status codes the brief lists, and one rule the client cannot
- * check for itself — a snapshot whose `generatedAt` is nowhere near the server's
- * clock is refused, because the status view would show a wave in the future.
+ * client calls, the shapes it really answers with, and the two behaviours that
+ * shape the client — a refusal on the headers alone, which never reads the
+ * snapshot, and one rule the client cannot check for itself, since a snapshot
+ * whose `generatedAt` is nowhere near the server's clock is refused because the
+ * status view would show a wave in the future.
  */
 export async function startStub(): Promise<Stub> {
   const projects = new Map<string, string>();
@@ -88,35 +108,34 @@ export async function startStub(): Promise<Stub> {
   const requests: StubRequest[] = [];
   let issued = 0;
 
+  const record = (req: IncomingMessage): StubRequest => {
+    const url = new URL(req.url ?? "/", "http://127.0.0.1");
+    const entry: StubRequest = {
+      method: req.method ?? "GET",
+      path: `${url.pathname}${url.search}`,
+      body: "",
+      authorization: req.headers.authorization,
+      contentType: req.headers["content-type"],
+      expect: req.headers.expect,
+      origin: req.headers.origin,
+    };
+    requests.push(entry);
+    return entry;
+  };
+
   const handle = async (
     req: IncomingMessage,
     res: ServerResponse,
   ): Promise<void> => {
-    const url = new URL(req.url ?? "/", "http://127.0.0.1");
-    const body = await readBody(req);
-    const recorded: Recorded = {
-      body,
-      headers: req.headers,
-      method: req.method ?? "GET",
-      url,
-    };
-    requests.push({
-      method: recorded.method,
-      path: `${url.pathname}${url.search}`,
-      body,
-      authorization: req.headers.authorization,
-      contentType: req.headers["content-type"],
-      origin: req.headers.origin,
-    });
-
-    const parts = url.pathname.split("/");
+    const entry = record(req);
+    const parts = (req.url ?? "/").split("?")[0]?.split("/") ?? [];
     if (
       parts.length === 4 &&
       parts[1] === "api" &&
       parts[2] === "v1" &&
       parts[3] === "projects"
     ) {
-      registerProject(recorded, res);
+      await registerProject(req, res);
       return;
     }
     if (
@@ -126,116 +145,127 @@ export async function startStub(): Promise<Stub> {
       parts[3] === "projects" &&
       parts[5] === "waves"
     ) {
-      wave(recorded, res, parts[4] ?? "", parts[6] ?? "");
+      await wave(req, res, entry, parts[4] ?? "", parts[6] ?? "");
       return;
     }
-    send(res, 404, { message: "no such route" });
+    send(res, 404, "no such route");
   };
 
-  function registerProject(recorded: Recorded, res: ServerResponse): void {
-    if (recorded.method !== "POST") {
-      send(res, 405, { message: "use POST" });
+  async function registerProject(
+    req: IncomingMessage,
+    res: ServerResponse,
+  ): Promise<void> {
+    if (req.method !== "POST") {
+      send(res, 405, "use POST");
       return;
     }
-    if (bearer(recorded.headers) !== STUB_ADMIN_TOKEN) {
-      send(res, 401, { message: "the admin token was refused" });
+    if (bearer(req) !== STUB_ADMIN_TOKEN) {
+      send(res, 401, "the admin token was refused", {
+        "WWW-Authenticate": CHALLENGE,
+      });
       return;
     }
+    if (req.headers.expect === "100-continue") {
+      res.writeContinue();
+    }
+    const text = await readBody(req);
     let request: { readonly id?: unknown; readonly name?: unknown };
     try {
-      request = JSON.parse(recorded.body) as typeof request;
+      request = JSON.parse(text) as typeof request;
     } catch {
-      send(res, 400, { message: "the body is not JSON" });
+      send(res, 400, "the body is not JSON");
       return;
     }
     const id = typeof request.id === "string" ? request.id : "";
     if (!isProjectId(id) || typeof request.name !== "string") {
-      send(res, 422, {
-        errors: [
-          {
-            path: "/id",
-            message: "expected 1 to 63 characters of a-z, 0-9 and -",
-          },
-        ],
-      });
+      send(res, 422, "the project is not one the server will store");
       return;
     }
-    const rotate = recorded.url.searchParams.get("rotate") === "1";
+    const rotate = (req.url ?? "").includes("rotate=1");
     if (projects.has(id) && !rotate) {
-      send(res, 409, { message: "the project is already registered" });
+      send(res, 409, "the project is already registered");
       return;
     }
     issued += 1;
-    const token = `waves-stub-project-t0ken-${id}-${issued}`;
+    const token = `waves-stub-project-t0ken-${issued}`;
+    registerSecret(token);
     projects.set(id, token);
-    send(res, 201, { id, token });
+    sendJson(res, 201, { id, token });
   }
 
-  function wave(
-    recorded: Recorded,
+  async function wave(
+    req: IncomingMessage,
     res: ServerResponse,
+    entry: StubRequest,
     project: string,
     waveId: string,
-  ): void {
-    if (recorded.method === "DELETE") {
-      const key = `${project}/${waveId}`;
-      if (!stored.delete(key)) {
-        send(res, 404, { message: "no such wave" });
+  ): Promise<void> {
+    if (req.method === "DELETE") {
+      if (bearer(req) !== projects.get(project)) {
+        send(res, 401, "the project token was refused", {
+          "WWW-Authenticate": CHALLENGE,
+        });
+        return;
+      }
+      if (!stored.delete(`${project}/${waveId}`)) {
+        send(res, 404, "no such wave");
         return;
       }
       res.writeHead(204).end();
       return;
     }
-    if (recorded.method !== "PUT") {
-      send(res, 405, { message: "use PUT" });
+    if (req.method !== "PUT") {
+      send(res, 405, "use PUT");
       return;
     }
-    if (recorded.headers.origin !== undefined) {
-      send(res, 403, { message: "a browser must not push a wave" });
+    // Everything from here to the body is a judgement about the headers alone.
+    // A refusal answered here never reads the snapshot, whatever its size.
+    if (entry.origin !== undefined) {
+      send(res, 403, "a browser must not push a wave");
       return;
     }
-    const token = bearer(recorded.headers);
+    const token = bearer(req);
     if (token === undefined || !projects.has(project)) {
-      send(res, 401, { message: "the project token was refused" });
+      send(res, 401, "the project token was refused", {
+        "WWW-Authenticate": CHALLENGE,
+      });
       return;
     }
     if (projects.get(project) !== token) {
-      send(res, 403, { message: "that token belongs to another project" });
+      send(res, 403, "that token belongs to another project");
       return;
     }
-    if (
-      recorded.headers["content-type"] !== `${JSON_TYPE}; charset=utf-8` &&
-      recorded.headers["content-type"] !== JSON_TYPE
-    ) {
-      send(res, 415, { message: "expected application/json" });
+    if (entry.contentType !== JSON_TYPE) {
+      send(res, 415, "expected application/json");
       return;
     }
     const key = `${project}/${waveId}`;
     if (!throttled.has(key)) {
       throttled.add(key);
-      res
-        .writeHead(429, {
-          "Content-Type": JSON_TYPE,
-          "Retry-After": RETRY_AFTER_SECONDS,
-        })
-        .end(JSON.stringify({ message: "slow down" }));
+      send(res, 429, "slow down", { "Retry-After": RETRY_AFTER_SECONDS });
       return;
     }
+    if (entry.expect === "100-continue") {
+      res.writeContinue();
+    }
+    entry.body = await readBody(req);
     let envelope: unknown;
     try {
-      envelope = JSON.parse(recorded.body);
+      envelope = JSON.parse(entry.body);
     } catch {
-      send(res, 400, { message: "the body is not JSON" });
+      send(res, 400, "the body is not JSON");
       return;
     }
     const validated = validateEnvelope(envelope);
     if (!validated.ok) {
-      send(res, 422, { errors: validated.errors });
+      sendJson(res, 422, { errors: validated.errors });
       return;
     }
-    const generatedAt = Date.parse(validated.value.generatedAt);
-    if (Math.abs(generatedAt - STUB_CLOCK) > CLOCK_TOLERANCE_MS) {
-      send(res, 422, {
+    if (
+      Math.abs(Date.parse(validated.value.generatedAt) - STUB_CLOCK) >
+      CLOCK_TOLERANCE_MS
+    ) {
+      sendJson(res, 422, {
         errors: [
           { path: "/generatedAt", message: "too far from the server clock" },
         ],
@@ -243,16 +273,21 @@ export async function startStub(): Promise<Stub> {
       return;
     }
     stored.add(key);
-    send(res, 200, { receivedAt: new Date().toISOString() });
+    sendJson(res, 200, { receivedAt: new Date().toISOString() });
   }
 
-  const server: Server = createServer((req, res) => {
+  const dispatch = (req: IncomingMessage, res: ServerResponse): void => {
     handle(req, res).catch(() => {
       if (!res.headersSent) {
-        send(res, 500, { message: "the stub failed" });
+        send(res, 500, "the stub failed");
       }
     });
-  });
+  };
+
+  const server: Server = createServer(dispatch);
+  // A request that expects a decision on its headers never becomes a request
+  // until the stub has answered it.
+  server.on("checkContinue", dispatch);
   await new Promise<void>((resolve) => {
     server.listen(0, "127.0.0.1", resolve);
   });
@@ -264,6 +299,8 @@ export async function startStub(): Promise<Stub> {
     origin: `http://127.0.0.1:${address.port}`,
     requests,
     tokenOf: (project: string) => projects.get(project),
+    bodies: () =>
+      requests.filter((entry) => entry.body !== "").map((entry) => entry.body),
     stop: () =>
       new Promise<void>((resolve, reject) => {
         server.close((error) => {

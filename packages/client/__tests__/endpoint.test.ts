@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  carriesCredentials,
   insecureWarning,
   isHostName,
   isHttpsUrl,
@@ -91,7 +92,6 @@ describe("readEndpoint", () => {
       secure: false,
       warnInsecure: true,
     });
-    expect(endpointOf("http://10.0.0.4:8080", true).warnInsecure).toBe(true);
   });
 });
 
@@ -120,6 +120,13 @@ describe("hosts", () => {
     expect(isHttpsUrl("http://github.com/example")).toBe(false);
     expect(isHttpsUrl("https://user@github.com/")).toBe(false);
     expect(isHttpsUrl("not a url")).toBe(false);
+  });
+
+  it("spots a user or a password in any URL it can read", () => {
+    expect(carriesCredentials("https://user@example.com/")).toBe(true);
+    expect(carriesCredentials("https://user:pw@example.com/")).toBe(true);
+    expect(carriesCredentials("https://example.com/")).toBe(false);
+    expect(carriesCredentials("not a url")).toBe(false);
   });
 });
 

@@ -18,16 +18,34 @@ export interface Sleeper {
   sleep(ms: number): Promise<void>;
 }
 
+/**
+ * A file the client will not read or write, with the reason already phrased for
+ * the user: a link where a file was expected, a directory someone else can
+ * reach, a mode that is too loose, or an error the kernel named. The entrypoint
+ * turns one of these into exit 2, because every one of them is something the
+ * user can fix with `chmod`, `mv` or a path.
+ */
+export class FileRefusal extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "FileRefusal";
+  }
+}
+
 export interface FileRead {
   readonly text: string;
-  /** The permission bits `stat` reported, so a secret file can be checked. */
+  /** The permission bits `fstat` reported on the open descriptor. */
   readonly mode: number;
 }
 
 export interface Files {
   /** The contents of a file the project gave us, or `undefined` if it is not there. */
   readText(path: string): Promise<string | undefined>;
-  /** A file holding a secret: its text and its mode. */
+  /**
+   * A file holding a secret. It is opened without following a link and checked
+   * before a byte is read, so `readSecret` throws a `FileRefusal` rather than
+   * returning the contents of whatever a link pointed at.
+   */
   readSecret(path: string): Promise<FileRead | undefined>;
   exists(path: string): Promise<boolean>;
   /** Writes a secret so that no window exists in which it is loose on disk. */
@@ -58,10 +76,18 @@ export interface HttpReply {
  * decides whether it is worth repeating, so it is part of the answer rather
  * than an exception: a message that crossed a socket can never carry a token,
  * and the retry policy gets to see it.
+ *
+ * `beforeBody` says the request body was never written. That is the difference
+ * between a POST that could not have minted anything and one whose token the
+ * server may have issued into a socket that then died.
  */
 export type TransportOutcome =
   | { readonly kind: "reply"; readonly reply: HttpReply }
-  | { readonly kind: "network"; readonly message: string };
+  | {
+      readonly kind: "network";
+      readonly message: string;
+      readonly beforeBody: boolean;
+    };
 
 export interface Transport {
   send(request: HttpRequest): Promise<TransportOutcome>;

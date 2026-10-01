@@ -19,12 +19,42 @@ import type {
  */
 export const ADMIN_TOKEN = "waves-admin-t0ken-4f19c2";
 export const PROJECT_TOKEN = "waves-project-t0ken-8b7e31";
-export const ROTATED_TOKEN = "waves-project-t0ken-c31a05";
 export const CONFIG_DIR = "/home/waves/.config/waves";
 export const PROJECT = "waves-demo";
 export const WAVE = "wv5";
 export const NOW = Date.parse("2026-02-03T04:05:06.789Z");
 export const GENERATED_AT = "2026-02-03T04:05:06.789Z";
+
+/**
+ * Everything the suite printed, and every secret it knows about. The leak guard
+ * reads both after each test, so a test does not have to remember to check: a
+ * line that mentions a secret fails whichever test wrote it.
+ */
+const printed: string[] = [];
+const secrets = new Set<string>([ADMIN_TOKEN, PROJECT_TOKEN]);
+
+/**
+ * A secret is a secret whether or not a test named it: the tokens this package
+ * issues or reads all carry the same deliberate misspelling, so a line that
+ * contains one is caught even if no test registered it.
+ */
+export const SECRET_SHAPE = /t0ken[^\s"\\]*/;
+
+export function registerSecret(secret: string): void {
+  secrets.add(secret);
+}
+
+export function knownSecrets(): readonly string[] {
+  return [...secrets];
+}
+
+export function printedLines(): readonly string[] {
+  return printed;
+}
+
+export function forgetPrinted(): void {
+  printed.length = 0;
+}
 
 export interface Recorder {
   readonly io: CliIo;
@@ -37,15 +67,16 @@ export interface Recorder {
 export function recorder(): Recorder {
   const out: string[] = [];
   const err: string[] = [];
+  const record = (line: string): void => {
+    out.push(line);
+    printed.push(line);
+  };
+  const report = (line: string): void => {
+    err.push(line);
+    printed.push(line);
+  };
   return {
-    io: {
-      out: (line) => {
-        out.push(line);
-      },
-      err: (line) => {
-        err.push(line);
-      },
-    },
+    io: { out: record, err: report },
     out,
     err,
     lines: () => [...out, ...err],
@@ -98,8 +129,8 @@ export function reply(
   return { kind: "reply", reply: { status, headers, body } };
 }
 
-export function network(message: string): TransportOutcome {
-  return { kind: "network", message };
+export function network(message: string, beforeBody = true): TransportOutcome {
+  return { kind: "network", message, beforeBody };
 }
 
 export interface ScriptedTransport {

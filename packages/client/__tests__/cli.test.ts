@@ -14,6 +14,7 @@ afterEach(() => {
   Object.assign(process.env, originalEnv);
   vi.restoreAllMocks();
   vi.resetModules();
+  vi.doUnmock("../src/index.js");
 });
 
 interface Written {
@@ -62,12 +63,33 @@ describe("cli", () => {
     expect(process.exitCode).toBe(0);
   });
 
-  it("says nothing about a crash", async () => {
-    process.env.WAVES_URL = "https://127.0.0.1:1";
+  it("explains a certificate authority it cannot read, and exits 2", async () => {
+    process.env.WAVES_URL = "https://waves.example.com";
     process.env.WAVES_PROJECT = "waves-demo";
-    // A directory cannot be read as a certificate authority, and that is not a
-    // refusal the client knows how to explain.
-    process.env.WAVES_CA_FILE = "/proc/self";
+    process.env.WAVES_CA_FILE = "/nowhere/ca.pem";
+
+    const written = await invoke([
+      "push",
+      "--wave",
+      "wv5",
+      "--file",
+      "/nowhere/status.json",
+    ]);
+
+    expect(written.error).toEqual([
+      "waves push: WAVES_CA_FILE /nowhere/ca.pem cannot be read",
+    ]);
+    expect(written.log).toEqual([]);
+    expect(process.exitCode).toBe(2);
+  });
+
+  it("says nothing about a crash", async () => {
+    // A bug in this package, standing in for every one of them: the message
+    // could carry anything, so not even the name is printed.
+    vi.doMock("../src/index.js", () => ({
+      main: () => Promise.reject(new Error("boom")),
+    }));
+
     const written = await invoke(["push", "--wave", "wv5", "--stdin"]);
 
     expect(written.error).toEqual(["waves: unexpected failure"]);

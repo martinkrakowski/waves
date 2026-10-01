@@ -86,22 +86,47 @@ describe("delete", () => {
   });
 
   it("reports a refusal it cannot explain", async () => {
+    const broken = reply(500, "not json at all");
     const built = harness({
-      script: [reply(500, "not json at all")],
+      script: [broken, broken, broken],
       files: { [tokenPath]: { text: PROJECT_TOKEN, mode: 0o600 } },
     });
     await expect(remove(command(), built.deps)).rejects.toThrow(
       "delete failed: 500 Internal Server Error",
     );
+    expect(built.sent()).toBe(3);
   });
 
-  it("reports a network failure without retrying", async () => {
+  it("reports a network failure after two retries", async () => {
+    const lost = network("socket hang up");
     const built = harness({
-      script: [network("socket hang up"), reply(204)],
+      script: [lost, lost, lost],
       files: { [tokenPath]: { text: PROJECT_TOKEN, mode: 0o600 } },
     });
     await expect(remove(command(), built.deps)).rejects.toThrow(
       "delete failed: socket hang up",
+    );
+    expect(built.sent()).toBe(3);
+    expect(built.waits).toEqual([1000, 2000]);
+  });
+
+  it("repeats a deletion after a 5xx, because a deletion is idempotent", async () => {
+    const built = harness({
+      script: [reply(503, ""), reply(204)],
+      files: { [tokenPath]: { text: PROJECT_TOKEN, mode: 0o600 } },
+    });
+    expect(await remove(command(), built.deps)).toBe(0);
+    expect(built.sent()).toBe(2);
+    expect(built.waits).toEqual([1000]);
+  });
+
+  it("does not repeat a deletion the server refused", async () => {
+    const built = harness({
+      script: [reply(403, '{"error":"another project\'s token"}'), reply(204)],
+      files: { [tokenPath]: { text: PROJECT_TOKEN, mode: 0o600 } },
+    });
+    await expect(remove(command(), built.deps)).rejects.toThrow(
+      "delete failed: 403 Forbidden\n  another project's token",
     );
     expect(built.sent()).toBe(1);
     expect(built.waits).toEqual([]);

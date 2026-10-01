@@ -7,7 +7,7 @@ import {
   readReceivedAt,
   serverFailure,
 } from "../domain/reply.js";
-import { retryDelay } from "../domain/retry.js";
+import { decideRetry } from "../domain/retry.js";
 import { buildEnvelope, formatTimestamp, lanesOf } from "../domain/envelope.js";
 import type { Command, InputSource } from "../domain/args.js";
 import { EXIT_OK, Failure, UsageError } from "./errors.js";
@@ -21,7 +21,9 @@ type PushCommand = Extract<Command, { readonly kind: "push" }>;
  *
  * The envelope is built here and validated locally before a byte goes out, and
  * what is sent is the contract's own normalised value rather than the draft —
- * so the snapshot on the server is the snapshot that passed validation.
+ * so the snapshot on the server is the snapshot that passed validation. A push
+ * is idempotent, so a request that got no answer at all is worth repeating; a
+ * server that refused one is not, however it refused.
  */
 export async function push(
   command: PushCommand,
@@ -54,14 +56,15 @@ export async function push(
     bearer: token,
     body: JSON.stringify(validated.value),
   } as const;
-  for (let retry = 0; ; retry += 1) {
+
+  for (let retries = 0; ; retries += 1) {
     const outcome = await transport.send(request);
     if (outcome.kind === "network") {
-      const wait = retryDelay({ kind: "network" }, retry);
-      if (wait === undefined) {
+      const decision = decideRetry({ kind: "network" }, retries);
+      if (decision.kind !== "wait") {
         throw new Failure(`push failed: ${outcome.message}`);
       }
-      await deps.sleeper.sleep(wait);
+      await deps.sleeper.sleep(decision.ms);
       continue;
     }
     const { status, headers, body } = outcome.reply;
@@ -73,24 +76,28 @@ export async function push(
       deps.out(`pushed ${project}/${command.wave} at ${receivedAt}`);
       return EXIT_OK;
     }
-    if (status === 429) {
-      const wait = retryDelay(
-        { kind: "throttled", retryAfter: headers["retry-after"] },
-        retry,
+    const throttled = status === 429;
+    const decision = decideRetry(
+      throttled
+        ? {
+            kind: "throttled",
+            retryAfter: headers["retry-after"],
+            now: deps.clock.now(),
+          }
+        : { kind: status >= 500 ? "server" : "refused" },
+      retries,
+    );
+    if (decision.kind === "tooLong") {
+      throw new Failure(
+        `push failed: 429 Too Many Requests; the server asked to wait ${decision.seconds}s`,
       );
-      if (wait === undefined) {
-        throw new Failure("push failed: 429 Too Many Requests");
-      }
-      await deps.sleeper.sleep(wait);
+    }
+    if (decision.kind === "wait") {
+      await deps.sleeper.sleep(decision.ms);
       continue;
     }
-    const wait = retryDelay(
-      { kind: status >= 500 ? "server" : "refused" },
-      retry,
-    );
-    if (wait !== undefined) {
-      await deps.sleeper.sleep(wait);
-      continue;
+    if (throttled) {
+      throw new Failure("push failed: 429 Too Many Requests");
     }
     throw new Failure(
       `push failed: ${status} ${reasonPhrase(status)}${serverFailure(body)}`,

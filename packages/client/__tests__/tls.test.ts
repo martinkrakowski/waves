@@ -86,6 +86,13 @@ beforeAll(async () => {
   configDir = join(directory, "config");
   const material = await certificateAuthority(directory);
   if (material === undefined) {
+    // Where this suite cannot make a certificate, it skips; in CI a skipped
+    // test is a hole in the gate, so there it fails instead.
+    if (process.env["CI"] !== undefined) {
+      throw new Error(
+        "openssl is needed to test the pinned certificate authority",
+      );
+    }
     return;
   }
   server = createServer(

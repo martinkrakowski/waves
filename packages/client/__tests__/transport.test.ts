@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import type { HttpRequest } from "../src/application/ports.js";
 import {
+  CONTINUE_WAIT_MS,
   buildOptions,
   createTransport,
   MAX_BODY_BYTES,
@@ -13,22 +14,19 @@ import {
 /** A request object that is only as much of one as the transport touches. */
 class FakeRequest extends EventEmitter {
   readonly bodies: (string | undefined)[] = [];
+  readonly flushed: number[] = [];
   destroyed = false;
-  timeoutMs: number | undefined;
-  onTimeout: (() => void) | undefined;
 
-  setTimeout(ms: number, onTimeout: () => void): this {
-    this.timeoutMs = ms;
-    this.onTimeout = onTimeout;
-    return this;
+  end(body?: string): void {
+    this.bodies.push(body);
+  }
+
+  flushHeaders(): void {
+    this.flushed.push(this.bodies.length);
   }
 
   destroy(): void {
     this.destroyed = true;
-  }
-
-  end(body?: string): void {
-    this.bodies.push(body);
   }
 }
 
@@ -39,7 +37,7 @@ class FakeResponse extends EventEmitter {
   constructor(
     readonly statusCode: number | undefined,
     private readonly chunks: readonly Buffer[],
-    readonly headers: Record<string, string | string[] | undefined>,
+    readonly headers: Record<string, string | string[] | undefined> = {},
   ) {
     super();
   }
@@ -56,56 +54,121 @@ class FakeResponse extends EventEmitter {
   }
 }
 
-type Starter = Parameters<typeof createTransport>[1];
+type Starter = NonNullable<Parameters<typeof createTransport>[1]>;
+type Callback = Parameters<Starter>[1];
 
-/** A peer that answers once the transport has attached its listeners. */
-function answering(
-  response: FakeResponse,
-  peer: FakeRequest = new FakeRequest(),
-): Starter {
-  return (_options, callback) => {
-    queueMicrotask(() => {
-      callback(response as unknown as IncomingMessage);
-      response.answer();
-    });
-    return peer as unknown as ClientRequest;
-  };
-}
+const CLOSED = 38471;
 
 function request(overrides: Partial<HttpRequest> = {}): HttpRequest {
   return {
     method: "PUT",
     url: "https://waves.example.com/api/v1/projects/waves-demo/waves/wv5",
-    bearer: "project-token",
+    bearer: "project-t0ken",
     body: '{"lanes":[]}',
     ...overrides,
   };
+}
+
+/** A peer that behaves the way the exchange needs to be driven. */
+interface Peer {
+  readonly start: Starter;
+  readonly peer: FakeRequest;
+  /** The response the peer will hand over once the headers are out. */
+  respond(response: FakeResponse): void;
+  /** A response that arrives and then finishes on its own. */
+  respondWith(response: FakeResponse): void;
+}
+
+function peer(): Peer {
+  const fake = new FakeRequest();
+  let callback: Callback | undefined;
+  let answer: (() => void) | undefined;
+  const start: Starter = (_options, received) => {
+    callback = received;
+    queueMicrotask(() => {
+      answer?.();
+    });
+    return fake as unknown as ClientRequest;
+  };
+  const respond = (response: FakeResponse, finish: boolean): void => {
+    answer = () => {
+      callback?.(response as unknown as IncomingMessage);
+      if (finish) {
+        response.answer();
+      }
+    };
+  };
+  return {
+    start,
+    peer: fake,
+    respond: (response) => {
+      respond(response, false);
+    },
+    respondWith: (response) => {
+      respond(response, true);
+    },
+  };
+}
+
+/** A peer that takes the headers and then says nothing at all. */
+function deafPeer(): Peer {
+  const fake = new FakeRequest();
+  return {
+    start: () => fake as unknown as ClientRequest,
+    peer: fake,
+    respond: () => undefined,
+    respondWith: () => undefined,
+  };
+}
+
+/** A transport over a scripted peer, with a deadline that never fires. */
+function transportOver(scripted: Peer, origin = "https://waves.example.com") {
+  return createTransport(
+    { origin },
+    scripted.start,
+    () => new AbortController().signal,
+  );
 }
 
 describe("buildOptions", () => {
   const url = new URL(
     "https://waves.example.com:8443/api/v1/projects?rotate=1",
   );
+  const deadline = new AbortController().signal;
 
   it("verifies TLS, and pins the authority when one was configured", () => {
     expect(
-      buildOptions(url, "POST", "admin-token", '{"id":"a"}', "PEM"),
+      buildOptions(url, "POST", "admin-t0ken", '{"id":"a"}', "PEM", deadline),
     ).toMatchObject({ rejectUnauthorized: true, ca: "PEM" });
   });
 
   it("leaves the system store in charge when no authority was configured", () => {
-    const options = buildOptions(url, "POST", "admin-token", "{}", undefined);
+    const options = buildOptions(
+      url,
+      "POST",
+      "admin-t0ken",
+      "{}",
+      undefined,
+      deadline,
+    );
     expect(options.ca).toBeUndefined();
     expect(options.rejectUnauthorized).toBe(true);
+  });
+
+  it("bounds the request in wall-clock time", () => {
+    expect(
+      buildOptions(url, "DELETE", "t", undefined, undefined, deadline).signal,
+    ).toBe(deadline);
   });
 
   it("describes the request, and sends no Origin", () => {
     const options = buildOptions(
       url,
       "POST",
-      "admin-token",
+      "admin-t0ken",
       '{"id":"a"}',
       undefined,
+      deadline,
     );
     expect(options.protocol).toBe("https:");
     expect(options.method).toBe("POST");
@@ -114,20 +177,20 @@ describe("buildOptions", () => {
     expect(options.path).toBe("/api/v1/projects?rotate=1");
     expect(options.headers).toEqual({
       accept: "application/json",
-      authorization: "Bearer admin-token",
+      authorization: "Bearer admin-t0ken",
       "content-type": "application/json",
       "content-length": "10",
+      expect: "100-continue",
     });
     expect(Object.keys(options.headers ?? {})).not.toContain("origin");
   });
 
-  it("sends no body, and so no type or length, for a deletion", () => {
+  it("sends no body, no type and no expectation for a deletion", () => {
     expect(
-      buildOptions(url, "DELETE", "project-token", undefined, undefined)
-        .headers,
+      buildOptions(url, "DELETE", "t", undefined, undefined, deadline).headers,
     ).toEqual({
       accept: "application/json",
-      authorization: "Bearer project-token",
+      authorization: "Bearer t",
     });
   });
 
@@ -139,6 +202,7 @@ describe("buildOptions", () => {
         "t",
         undefined,
         undefined,
+        deadline,
       ),
     ).toMatchObject({ hostname: "::1", port: undefined, protocol: "http:" });
   });
@@ -150,28 +214,85 @@ describe("buildOptions", () => {
       "t",
       "{}",
       undefined,
+      deadline,
     );
     expect(Object.hasOwn(options, "rejectUnauthorized")).toBe(false);
   });
 });
 
-describe("createTransport", () => {
+describe("the expectation, and the body that waits for it", () => {
+  it("writes the body once the server has agreed to take it", async () => {
+    const scripted = peer();
+    scripted.respondWith(new FakeResponse(200, [Buffer.from("{}")]));
+    const transport = transportOver(scripted);
+
+    const pending = transport.send(request());
+    expect(scripted.peer.flushed).toHaveLength(1);
+    expect(scripted.peer.bodies).toEqual([]);
+
+    scripted.peer.emit("continue");
+    expect(scripted.peer.bodies).toEqual(['{"lanes":[]}']);
+
+    expect(await pending).toMatchObject({ kind: "reply" });
+  });
+
+  it("writes the body anyway when the server never answers the expectation", async () => {
+    const scripted = deafPeer();
+    const transport = transportOver(scripted);
+
+    transport.send(request());
+    expect(scripted.peer.flushed).toHaveLength(1);
+    expect(scripted.peer.bodies).toEqual([]);
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, CONTINUE_WAIT_MS + 100);
+    });
+    expect(scripted.peer.bodies).toEqual(['{"lanes":[]}']);
+
+    // A late agreement does not send it a second time.
+    scripted.peer.emit("continue");
+    expect(scripted.peer.bodies).toEqual(['{"lanes":[]}']);
+  });
+
+  it("never writes the body when the answer arrives first", async () => {
+    const scripted = peer();
+    scripted.respondWith(
+      new FakeResponse(401, [Buffer.from('{"error":"refused"}')]),
+    );
+    const transport = transportOver(scripted);
+
+    const outcome = await transport.send(request());
+
+    expect(outcome).toEqual({
+      kind: "reply",
+      reply: {
+        status: 401,
+        headers: {},
+        body: '{"error":"refused"}',
+      },
+    });
+    expect(scripted.peer.bodies).toEqual([]);
+    expect(scripted.peer.destroyed).toBe(true);
+  });
+
   it("answers with the status, the headers and the body of a reply", async () => {
-    const transport = createTransport(
-      { origin: "https://waves.example.com" },
-      answering(
-        new FakeResponse(
-          200,
-          [Buffer.from('{"received'), Buffer.from('At":1}')],
-          {
-            "content-type": "application/json",
-            "set-cookie": ["a=1", "b=2"],
-            date: undefined,
-          },
-        ),
+    const scripted = peer();
+    scripted.respondWith(
+      new FakeResponse(
+        200,
+        [Buffer.from('{"received'), Buffer.from('At":1}')],
+        {
+          "content-type": "application/json",
+          "set-cookie": ["a=1", "b=2"],
+          date: undefined,
+        },
       ),
     );
-    expect(await transport.send(request())).toEqual({
+    const transport = transportOver(scripted);
+
+    const pending = transport.send(request());
+    scripted.peer.emit("continue");
+    expect(await pending).toEqual({
       kind: "reply",
       reply: {
         status: 200,
@@ -184,52 +305,95 @@ describe("createTransport", () => {
     });
   });
 
-  it("announces an insecurely allowed host on every request", async () => {
-    let warnings = 0;
-    const transport = createTransport(
-      {
-        origin: "http://10.0.0.4:8080",
-        warnInsecure: () => {
-          warnings += 1;
-        },
-      },
-      answering(new FakeResponse(204, [], {})),
+  it("sends a deletion with no body and no waiting", async () => {
+    const scripted = peer();
+    scripted.respondWith(new FakeResponse(204, [], {}));
+    const transport = transportOver(scripted);
+
+    const pending = transport.send(
+      request({ method: "DELETE", body: undefined }),
     );
-    const insecure = request({
-      url: "http://10.0.0.4:8080/api/v1/projects",
+    expect(scripted.peer.bodies).toEqual([undefined]);
+    expect(scripted.peer.flushed).toEqual([]);
+    expect(await pending).toMatchObject({ kind: "reply" });
+  });
+});
+
+describe("a status that arrived is a verdict", () => {
+  it("keeps a refusal whose body was cut short, and does not retry it", async () => {
+    const response = new FakeResponse(401, []);
+    const scripted = peer();
+    scripted.respond(response);
+    const transport = transportOver(scripted);
+
+    const pending = transport.send(request());
+    scripted.peer.emit("continue");
+    await Promise.resolve();
+    response.emit("data", Buffer.from('{"error":"the project'));
+    scripted.peer.emit("error", new Error("read ECONNRESET"));
+
+    expect(await pending).toEqual({
+      kind: "reply",
+      reply: {
+        status: 401,
+        headers: {},
+        body: '{"error":"the project',
+      },
     });
-    await transport.send(insecure);
-    await transport.send(insecure);
-    expect(warnings).toBe(2);
   });
 
-  it("says nothing when there is no warning to give", async () => {
-    const transport = createTransport(
-      { origin: "http://127.0.0.1:8080" },
-      answering(new FakeResponse(200, [Buffer.from("{}")], {})),
-    );
-    expect(
-      await transport.send(
-        request({ url: "http://127.0.0.1:8080/api/v1/projects" }),
-      ),
-    ).toMatchObject({ kind: "reply" });
+  it("keeps a refusal whose response stream failed", async () => {
+    const response = new FakeResponse(422, [], {});
+    const scripted = peer();
+    scripted.respond(response);
+    const transport = transportOver(scripted);
+
+    const pending = transport.send(request());
+    scripted.peer.emit("continue");
+    await Promise.resolve();
+    response.emit("error", new Error("aborted"));
+
+    expect(await pending).toMatchObject({
+      kind: "reply",
+      reply: { status: 422 },
+    });
   });
 
-  it("reports a socket error as an answer that never came", async () => {
-    const peer = new FakeRequest();
-    const transport = createTransport(
-      { origin: "https://waves.example.com" },
-      () => {
-        queueMicrotask(() => {
-          peer.emit("error", new Error("connect ECONNREFUSED"));
-        });
-        return peer as unknown as ClientRequest;
-      },
-    );
-    expect(await transport.send(request())).toEqual({
+  it("treats a success whose body was cut short as unanswered", async () => {
+    const response = new FakeResponse(200, []);
+    const scripted = peer();
+    scripted.respond(response);
+    const transport = transportOver(scripted);
+
+    const pending = transport.send(request());
+    scripted.peer.emit("continue");
+    await Promise.resolve();
+    response.emit("data", Buffer.from('{"received'));
+    scripted.peer.emit("error", new Error("read ECONNRESET"));
+
+    expect(await pending).toEqual({
       kind: "network",
-      message: "connect ECONNREFUSED",
+      message: "read ECONNRESET",
+      beforeBody: false,
     });
+  });
+});
+
+describe("a socket that never answers", () => {
+  it("reports a failure before the body was written as one that may be repeated", async () => {
+    const scripted = peer();
+    scripted.respondWith(new FakeResponse(200, []));
+    const transport = transportOver(scripted);
+
+    const pending = transport.send(request());
+    scripted.peer.emit("error", new Error("write EPIPE"));
+
+    expect(await pending).toEqual({
+      kind: "network",
+      message: "write EPIPE",
+      beforeBody: true,
+    });
+    expect(scripted.peer.bodies).toEqual([]);
   });
 
   it("reports a failure to even start the request", async () => {
@@ -242,6 +406,7 @@ describe("createTransport", () => {
     expect(await transport.send(request())).toEqual({
       kind: "network",
       message: "the socket is gone",
+      beforeBody: true,
     });
   });
 
@@ -255,106 +420,155 @@ describe("createTransport", () => {
     expect(await transport.send(request())).toEqual({
       kind: "network",
       message: "plain text",
+      beforeBody: true,
     });
   });
 
-  it("gives up after ten seconds without an answer, and drops the socket", async () => {
-    const peer = new FakeRequest();
+  it("gives up when the deadline passes, whatever the socket was doing", async () => {
+    const scripted = peer();
+    scripted.respondWith(new FakeResponse(200, []));
+    const controller = new AbortController();
     const transport = createTransport(
       { origin: "https://waves.example.com" },
-      () => {
-        queueMicrotask(() => {
-          peer.onTimeout?.();
-        });
-        return peer as unknown as ClientRequest;
-      },
+      scripted.start,
+      () => controller.signal,
     );
-    expect(await transport.send(request())).toEqual({
+
+    const pending = transport.send(request());
+    controller.abort();
+
+    expect(await pending).toEqual({
       kind: "network",
       message: `no answer within ${REQUEST_TIMEOUT_MS} ms`,
+      beforeBody: true,
     });
-    expect(peer.destroyed).toBe(true);
+    expect(scripted.peer.destroyed).toBe(true);
   });
 
-  it("refuses an answer larger than 64 KiB, whatever arrives afterwards", async () => {
+  it("reports a response that failed mid-stream after the body was sent", async () => {
+    const response = new FakeResponse(200, [], {});
+    const scripted = peer();
+    scripted.respond(response);
+    const transport = transportOver(scripted);
+
+    const pending = transport.send(request());
+    scripted.peer.emit("continue");
+    await Promise.resolve();
+    response.emit("error", new Error("the connection reset"));
+
+    expect(await pending).toEqual({
+      kind: "network",
+      message: "the connection reset",
+      beforeBody: false,
+    });
+  });
+});
+
+describe("the body of an answer", () => {
+  it("refuses one larger than 64 KiB, and takes the first answer only", async () => {
     const response = new FakeResponse(
       200,
       [Buffer.alloc(MAX_BODY_BYTES), Buffer.alloc(8), Buffer.alloc(8)],
       {},
     );
-    const transport = createTransport(
-      { origin: "https://waves.example.com" },
-      answering(response),
-    );
-    expect(await transport.send(request())).toEqual({
+    const scripted = peer();
+    scripted.respondWith(response);
+    const transport = transportOver(scripted);
+
+    const pending = transport.send(request());
+    scripted.peer.emit("continue");
+    expect(await pending).toEqual({
       kind: "network",
       message: `the answer is larger than ${MAX_BODY_BYTES} bytes`,
+      beforeBody: false,
     });
     expect(response.destroyed).toBe(true);
+
+    response.emit("end");
+    response.emit("error", new Error("too late"));
+    expect(scripted.peer.destroyed).toBe(false);
   });
 
-  it("reports a response that failed mid-stream", async () => {
-    const response = new FakeResponse(200, [], {});
-    const transport = createTransport(
-      { origin: "https://waves.example.com" },
-      (_options, callback) => {
-        callback(response as unknown as IncomingMessage);
-        response.emit("error", new Error("the connection reset"));
-        return new FakeRequest() as unknown as ClientRequest;
-      },
+  it("keeps a refusal whose explanation is larger than 64 KiB", async () => {
+    const response = new FakeResponse(
+      413,
+      [Buffer.alloc(MAX_BODY_BYTES + 1)],
+      {},
     );
-    expect(await transport.send(request())).toEqual({
-      kind: "network",
-      message: "the connection reset",
+    const scripted = peer();
+    scripted.respondWith(response);
+    const transport = transportOver(scripted);
+
+    const pending = transport.send(request());
+    expect(await pending).toMatchObject({
+      kind: "reply",
+      reply: { status: 413 },
     });
-  });
-
-  it("takes the first answer and ignores the rest", async () => {
-    const response = new FakeResponse(204, [], {});
-    const transport = createTransport(
-      { origin: "https://waves.example.com" },
-      (_options, callback) => {
-        queueMicrotask(() => {
-          callback(response as unknown as IncomingMessage);
-          response.emit("end");
-          response.emit("error", new Error("too late"));
-        });
-        return new FakeRequest() as unknown as ClientRequest;
-      },
-    );
-    expect(
-      await transport.send(request({ method: "DELETE", body: undefined })),
-    ).toEqual({ kind: "reply", reply: { status: 204, headers: {}, body: "" } });
   });
 
   it("has no status to report when the peer sends none", async () => {
-    const transport = createTransport(
-      { origin: "https://waves.example.com" },
-      answering(new FakeResponse(undefined, [], {})),
-    );
-    expect(await transport.send(request())).toMatchObject({
+    const scripted = peer();
+    scripted.respondWith(new FakeResponse(undefined, [], {}));
+    const transport = transportOver(scripted);
+
+    const pending = transport.send(request());
+    scripted.peer.emit("continue");
+    expect(await pending).toMatchObject({
       kind: "reply",
       reply: { status: 0 },
     });
   });
+});
 
-  it("picks Node's own client for the protocol of the origin", () => {
-    expect(
-      createTransport({ origin: "https://waves.example.com" }).send,
-    ).toBeTypeOf("function");
-    expect(createTransport({ origin: "http://127.0.0.1:1" }).send).toBeTypeOf(
-      "function",
+describe("the transport of a run", () => {
+  it("announces an insecurely allowed host on every request", async () => {
+    let warnings = 0;
+    const scripted = peer();
+    scripted.respondWith(new FakeResponse(204, [], {}));
+    const transport = createTransport(
+      {
+        origin: "http://10.0.0.4:8080",
+        warnInsecure: () => {
+          warnings += 1;
+        },
+      },
+      scripted.start,
     );
+    const insecure = request({
+      method: "DELETE",
+      body: undefined,
+      url: "http://10.0.0.4:8080/api/v1/projects/waves-demo/waves/wv5",
+    });
+    await transport.send(insecure);
+    await transport.send(insecure);
+    expect(warnings).toBe(2);
   });
 
-  it("ends the request with the body it was given, under a ten second timeout", async () => {
-    const peer = new FakeRequest();
-    const transport = createTransport(
-      { origin: "https://waves.example.com" },
-      answering(new FakeResponse(200, [], {}), peer),
-    );
-    await transport.send(request());
-    expect(peer.bodies).toEqual(['{"lanes":[]}']);
-    expect(peer.timeoutMs).toBe(REQUEST_TIMEOUT_MS);
+  it("says nothing when there is no warning to give", async () => {
+    const scripted = peer();
+    scripted.respondWith(new FakeResponse(200, [Buffer.from("{}")], {}));
+    const transport = transportOver(scripted, "http://127.0.0.1:8080");
+
+    expect(
+      await transport.send(
+        request({ url: "http://127.0.0.1:8080/api/v1/projects" }),
+      ),
+    ).toMatchObject({ kind: "reply" });
+  });
+
+  it("uses Node's own client, which refuses a closed port on either protocol", async () => {
+    for (const origin of [
+      `http://127.0.0.1:${CLOSED}`,
+      `https://127.0.0.1:${CLOSED}`,
+    ]) {
+      const outcome = await createTransport({ origin }).send(
+        request({ url: `${origin}/api/v1/projects`, body: undefined }),
+      );
+      expect(outcome.kind).toBe("network");
+      if (outcome.kind === "network") {
+        expect(outcome.message).toContain("ECONNREFUSED");
+        expect(outcome.beforeBody).toBe(true);
+      }
+    }
   });
 });

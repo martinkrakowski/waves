@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { Command } from "../src/domain/args.js";
 import { register } from "../src/application/register.js";
 import type {
+  Files,
   HttpRequest,
   TransportOptions,
 } from "../src/application/ports.js";
@@ -19,12 +20,12 @@ import {
 
 const tokenPath = `${CONFIG_DIR}/${PROJECT}.token`;
 
+type RegisterCommand = Extract<Command, { readonly kind: "register" }>;
+
 /** A readable admin token file, which every test past the token check needs. */
 const ADMIN_FILE = {
   "/run/secrets/admin": { text: `${ADMIN_TOKEN}\n`, mode: 0o600 },
 };
-
-type RegisterCommand = Extract<Command, { readonly kind: "register" }>;
 
 interface Sent {
   readonly options: TransportOptions;
@@ -140,12 +141,12 @@ describe("register", () => {
   });
 
   it("replaces an existing token file only when it was asked to", async () => {
-    const existing = fakeFiles({
-      [tokenPath]: { text: PROJECT_TOKEN, mode: 0o600 },
-    });
     const built = harness({
       script: [reply(201, `{"id":"${PROJECT}","token":"rotated"}`)],
-      files: Object.fromEntries(existing.store),
+      files: {
+        ...ADMIN_FILE,
+        [tokenPath]: { text: PROJECT_TOKEN, mode: 0o600 },
+      },
     });
 
     await expect(register(command(), built.deps)).rejects.toThrow(
@@ -177,17 +178,6 @@ describe("register", () => {
     });
     await register(command(), deps);
     expect(sent[0]?.request.bearer).toBe(ADMIN_TOKEN);
-  });
-
-  it("refuses an admin token file anyone else can read", async () => {
-    const { sent, deps } = capturing(reply(201, '{"token":"t"}'), {
-      text: ADMIN_TOKEN,
-      mode: 0o644,
-    });
-    await expect(register(command(), deps)).rejects.toThrow(
-      "/run/secrets/admin is mode 0o644; the admin token must be 0600 or stricter",
-    );
-    expect(sent).toEqual([]);
   });
 
   it("refuses an admin token file that is not there or is empty", async () => {
@@ -229,7 +219,7 @@ describe("register", () => {
 
   it("refuses an id that is already registered", async () => {
     const built = harness({
-      script: [reply(409, '{"message":"already registered"}')],
+      script: [reply(409, '{"error":"already registered"}')],
       files: ADMIN_FILE,
     });
     await expect(register(command(), built.deps)).rejects.toThrow(
@@ -251,24 +241,78 @@ describe("register", () => {
 
   it("reports why the server said no", async () => {
     const built = harness({
-      script: [reply(404, '{"message":"admin registration is disabled"}')],
+      script: [reply(404, '{"error":"admin registration is disabled"}')],
       files: ADMIN_FILE,
     });
     await expect(register(command(), built.deps)).rejects.toThrow(
       "register failed: 404 Not Found\n  admin registration is disabled",
     );
   });
+});
 
-  it("reports a network failure without retrying", async () => {
+describe("a registration whose socket died", () => {
+  it("repeats a request whose body never left", async () => {
     const built = harness({
-      script: [network("connect ECONNREFUSED"), reply(201, '{"token":"t"}')],
+      script: [
+        network("write EPIPE"),
+        reply(201, `{"id":"${PROJECT}","token":"${PROJECT_TOKEN}"}`),
+      ],
       files: ADMIN_FILE,
     });
+
+    expect(await register(command(), built.deps)).toBe(0);
+    expect(built.sent()).toBe(2);
+    expect(built.waits).toEqual([1000]);
+  });
+
+  it("gives up after two attempts that never left", async () => {
+    const lost = network("write EPIPE");
+    const built = harness({
+      script: [lost, lost, lost],
+      files: ADMIN_FILE,
+    });
+
     await expect(register(command(), built.deps)).rejects.toThrow(
-      "register failed: connect ECONNREFUSED",
+      "register failed: write EPIPE",
+    );
+    expect(built.sent()).toBe(3);
+  });
+
+  it("never repeats a request that may already have minted a token", async () => {
+    const built = harness({
+      script: [
+        network("read ECONNRESET", false),
+        reply(201, `{"id":"${PROJECT}","token":"${PROJECT_TOKEN}"}`),
+      ],
+      files: ADMIN_FILE,
+    });
+
+    await expect(register(command(), built.deps)).rejects.toThrow(
+      "register failed: read ECONNRESET; the request was sent, so a token may already have been issued and lost; re-run with --rotate to get a new one",
     );
     expect(built.sent()).toBe(1);
     expect(built.waits).toEqual([]);
+  });
+
+  it("says so when a minted token cannot be written down", async () => {
+    const files = fakeFiles(ADMIN_FILE);
+    const refusing: Files = {
+      ...files.files,
+      writeSecret: async () => {
+        throw new Error("ENOSPC: no space left on device");
+      },
+    };
+    const built = harness({
+      script: [reply(201, `{"id":"${PROJECT}","token":"${PROJECT_TOKEN}"}`)],
+      files: ADMIN_FILE,
+    });
+
+    await expect(
+      register(command(), { ...built.deps, files: refusing }),
+    ).rejects.toThrow(
+      `register failed: the token was issued but could not be saved to ${tokenPath}; re-run with --rotate`,
+    );
+    expect(built.out).toEqual([]);
   });
 
   it("wants a configuration it can use", async () => {
