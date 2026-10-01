@@ -25,7 +25,15 @@ export default defineConfig({
         test: {
           name: "server",
           include: ["packages/server/__tests__/**/*.test.ts"],
+          exclude: ["packages/server/__tests__/ui/**/*.test.ts"],
           environment: "node",
+        },
+      },
+      {
+        test: {
+          name: "ui",
+          include: ["packages/server/__tests__/ui/**/*.test.ts"],
+          environment: "happy-dom",
         },
       },
       {
@@ -38,8 +46,8 @@ export default defineConfig({
     ],
     coverage: {
       provider: "v8",
-      include: ["packages/*/src/**/*.ts"],
-      exclude: ["packages/*/src/main.ts"],
+      include: ["packages/*/src/**/*.ts", "packages/server/public/**/*.js"],
+      exclude: ["packages/*/src/main.ts", "packages/server/public/**/*.d.ts"],
       reporter: ["text", "json-summary"],
       thresholds: {
         lines: 100,

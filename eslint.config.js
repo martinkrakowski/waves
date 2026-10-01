@@ -16,6 +16,12 @@ const OTHER_PACKAGE_PATTERN = `^(?!${KERNEL}(/|$))[^./]`;
 const PORT_MESSAGE =
   "Domain and application code takes dependencies through ports, never dynamic imports or require.";
 
+const HTML_MESSAGE =
+  "The UI builds elements through public/dom.js and textContent, never HTML strings. An HTML string here is a stored cross-site scripting hole.";
+
+const CODE_MESSAGE =
+  "The UI never evaluates source at runtime. Render what the API sent as text.";
+
 export default tseslint.config(
   {
     ignores: ["**/dist/**", "**/coverage/**", ".yarn/**"],
@@ -68,7 +74,108 @@ export default tseslint.config(
       globals: {
         document: "readonly",
         fetch: "readonly",
+        location: "readonly",
+        setTimeout: "readonly",
+        clearTimeout: "readonly",
+        URL: "readonly",
       },
+    },
+    rules: {
+      "no-restricted-properties": [
+        "error",
+        {
+          object: "document",
+          property: "innerHTML",
+          message: HTML_MESSAGE,
+        },
+        {
+          object: "document",
+          property: "outerHTML",
+          message: HTML_MESSAGE,
+        },
+        {
+          object: "document",
+          property: "insertAdjacentHTML",
+          message: HTML_MESSAGE,
+        },
+        {
+          object: "document",
+          property: "write",
+          message: HTML_MESSAGE,
+        },
+        {
+          object: "document",
+          property: "writeln",
+          message: HTML_MESSAGE,
+        },
+        {
+          object: "globalThis",
+          property: "innerHTML",
+          message: HTML_MESSAGE,
+        },
+        {
+          object: "globalThis",
+          property: "outerHTML",
+          message: HTML_MESSAGE,
+        },
+        {
+          object: "globalThis",
+          property: "insertAdjacentHTML",
+          message: HTML_MESSAGE,
+        },
+        {
+          object: "window",
+          property: "innerHTML",
+          message: HTML_MESSAGE,
+        },
+        {
+          object: "window",
+          property: "outerHTML",
+          message: HTML_MESSAGE,
+        },
+        {
+          object: "window",
+          property: "insertAdjacentHTML",
+          message: HTML_MESSAGE,
+        },
+        {
+          object: "window",
+          property: "eval",
+          message: CODE_MESSAGE,
+        },
+        {
+          object: "globalThis",
+          property: "eval",
+          message: CODE_MESSAGE,
+        },
+      ],
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "MemberExpression[property.name='innerHTML']",
+          message: HTML_MESSAGE,
+        },
+        {
+          selector: "MemberExpression[property.name='outerHTML']",
+          message: HTML_MESSAGE,
+        },
+        {
+          selector: "MemberExpression[property.name='insertAdjacentHTML']",
+          message: HTML_MESSAGE,
+        },
+        {
+          selector: "CallExpression[callee.name='eval']",
+          message: CODE_MESSAGE,
+        },
+        {
+          selector: "CallExpression[callee.name='Function']",
+          message: CODE_MESSAGE,
+        },
+        {
+          selector: "NewExpression[callee.name='Function']",
+          message: CODE_MESSAGE,
+        },
+      ],
     },
   },
 );

@@ -1,43 +1,180 @@
-"use strict";
+import { createApi } from "./api.js";
+import { el } from "./dom.js";
+import { projectList } from "./projects.js";
+import { visibleWaves, wavePanel } from "./wave.js";
 
-const status = document.getElementById("status");
-const projects = document.getElementById("projects");
+export const REFRESH_MS = 10_000;
 
-const UNAVAILABLE = "The project list is unavailable.";
+const ROOT_ID = "root";
+const PROJECT_PREFIX = "/p/";
+const OFFLINE_NOTE = "offline, retrying";
+const LOADING = "Loading…";
 
-function line(label, value) {
-  const item = document.createElement("li");
-  const name = document.createElement("span");
-  name.textContent = label;
-  const id = document.createElement("code");
-  id.textContent = value;
-  item.append(name, id);
-  return item;
+function decodeId(pathname) {
+  try {
+    return decodeURIComponent(pathname.slice(PROJECT_PREFIX.length));
+  } catch {
+    return undefined;
+  }
 }
 
-async function render() {
-  let list;
-  try {
-    const response = await fetch("/api/v1/projects", {
-      headers: { accept: "application/json" },
-    });
-    if (!response.ok) {
-      status.textContent = UNAVAILABLE;
+export function routeOf(pathname) {
+  if (pathname === "/" || pathname === "") {
+    return { kind: "projects" };
+  }
+  if (pathname.startsWith(PROJECT_PREFIX)) {
+    const id = decodeId(pathname);
+    return id === undefined || id === ""
+      ? { kind: "unknown" }
+      : { kind: "project", id };
+  }
+  return { kind: "unknown" };
+}
+
+export function createApp(deps) {
+  const {
+    doc,
+    location,
+    fetch: fetchImpl,
+    setTimer,
+    clearTimer,
+    clock,
+    refreshMs = REFRESH_MS,
+  } = deps;
+  const api = createApi(fetchImpl);
+  const route = routeOf(location.pathname);
+  const root = doc.getElementById(ROOT_ID);
+  let data = undefined;
+  let note = "";
+  let showAll = false;
+  let selected = "";
+  let timer = undefined;
+  let stopped = false;
+
+  async function load() {
+    if (route.kind === "projects") {
+      return { kind: "projects", projects: await api.projects() };
+    }
+    if (route.kind === "project") {
+      const waves = await api.waves(route.id);
+      if (waves === undefined) {
+        return { kind: "missing" };
+      }
+      const visible = visibleWaves(waves, showAll);
+      const wanted = visible.find((head) => head.wave === selected);
+      const chosen = wanted ?? visible[0];
+      if (chosen === undefined) {
+        return { kind: "project", project: route.id, waves, view: undefined };
+      }
+      selected = chosen.wave;
+      return {
+        kind: "project",
+        project: route.id,
+        waves,
+        view: await api.wave(route.id, chosen.wave),
+      };
+    }
+    return { kind: "unknown" };
+  }
+
+  function body() {
+    if (data === undefined) {
+      return el("p", {
+        attrs: { class: "empty" },
+        text: note === "" ? LOADING : note,
+      });
+    }
+    if (data.kind === "projects") {
+      return projectList(data.projects, clock());
+    }
+    if (data.kind === "project") {
+      return wavePanel({ ...data, showAll, selected }, clock(), {
+        onSelect: (waveId) => {
+          selected = waveId;
+          void refresh();
+        },
+        onToggleAll: () => {
+          showAll = !showAll;
+          draw();
+        },
+      });
+    }
+    if (data.kind === "missing") {
+      return el("p", {
+        attrs: { class: "empty" },
+        text: "No such project.",
+      });
+    }
+    return el("p", { attrs: { class: "empty" }, text: "No such page." });
+  }
+
+  function draw() {
+    doc.title = route.kind === "project" ? `waves — ${route.id}` : "waves";
+    if (root === null) {
       return;
     }
-    list = await response.json();
-  } catch {
-    status.textContent = UNAVAILABLE;
-    return;
+    const children = [];
+    if (data !== undefined && note !== "") {
+      children.push(
+        el("p", { attrs: { class: "note", role: "status" }, text: note }),
+      );
+    }
+    children.push(body());
+    root.replaceChildren(...children);
   }
-  if (list.length === 0) {
-    status.textContent = "No projects registered yet.";
-    return;
+
+  async function refresh() {
+    try {
+      data = await load();
+      note = "";
+    } catch {
+      note = OFFLINE_NOTE;
+    }
+    draw();
   }
-  status.textContent = `${list.length} project(s) registered.`;
-  for (const project of list) {
-    projects.append(line(project.name, project.id));
+
+  function schedule() {
+    if (stopped || doc.hidden) {
+      return;
+    }
+    timer = setTimer(() => {
+      void refresh().then(schedule);
+    }, refreshMs);
   }
+
+  function onVisibility() {
+    if (doc.hidden) {
+      if (timer !== undefined) {
+        clearTimer(timer);
+        timer = undefined;
+      }
+      return;
+    }
+    void refresh().then(schedule);
+  }
+
+  function start() {
+    stopped = false;
+    doc.addEventListener("visibilitychange", onVisibility);
+    draw();
+    void refresh();
+    schedule();
+  }
+
+  function stop() {
+    stopped = true;
+    if (timer !== undefined) {
+      clearTimer(timer);
+      timer = undefined;
+    }
+    doc.removeEventListener("visibilitychange", onVisibility);
+  }
+
+  return { start, stop, refresh, route };
 }
 
-render();
+export function boot(globals) {
+  const app = createApp(globals);
+  app.start();
+  return app;
+}

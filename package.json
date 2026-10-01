@@ -24,6 +24,7 @@
     "@types/node": "^22",
     "@vitest/coverage-v8": "^4",
     "eslint": "^9",
+    "happy-dom": "^20.14.5",
     "prettier": "^3",
     "typescript": "^5",
     "typescript-eslint": "^8",
