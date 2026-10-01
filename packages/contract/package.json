@@ -1,5 +1,5 @@
 {
-  "name": "@waves/server",
+  "name": "@hexagen-monaco/waves-contract",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -12,11 +12,14 @@
       "default": "./dist/index.js"
     }
   },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json"
-  },
-  "dependencies": {
-    "@hexagen-monaco/waves-contract": "workspace:^"
   }
 }

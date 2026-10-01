@@ -143,6 +143,12 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@hexagen-monaco/waves-contract@workspace:^, @hexagen-monaco/waves-contract@workspace:packages/contract":
+  version: 0.0.0-use.local
+  resolution: "@hexagen-monaco/waves-contract@workspace:packages/contract"
+  languageName: unknown
+  linkType: soft
+
 "@humanfs/core@npm:^0.19.2":
   version: 0.19.2
   resolution: "@humanfs/core@npm:0.19.2"
@@ -627,6 +633,8 @@ __metadata:
 "@waves/server@workspace:packages/server":
   version: 0.0.0-use.local
   resolution: "@waves/server@workspace:packages/server"
+  dependencies:
+    "@hexagen-monaco/waves-contract": "workspace:^"
   languageName: unknown
   linkType: soft
 
