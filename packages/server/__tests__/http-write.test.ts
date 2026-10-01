@@ -255,7 +255,10 @@ function streamChunked(
  */
 async function firstDestroyed(started: Started): Promise<number> {
   const at = Date.now();
-  for (let attempt = 0; attempt < 200; attempt += 1) {
+  // A wall-clock deadline, not an iteration count: `delay(1)` takes longer than
+  // a millisecond on a loaded runner, so counting iterations would end early.
+  const deadline = at + 500;
+  while (Date.now() < deadline) {
     if (started.sockets().some((socket) => socket.destroyed)) {
       return Date.now() - at;
     }
@@ -796,6 +799,7 @@ describe("reading the body", () => {
 
   it("drops a refused connection as soon as the answer has flushed", async () => {
     const started = await startHarness({ store: await seeded() });
+    const bytesBefore = started.bytesRead();
     const held = started.sendAndHold(
       `PUT ${wavePath()} HTTP/1.1`,
       [
@@ -819,6 +823,8 @@ describe("reading the body", () => {
     const readLater = started.bytesRead();
 
     expect(droppedAt).toBeLessThan(500);
+    // The property the destroy guards: the body was not drained before the drop.
+    expect(readAtDrop - bytesBefore).toBeLessThan(PUT_CAP);
     expect(readLater).toBe(readAtDrop);
 
     // What the client made of it is a set of accepted outcomes, because the reset

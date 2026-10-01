@@ -54,9 +54,10 @@ export interface SendOptions {
    * is going to read.
    *
    * The socket is dropped as soon as the answer has flushed. `Connection: close`
-   * makes Node end it there and then (`destroySoon`, on the socket's own finish),
-   * so this destroy is belt and braces rather than a delay: what is left of the
-   * body has no reader and must not be read. A client that is still sending it
+   * makes Node close it on the socket's finish (`destroySoon`), but on that same
+   * finish Node first resumes the request to drain whatever is left of its body
+   * (`req._dump()`). Destroying here, in the same finish tick, is what stops that
+   * drain: what is left of the body has no reader and must not be read. A client that is still sending it
    * sees a reset, and the remedy is `Expect: 100-continue` — the write pipeline
    * sends its 100 only after it has authenticated the request, so a client that
    * asks to wait never offers a body to a refusal.
