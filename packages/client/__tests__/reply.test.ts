@@ -130,6 +130,32 @@ describe("safeText", () => {
     expect(capped.includes("\u{1f600}")).toBe(true);
   });
 
+  it("counts characters when it caps, not code units", () => {
+    // 150 emoji are 300 code units but only 150 characters, so they fit.
+    const fitting = "\u{1f600}".repeat(150);
+    expect(Array.from(fitting)).toHaveLength(150);
+    expect(safeText(fitting)).toBe(fitting);
+
+    const capped = safeText("\u{1f600}".repeat(300));
+    expect(Array.from(capped)).toHaveLength(MAX_SERVER_TEXT);
+    expect(capped).toBe(`${"\u{1f600}".repeat(MAX_SERVER_TEXT - 1)}…`);
+    expect(capped.includes("\u{fffd}")).toBe(false);
+  });
+
+  it("sanitises an answer made of nothing but escapes in time to print it", () => {
+    // Every pair here opens a sequence that ends at the next bracket, so the
+    // scan is short; what must not happen is a copy of the rest of the answer
+    // for each of them.
+    const escapes = "\u001b[".repeat(32 * 1024);
+    const started = performance.now();
+    const sanitised = safeText(escapes);
+    const elapsed = performance.now() - started;
+
+    expect(sanitised).toBe("");
+    expect(Buffer.byteLength(escapes)).toBe(64 * 1024);
+    expect(elapsed).toBeLessThan(50);
+  });
+
   it("makes every printed part of an answer safe", () => {
     expect(serverFailure(JSON.stringify({ error: `${CLEAR}nope` }))).toBe(
       "\n  nope",

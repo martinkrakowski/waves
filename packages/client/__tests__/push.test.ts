@@ -362,6 +362,7 @@ describe("the retry policy of a push", () => {
     const built = harness({
       script: [
         reply(503, ""),
+        reply(503, ""),
         reply(429, "", { "retry-after": "1" }),
         reply(429, "", { "retry-after": "1" }),
         reply(200, ACCEPTED),
@@ -371,10 +372,11 @@ describe("the retry policy of a push", () => {
     });
 
     expect(await push(command(), built.deps)).toBe(0);
-    expect(built.sent()).toBe(4);
-    // One 5xx and two throttles: three waits drawn from two budgets of two and
-    // three, which one shared counter would have refused.
-    expect(built.waits).toEqual([1000, 1000, 1000]);
+    // Two retries for a broken server and two for a throttling one, drawn from
+    // budgets of two and three. One shared counter of two would have stopped at
+    // the fourth reply and never sent the fifth.
+    expect(built.sent()).toBe(5);
+    expect(built.waits).toEqual([1000, 2000, 1000, 1000]);
   });
 
   it("never repeats a request the server refused", async () => {

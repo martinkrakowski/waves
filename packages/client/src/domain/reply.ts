@@ -49,50 +49,59 @@ function isInvisible(point: string): boolean {
   return INVISIBLE.test(point);
 }
 
-/** The index of the last code point of the escape sequence at `index`. */
-function skipEscape(points: readonly string[], index: number): number {
-  if (points[index + 1] !== "[") {
-    return index;
-  }
-  const rest = points.slice(index + 2);
-  const end = rest.findIndex((point) => {
-    const code = point.charCodeAt(0);
-    return code >= FINAL_BYTE_LOW && code <= FINAL_BYTE_HIGH;
-  });
-  // An unfinished sequence swallows the rest of the text: there is no way to
-  // know where it was meant to end, so none of it can be trusted.
-  return end === -1 ? points.length - 1 : index + 2 + end;
-}
+/** Outside a sequence. */
+const OUTSIDE = 0;
+/** An escape has been seen and its bracket has not. */
+const AFTER_ESCAPE = 1;
+/** Inside a sequence, looking for the byte that ends it. */
+const INSIDE = 2;
 
 /**
- * A server-provided string, made safe to print. Escape sequences and every
- * character that renders as nothing become spaces, and the result is capped by
- * code point so that a character made of two code units is never cut in half.
- * The text is the server's to choose; the terminal's is not.
+ * A server-provided string, made safe to print, in one pass over its characters.
+ *
+ * Escape sequences and every character that renders as nothing become spaces,
+ * and the result is capped by code point so that a character made of two code
+ * units is never cut in half. The text is the server's to choose; the terminal's
+ * is not.
+ *
+ * The walk remembers where in a sequence it is rather than re-reading the rest
+ * of the text at every escape: an answer made of nothing but escape sequences
+ * would otherwise cost a copy of what is left for each one, which on 64 KiB is
+ * seconds of work before a single character reaches the screen.
  */
 export function safeText(value: string): string {
   const points = Array.from(value);
   const cleaned: string[] = [];
-  let index = 0;
+  let state = OUTSIDE;
   for (const [position, point] of points.entries()) {
-    if (position < index) {
-      // Already inside a sequence that has been dropped.
+    const code = point.charCodeAt(0);
+    if (state === INSIDE) {
+      // The first byte from @ upwards is the end of the sequence.
+      state =
+        code >= FINAL_BYTE_LOW && code <= FINAL_BYTE_HIGH ? OUTSIDE : INSIDE;
       continue;
     }
-    if (point.charCodeAt(0) === ESCAPE) {
-      // The sequence owns everything up to and including the point it ends on.
-      index = skipEscape(points, position) + 1;
+    if (state === AFTER_ESCAPE) {
+      // The bracket that opened it belongs to the sequence, not to the text.
+      state = INSIDE;
+      continue;
+    }
+    if (code === ESCAPE) {
+      // Only `ESC [` opens a sequence. An escape on its own says nothing about
+      // where it ends, so it is dropped by itself and the text carries on.
+      state = points[position + 1] === "[" ? AFTER_ESCAPE : OUTSIDE;
       continue;
     }
     cleaned.push(isInvisible(point) ? " " : point);
-    index = position + 1;
   }
   const stripped = cleaned.join("").trim();
-  if (stripped.length <= MAX_SERVER_TEXT) {
+  // Counted in characters, not in code units, so that a cap of 200 is 200
+  // characters of the text rather than 100 emoji.
+  const kept = Array.from(stripped);
+  if (kept.length <= MAX_SERVER_TEXT) {
     return stripped;
   }
-  const kept = Array.from(stripped).slice(0, MAX_SERVER_TEXT - 1);
-  return `${kept.join("")}${ELLIPSIS}`;
+  return `${kept.slice(0, MAX_SERVER_TEXT - 1).join("")}${ELLIPSIS}`;
 }
 
 /** The reason phrase for a status, so a failure reads like an HTTP trace. */
