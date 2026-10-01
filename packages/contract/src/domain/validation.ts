@@ -11,7 +11,7 @@ export type Normalised =
   | { readonly ok: true; readonly value: unknown }
   | { readonly ok: false; readonly errors: readonly ValidationIssue[] };
 
-export const ROOT_PATH = "/";
+export const ROOT_PATH = "";
 
 const MAX_ISSUES = 50;
 const MAX_INPUT_BYTES = 1_048_576;

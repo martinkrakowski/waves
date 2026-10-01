@@ -118,14 +118,14 @@ describe("validateProject", () => {
   it("rejects undefined with one root error", () => {
     expect(
       errors(undefined).map((issue) => [issue.path, issue.message]),
-    ).toEqual([["/", "input is not serialisable JSON"]]);
+    ).toEqual([["", "input is not serialisable JSON"]]);
   });
 
   it("rejects a project larger than 1 MiB with one root error", () => {
     const issues = errors({ ...project(), name: "n".repeat(1_048_576) });
 
     expect(issues.map((issue) => [issue.path, issue.message])).toEqual([
-      ["/", "project larger than 1 MiB"],
+      ["", "project larger than 1 MiB"],
     ]);
   });
 

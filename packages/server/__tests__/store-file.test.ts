@@ -240,18 +240,51 @@ describe("FileStore hostile filesystem", () => {
     }
   });
 
-  it("refuses a project directory that is a symbolic link", async () => {
+  it("refuses a project directory that is a symbolic link on every path", async () => {
     const { store, dataDir, dispose } = harness();
     try {
-      const elsewhere = join(dataDir, "elsewhere");
+      const outside = join(dataDir, "outside");
       mkdirSync(join(dataDir, "snapshots"), { mode: 0o700 });
-      mkdirSync(elsewhere);
-      symlinkSync(elsewhere, join(dataDir, "snapshots", "alpha"));
+      mkdirSync(outside);
+      writeFileSync(join(outside, "canary"), "untouched");
+      symlinkSync(outside, join(dataDir, "snapshots", "alpha"));
 
-      await expect(store.putSnapshot(snapshot("wv1"))).rejects.toThrow(
+      await expect(store.getSnapshot("alpha", "wv1")).rejects.toThrow(
         "is a symbolic link",
       );
-      expect(readdirSync(elsewhere)).toEqual([]);
+      await expect(store.listSnapshots("alpha")).rejects.toThrow(
+        "is a symbolic link",
+      );
+      await expect(store.deleteSnapshot("alpha", "wv1")).rejects.toThrow(
+        "is a symbolic link",
+      );
+      await expect(store.deleteProject("alpha")).rejects.toThrow(
+        "is a symbolic link",
+      );
+      expect(readdirSync(outside)).toEqual(["canary"]);
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("refuses a snapshots directory that is a symbolic link on read", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      const outside = join(dataDir, "outside");
+      mkdirSync(outside);
+      writeFileSync(join(outside, "canary"), "untouched");
+      symlinkSync(outside, join(dataDir, "snapshots"));
+
+      await expect(store.getSnapshot("alpha", "wv1")).rejects.toThrow(
+        "is a symbolic link",
+      );
+      await expect(store.listSnapshots("alpha")).rejects.toThrow(
+        "is a symbolic link",
+      );
+      await expect(store.deleteSnapshot("alpha", "wv1")).rejects.toThrow(
+        "is a symbolic link",
+      );
+      expect(readdirSync(outside)).toEqual(["canary"]);
     } finally {
       await dispose();
     }
@@ -283,11 +316,13 @@ describe("FileStore hostile filesystem", () => {
 
   it("surfaces a readdir error that is not ENOENT", async () => {
     const { store, dataDir, dispose } = harness();
+    const projectDir = join(dataDir, "snapshots", "alpha");
+    mkdirSync(join(dataDir, "snapshots"), { mode: 0o700 });
+    mkdirSync(projectDir, { mode: 0o000 });
     try {
-      writeFileSync(join(dataDir, "snapshots"), "");
-
-      await expect(store.listSnapshots("alpha")).rejects.toThrow();
+      await expect(store.listSnapshots("alpha")).rejects.toThrow(/EACCES/);
     } finally {
+      chmodSync(projectDir, 0o700);
       await dispose();
     }
   });

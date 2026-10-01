@@ -13,7 +13,7 @@ const megabyte = 1_048_576;
 
 describe("validateEnvelope untrusted input", () => {
   it("rejects undefined with one root error", () => {
-    expectEnvelopePaths(undefined, ["/"]);
+    expectEnvelopePaths(undefined, [""]);
   });
 
   it("rejects a circular value with one root error", () => {
@@ -25,11 +25,11 @@ describe("validateEnvelope untrusted input", () => {
         issue.path,
         issue.message,
       ]),
-    ).toEqual([["/", "input is not serialisable JSON"]]);
+    ).toEqual([["", "input is not serialisable JSON"]]);
   });
 
   it("rejects a BigInt with one root error", () => {
-    expectEnvelopePaths({ ...minimalEnvelope(), big: 1n }, ["/"]);
+    expectEnvelopePaths({ ...minimalEnvelope(), big: 1n }, [""]);
   });
 
   it("rejects a throwing getter with one root error", () => {
@@ -41,7 +41,7 @@ describe("validateEnvelope untrusted input", () => {
       },
     });
 
-    expectEnvelopePaths(input, ["/"]);
+    expectEnvelopePaths(input, [""]);
   });
 
   it("rejects a proxy trap with one root error", () => {
@@ -51,7 +51,7 @@ describe("validateEnvelope untrusted input", () => {
       },
     });
 
-    expectEnvelopePaths(trapped, ["/"]);
+    expectEnvelopePaths(trapped, [""]);
   });
 
   it("rejects an input larger than 1 MiB with one root error", () => {
@@ -64,7 +64,7 @@ describe("validateEnvelope untrusted input", () => {
     );
 
     expect(issues.map((issue) => [issue.path, issue.message])).toEqual([
-      ["/", "envelope larger than 1 MiB"],
+      ["", "envelope larger than 1 MiB"],
     ]);
   });
 
@@ -77,7 +77,7 @@ describe("validateEnvelope untrusted input", () => {
       ),
     );
 
-    expect(issues.map((issue) => issue.path)).toEqual(["/"]);
+    expect(issues.map((issue) => issue.path)).toEqual([""]);
   });
 
   it("reads each property once and validates the plain copy", () => {

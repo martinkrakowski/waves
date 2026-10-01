@@ -52,7 +52,10 @@ function ignore(): undefined {
 /**
  * Keeps `projects.json` and `snapshots/<project>/<wave>.json` under one data
  * directory, writing every file atomically through a temporary file and a
- * rename, with 0600 files under 0700 directories.
+ * rename, with 0600 files under 0700 directories. Every path that enters
+ * `snapshots/` or `snapshots/<project>/` is checked with `lstat` on the read and
+ * delete paths as well as the write path, so a symlinked directory is refused
+ * everywhere rather than followed.
  *
  * One process owns a data directory: the deployment runs a single replica, and
  * every mutating operation of an instance runs through one in-process queue, so
@@ -104,6 +107,7 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
         this.#projectsPath(),
         serialiseProjects(projects),
       );
+      await this.#assertSnapshotsPath(this.#projectDir(id));
       await rm(this.#projectDir(id), { recursive: true, force: true });
     });
   }
@@ -129,6 +133,7 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
   ): Promise<StoredSnapshot | undefined> {
     assertIds(project, wave);
     await this.#checkedDataDir(false);
+    await this.#assertSnapshotsPath(this.#projectDir(project));
     const raw = await this.#readText(this.#snapshotPath(project, wave));
     if (raw === undefined) {
       return undefined;
@@ -140,6 +145,7 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
     assertIds(project);
     await this.#checkedDataDir(false);
     const dir = this.#projectDir(project);
+    await this.#assertSnapshotsPath(dir);
     const names = await this.#snapshotNames(dir);
     const snapshots: StoredSnapshot[] = [];
     for (const name of names) {
@@ -155,6 +161,7 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
     assertIds(project, wave);
     await this.#serialised(async () => {
       await this.#checkedDataDir(false);
+      await this.#assertSnapshotsPath(this.#projectDir(project));
       await rm(this.#snapshotPath(project, wave), { force: true });
     });
   }
@@ -183,6 +190,15 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
       return;
     }
     assertRealDirectory(info, dir);
+  }
+
+  async #assertSnapshotsPath(dir: string): Promise<void> {
+    for (const path of [this.#snapshotsDir(), dir]) {
+      const info = await this.#lstatOrUndefined(path);
+      if (info !== undefined) {
+        assertRealDirectory(info, path);
+      }
+    }
   }
 
   async #lstatOrUndefined(path: string): Promise<Stats | undefined> {
@@ -237,7 +253,11 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
       });
       await rename(temporary, target);
     } catch (error) {
-      await rm(temporary, { force: true });
+      try {
+        await rm(temporary, { force: true });
+      } catch {
+        void ignore();
+      }
       throw error;
     }
   }
