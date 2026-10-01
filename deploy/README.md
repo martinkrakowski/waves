@@ -53,9 +53,11 @@ directory itself, so read this before the first deploy: the store demands a
 directory owned by uid 1000 with mode 0700, and the kubelet creates the volume
 root as root with group write, which the store refuses. `/healthz` does not read
 the store, so a pod in that state passes its probes and answers 500 to every
-API request. Give the pod an init container that `chown`s and `chmod`s `/data`
-before the server starts, or bind the volume from a filesystem that already
-hands it over with those two properties.
+API request. The base deployment avoids this by pointing the server at a
+subdirectory, `WAVES_DATA_DIR=/data/store`: the volume root only has to be
+writable by uid 1000, and the server creates `store/` itself, owned by uid 1000
+at mode 0700. Keep that, or bind a volume that already hands the directory over
+with those two properties.
 
 ## midnight
 
@@ -106,7 +108,7 @@ POD=$(kubectl -n waves get pods \
   -l app.kubernetes.io/name=waves,app.kubernetes.io/component=server \
   -o jsonpath='{.items[0].metadata.name}')
 mkdir -p backup
-kubectl -n waves cp "$POD:/data/projects.json" \
+kubectl -n waves cp "$POD:/data/store/projects.json" \
   "backup/projects-$(date -u +%F).json"
 ```
 

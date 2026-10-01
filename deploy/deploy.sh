@@ -55,7 +55,6 @@ fi
 TAG=$(git rev-parse --short HEAD)
 IMAGE_REPO=${WAVES_IMAGE_REPO:-registry.midnight.lan/library/waves}
 IMAGE="$IMAGE_REPO:$TAG"
-IMAGE_PLACEHOLDER="$IMAGE_REPO:latest"
 CONTEXT=${WAVES_DOCKER_CONTEXT:-midnight}
 NODE=${WAVES_SSH:-m}
 OVERLAY=${WAVES_OVERLAY:-deploy/k8s/overlays/midnight}
@@ -82,7 +81,7 @@ refuse() {
 }
 
 [ -z "$(git status --porcelain)" ] ||
-  refuse "the working tree is not clean, so the image would not match HEAD"
+  refuse "the working tree is not clean; deploy only what is committed and reviewed"
 git merge-base --is-ancestor HEAD origin/main ||
   refuse "HEAD is not on origin/main, so this has not been reviewed in place"
 
@@ -109,10 +108,17 @@ if [ "$DRY_RUN" -ne 1 ]; then
   }
 fi
 
-# The overlay carries the tag as `latest` and this rewrites it to the SHA that
-# was pushed, so a deploy never runs a floating tag.
+# The overlay carries a `:latest` image and this rewrites it, whatever repository
+# the overlay names, to the image that was just pushed, so a deploy never runs a
+# floating tag or a stale repository. Exactly one image line must be rewritten.
 render() {
-  kubectl kustomize "$OVERLAY" | sed "s|$IMAGE_PLACEHOLDER|$IMAGE|"
+  rendered=$(kubectl kustomize "$OVERLAY" | sed "s|^\\([[:space:]]*-\\{0,1\\}[[:space:]]*image:[[:space:]]*\\)[^[:space:]]*:latest\$|\\1$IMAGE|")
+  count=$(printf "%s\\n" "$rendered" | grep -c "image: $IMAGE\$" || true)
+  if [ "$count" -ne 1 ]; then
+    printf "%s\\n" "deploy: expected exactly one :latest image in $OVERLAY, rewrote $count" >&2
+    exit 1
+  fi
+  printf "%s\\n" "$rendered"
 }
 
 if [ "$DRY_RUN" -eq 1 ]; then
@@ -125,7 +131,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
   say "deploy: commands"
   say "+ git archive --format=tar HEAD | docker --context $CONTEXT build -t $IMAGE -"
   say "+ docker --context $CONTEXT push $IMAGE"
-  say "+ kubectl kustomize $OVERLAY | sed 's|$IMAGE_PLACEHOLDER|$IMAGE|' | remote kubectl apply -f -"
+  say "+ kubectl kustomize $OVERLAY | (rewrite the :latest image to $IMAGE) | remote kubectl apply -f -"
   say "+ remote kubectl -n $NAMESPACE rollout status deployment/$DEPLOYMENT --timeout=$ROLLOUT_TIMEOUT"
   exit 0
 fi
