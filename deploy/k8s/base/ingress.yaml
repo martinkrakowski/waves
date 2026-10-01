@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: waves
+  labels:
+    app.kubernetes.io/name: waves
+spec:
+  # Both values below are placeholders. An overlay replaces them, so this base
+  # names no host, no ingress controller and no issuer.
+  ingressClassName: placeholder
+  tls:
+    - hosts:
+        - waves.example.invalid
+      secretName: waves-tls
+  rules:
+    - host: waves.example.invalid
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: waves
+                port:
+                  number: 80
