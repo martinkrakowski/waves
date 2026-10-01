@@ -138,6 +138,8 @@ __metadata:
 "@hexagen-monaco/waves-client@workspace:packages/client":
   version: 0.0.0-use.local
   resolution: "@hexagen-monaco/waves-client@workspace:packages/client"
+  dependencies:
+    "@hexagen-monaco/waves-contract": "workspace:^"
   bin:
     waves: ./dist/cli.js
   languageName: unknown

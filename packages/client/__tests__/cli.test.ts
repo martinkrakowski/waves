@@ -1,40 +1,77 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const originalArgv = process.argv;
+const originalEnv = { ...process.env };
 
 afterEach(() => {
   process.argv = originalArgv;
   process.exitCode = undefined;
+  for (const key of Object.keys(process.env)) {
+    if (originalEnv[key] === undefined) {
+      delete process.env[key];
+    }
+  }
+  Object.assign(process.env, originalEnv);
   vi.restoreAllMocks();
   vi.resetModules();
 });
 
+interface Written {
+  readonly log: string[];
+  readonly error: string[];
+}
+
+function capture(): Written {
+  const log: string[] = [];
+  const error: string[] = [];
+  vi.spyOn(console, "log").mockImplementation((line: string) => {
+    log.push(line);
+  });
+  vi.spyOn(console, "error").mockImplementation((line: string) => {
+    error.push(line);
+  });
+  return { log, error };
+}
+
+async function invoke(args: readonly string[]): Promise<Written> {
+  const written = capture();
+  process.argv = ["/usr/bin/node", "/opt/waves/dist/cli.js", ...args];
+  vi.resetModules();
+  await import("../src/cli.js");
+  await vi.waitFor(() => {
+    expect(process.exitCode).toBeTypeOf("number");
+  });
+  return written;
+}
+
 describe("cli", () => {
-  it("forwards argv to the entrypoint, writes to stderr and exits 2", async () => {
-    const written: string[] = [];
-    vi.spyOn(console, "error").mockImplementation((line: string) => {
-      written.push(line);
-    });
-    process.argv = ["/usr/bin/node", "/opt/waves/dist/cli.js", "publish"];
+  it("forwards argv, writes the usage to stderr and exits 2", async () => {
+    const written = await invoke([]);
 
-    vi.resetModules();
-    await import("../src/cli.js");
-
-    expect(written).toEqual(["waves publish: not implemented yet"]);
+    expect(written.error[0]).toBe("waves: no command given");
+    expect(written.log).toEqual([]);
     expect(process.exitCode).toBe(2);
   });
 
-  it("reports the bare command name when no command is given", async () => {
-    const written: string[] = [];
-    vi.spyOn(console, "error").mockImplementation((line: string) => {
-      written.push(line);
-    });
-    process.argv = ["/usr/bin/node", "/opt/waves/dist/cli.js"];
+  it("prints the usage on stdout and exits 0 when asked", async () => {
+    const written = await invoke(["help"]);
 
-    vi.resetModules();
-    await import("../src/cli.js");
+    expect(written.log).toHaveLength(1);
+    expect(written.log[0]).toContain("waves register <id>");
+    expect(written.error).toEqual([]);
+    expect(process.exitCode).toBe(0);
+  });
 
-    expect(written).toEqual(["waves: not implemented yet"]);
-    expect(process.exitCode).toBe(2);
+  it("says nothing about a crash", async () => {
+    process.env.WAVES_URL = "https://127.0.0.1:1";
+    process.env.WAVES_PROJECT = "waves-demo";
+    // A directory cannot be read as a certificate authority, and that is not a
+    // refusal the client knows how to explain.
+    process.env.WAVES_CA_FILE = "/proc/self";
+    const written = await invoke(["push", "--wave", "wv5", "--stdin"]);
+
+    expect(written.error).toEqual(["waves: unexpected failure"]);
+    expect(written.log).toEqual([]);
+    expect(process.exitCode).toBe(1);
   });
 });
