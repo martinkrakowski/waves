@@ -1,0 +1,203 @@
+import { isRecord, own } from "./object.js";
+
+/** One `{path, message}` pointer from the server, the same shape the contract uses. */
+export interface ServerIssue {
+  readonly path: string;
+  readonly message: string;
+}
+
+/**
+ * How much of a server-provided string is ever printed. A message longer than
+ * this is not something a user reads to the end, and an answer that long is
+ * better refused than echoed.
+ */
+export const MAX_SERVER_TEXT = 200;
+
+const REASON_PHRASES: Readonly<Record<number, string>> = {
+  400: "Bad Request",
+  401: "Unauthorized",
+  403: "Forbidden",
+  404: "Not Found",
+  405: "Method Not Allowed",
+  409: "Conflict",
+  413: "Content Too Large",
+  415: "Unsupported Media Type",
+  422: "Unprocessable Content",
+  429: "Too Many Requests",
+  500: "Internal Server Error",
+  502: "Bad Gateway",
+  503: "Service Unavailable",
+  504: "Gateway Timeout",
+};
+
+// The bytes an escape sequence is made of. Left in an answer, they can clear
+// the screen, repaint the line and hide what the client actually said.
+const ESCAPE = 27;
+const FINAL_BYTE_LOW = 64;
+const FINAL_BYTE_HIGH = 126;
+const ELLIPSIS = "…";
+
+/**
+ * The characters that render as nothing: the C0 and C1 controls, the format
+ * characters (zero-width joiners, soft hyphens, the byte-order marks) and the
+ * two line separators Unicode counts as spaces. Between them they can hide a
+ * word, reorder one, or start a line the user never sees end.
+ */
+const INVISIBLE = /[\p{Cc}\p{Cf}\u2028\u2029]/u;
+
+function isInvisible(point: string): boolean {
+  return INVISIBLE.test(point);
+}
+
+/** Outside a sequence. */
+const OUTSIDE = 0;
+/** An escape has been seen and its bracket has not. */
+const AFTER_ESCAPE = 1;
+/** Inside a sequence, looking for the byte that ends it. */
+const INSIDE = 2;
+
+/**
+ * A server-provided string, made safe to print, in one pass over its characters.
+ *
+ * Escape sequences and every character that renders as nothing become spaces,
+ * and the result is capped by code point so that a character made of two code
+ * units is never cut in half. The text is the server's to choose; the terminal's
+ * is not.
+ *
+ * The walk remembers where in a sequence it is rather than re-reading the rest
+ * of the text at every escape: an answer made of nothing but escape sequences
+ * would otherwise cost a copy of what is left for each one, which on 64 KiB is
+ * seconds of work before a single character reaches the screen.
+ */
+export function safeText(value: string): string {
+  const points = Array.from(value);
+  const cleaned: string[] = [];
+  let state = OUTSIDE;
+  for (const [position, point] of points.entries()) {
+    const code = point.charCodeAt(0);
+    if (state === INSIDE) {
+      // The first byte from @ upwards is the end of the sequence.
+      state =
+        code >= FINAL_BYTE_LOW && code <= FINAL_BYTE_HIGH ? OUTSIDE : INSIDE;
+      continue;
+    }
+    if (state === AFTER_ESCAPE) {
+      // The bracket that opened it belongs to the sequence, not to the text.
+      state = INSIDE;
+      continue;
+    }
+    if (code === ESCAPE) {
+      // Only `ESC [` opens a sequence. An escape on its own says nothing about
+      // where it ends, so it is dropped by itself and the text carries on.
+      state = points[position + 1] === "[" ? AFTER_ESCAPE : OUTSIDE;
+      continue;
+    }
+    cleaned.push(isInvisible(point) ? " " : point);
+  }
+  const stripped = cleaned.join("").trim();
+  // Counted in characters, not in code units, so that a cap of 200 is 200
+  // characters of the text rather than 100 emoji.
+  const kept = Array.from(stripped);
+  if (kept.length <= MAX_SERVER_TEXT) {
+    return stripped;
+  }
+  return `${kept.slice(0, MAX_SERVER_TEXT - 1).join("")}${ELLIPSIS}`;
+}
+
+/** The reason phrase for a status, so a failure reads like an HTTP trace. */
+export function reasonPhrase(status: number): string {
+  return REASON_PHRASES[status] ?? "Unexpected Status";
+}
+
+/**
+ * Every pointer the server sent, whatever shape it sent it in: the
+ * `{errors: [...]}` of a 422, the `{error}` the server sends for everything
+ * else, and nothing at all for an empty or unreadable body.
+ */
+export function readIssues(body: string): ServerIssue[] {
+  const parsed = parseObject(body);
+  if (parsed === undefined) {
+    return [];
+  }
+  const errors = own(parsed, "errors");
+  if (Array.isArray(errors)) {
+    return errors.flatMap(readIssue);
+  }
+  return readTextIssue(parsed);
+}
+
+function readIssue(value: unknown): ServerIssue[] {
+  if (!isRecord(value)) {
+    return [];
+  }
+  const message = own(value, "message");
+  if (typeof message !== "string") {
+    return [];
+  }
+  const path = own(value, "path");
+  return [
+    { path: typeof path === "string" ? path : "", message: safeText(message) },
+  ];
+}
+
+/** `{error}` first, then `{message}`, then nothing. */
+function readTextIssue(record: Record<string, unknown>): ServerIssue[] {
+  for (const key of ["error", "message"]) {
+    const text = own(record, key);
+    if (typeof text === "string") {
+      return [{ path: "", message: safeText(text) }];
+    }
+  }
+  return [];
+}
+
+export function issueLines(issues: readonly ServerIssue[]): string[] {
+  return issues.map((issue) =>
+    issue.path === ""
+      ? `  ${issue.message}`
+      : `  ${safeText(issue.path)}: ${issue.message}`,
+  );
+}
+
+/** The tail of a failure message: nothing, or the server's pointers one per line. */
+export function serverFailure(body: string): string {
+  const issues = readIssues(body);
+  if (issues.length === 0) {
+    return "";
+  }
+  return `\n${issueLines(issues).join("\n")}`;
+}
+
+/**
+ * The project token from a 201. It is never printed, logged or stored anywhere
+ * but the token file, and it is not made safe: a secret is written down exactly
+ * as it arrived, not tidied up for display.
+ */
+export function readToken(body: string): string | undefined {
+  const parsed = parseObject(body);
+  if (parsed === undefined) {
+    return undefined;
+  }
+  const token = own(parsed, "token");
+  return typeof token === "string" && token !== "" ? token : undefined;
+}
+
+/** The server's timestamp from a 200, so the user can see when it landed. */
+export function readReceivedAt(body: string): string | undefined {
+  const parsed = parseObject(body);
+  if (parsed === undefined) {
+    return undefined;
+  }
+  const receivedAt = own(parsed, "receivedAt");
+  return typeof receivedAt === "string" ? safeText(receivedAt) : undefined;
+}
+
+function parseObject(body: string): Record<string, unknown> | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return undefined;
+  }
+  return isRecord(parsed) ? parsed : undefined;
+}
