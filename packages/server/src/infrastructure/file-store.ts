@@ -13,7 +13,8 @@ import { join } from "node:path";
 
 import type { Project, StoredSnapshot } from "@hexagen-monaco/waves-contract";
 
-import type { StorePort } from "../application/ports/store.js";
+import type { SnapshotHead, StorePort } from "../application/ports/store.js";
+import { snapshotHead } from "../application/ports/store.js";
 import { assertIds } from "./ids.js";
 
 const DATA_DIR_MODE = 0o700;
@@ -21,6 +22,15 @@ const FILE_MODE = 0o600;
 const PROJECTS_FILE = "projects.json";
 const SNAPSHOTS_DIR = "snapshots";
 const SNAPSHOT_SUFFIX = ".json";
+const HEAD_INFIX = ".head";
+
+function isSnapshotName(name: string): boolean {
+  return name.endsWith(SNAPSHOT_SUFFIX) && !name.includes(HEAD_INFIX);
+}
+
+function isHeadName(name: string): boolean {
+  return name.endsWith(`${HEAD_INFIX}${SNAPSHOT_SUFFIX}`);
+}
 
 function errorCode(error: unknown): string | undefined {
   return (error as NodeJS.ErrnoException).code;
@@ -56,6 +66,12 @@ function ignore(): undefined {
  * `snapshots/` or `snapshots/<project>/` is checked with `lstat` on the read and
  * delete paths as well as the write path, so a symlinked directory is refused
  * everywhere rather than followed.
+ *
+ * Beside every snapshot it writes `snapshots/<project>/<wave>.head.json`, the
+ * four fields a listing needs, in the same queued operation and with the same
+ * atomic write, and it deletes the two together. A listing therefore reads only
+ * the small heads and never parses a whole wave, which is what keeps the project
+ * list cheap as the number of waves grows.
  *
  * One process owns a data directory: the deployment runs a single replica, and
  * every mutating operation of an instance runs through one in-process queue, so
@@ -124,6 +140,10 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
         this.#snapshotPath(project, wave),
         JSON.stringify(snapshot, null, 2),
       );
+      await this.#writeAtomic(
+        this.#headPath(project, wave),
+        JSON.stringify(snapshotHead(snapshot)),
+      );
     });
   }
 
@@ -146,7 +166,7 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
     await this.#checkedDataDir(false);
     const dir = this.#projectDir(project);
     await this.#assertSnapshotsPath(dir);
-    const names = await this.#snapshotNames(dir);
+    const names = await this.#entryNames(dir, isSnapshotName);
     const snapshots: StoredSnapshot[] = [];
     for (const name of names) {
       const raw = await this.#readText(join(dir, name));
@@ -157,12 +177,29 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
     return snapshots;
   }
 
+  async listSnapshotHeads(project: string): Promise<readonly SnapshotHead[]> {
+    assertIds(project);
+    await this.#checkedDataDir(false);
+    const dir = this.#projectDir(project);
+    await this.#assertSnapshotsPath(dir);
+    const names = await this.#entryNames(dir, isHeadName);
+    const heads: SnapshotHead[] = [];
+    for (const name of names) {
+      const raw = await this.#readText(join(dir, name));
+      if (raw !== undefined) {
+        heads.push(JSON.parse(raw) as SnapshotHead);
+      }
+    }
+    return heads;
+  }
+
   async deleteSnapshot(project: string, wave: string): Promise<void> {
     assertIds(project, wave);
     await this.#serialised(async () => {
       await this.#checkedDataDir(false);
       await this.#assertSnapshotsPath(this.#projectDir(project));
       await rm(this.#snapshotPath(project, wave), { force: true });
+      await rm(this.#headPath(project, wave), { force: true });
     });
   }
 
@@ -223,7 +260,10 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
     }
   }
 
-  async #snapshotNames(dir: string): Promise<string[]> {
+  async #entryNames(
+    dir: string,
+    keep: (name: string) => boolean,
+  ): Promise<string[]> {
     let entries: string[];
     try {
       entries = await readdir(dir);
@@ -233,7 +273,7 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
       }
       throw error;
     }
-    return entries.filter((name) => name.endsWith(SNAPSHOT_SUFFIX)).sort();
+    return entries.filter(keep).sort();
   }
 
   async #readProjects(): Promise<Map<string, Project>> {
@@ -276,5 +316,12 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
 
   #snapshotPath(project: string, wave: string): string {
     return join(this.#projectDir(project), `${wave}${SNAPSHOT_SUFFIX}`);
+  }
+
+  #headPath(project: string, wave: string): string {
+    return join(
+      this.#projectDir(project),
+      `${wave}${HEAD_INFIX}${SNAPSHOT_SUFFIX}`,
+    );
   }
 }

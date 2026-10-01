@@ -33,6 +33,21 @@ export function snapshot(wave: string, generatedAt?: string): StoredSnapshot {
   };
 }
 
+export function withLanes(wave: string, count: number): StoredSnapshot {
+  const base = snapshot(wave);
+  return {
+    envelope: {
+      ...base.envelope,
+      lanes: Array.from({ length: count }, (_unused, index) => ({
+        id: `${wave}-${index}`,
+        derived: { alive: true },
+        disagreements: [],
+      })),
+    },
+    receivedAt: base.receivedAt,
+  };
+}
+
 export function runStoreContract(createHarness: () => StoreHarness): void {
   describe("StorePort", () => {
     it("round-trips a project", async () => {
@@ -158,6 +173,78 @@ export function runStoreContract(createHarness: () => StoreHarness): void {
       }
     });
 
+    it("lists the heads of a project without its full snapshots", async () => {
+      const { store, dispose } = createHarness();
+      try {
+        await store.putSnapshot(snapshot("wv2"));
+        await store.putSnapshot(withLanes("wv1", 2));
+
+        await expect(store.listSnapshotHeads("alpha")).resolves.toEqual([
+          {
+            wave: "wv1",
+            receivedAt: "2026-10-01T12:00:01Z",
+            intervalSeconds: 10,
+            lanes: 2,
+          },
+          {
+            wave: "wv2",
+            receivedAt: "2026-10-01T12:00:01Z",
+            intervalSeconds: 10,
+            lanes: 0,
+          },
+        ]);
+        await expect(store.listSnapshotHeads("absent")).resolves.toEqual([]);
+      } finally {
+        await dispose();
+      }
+    });
+
+    it("keeps the heads in step with the snapshots of a project", async () => {
+      const { store, dispose } = createHarness();
+      try {
+        await store.putSnapshot(snapshot("wv1"));
+        await store.putSnapshot(snapshot("wv2"));
+        await store.deleteSnapshot("alpha", "wv1");
+        await store.deleteSnapshot("alpha", "absent");
+        await expect(store.listSnapshotHeads("alpha")).resolves.toEqual([
+          {
+            wave: "wv2",
+            receivedAt: "2026-10-01T12:00:01Z",
+            intervalSeconds: 10,
+            lanes: 0,
+          },
+        ]);
+
+        await store.deleteProject("alpha");
+        await expect(store.listSnapshotHeads("alpha")).resolves.toEqual([]);
+        await expect(store.listSnapshotHeads("absent")).resolves.toEqual([]);
+      } finally {
+        await dispose();
+      }
+    });
+
+    it("replaces the head of a wave stored again", async () => {
+      const { store, dispose } = createHarness();
+      try {
+        await store.putSnapshot(snapshot("wv1"));
+        await store.putSnapshot({
+          ...snapshot("wv1"),
+          receivedAt: "2026-10-01T13:00:01Z",
+        });
+
+        await expect(store.listSnapshotHeads("alpha")).resolves.toEqual([
+          {
+            wave: "wv1",
+            receivedAt: "2026-10-01T13:00:01Z",
+            intervalSeconds: 10,
+            lanes: 0,
+          },
+        ]);
+      } finally {
+        await dispose();
+      }
+    });
+
     it("deletes a single snapshot and keeps the others", async () => {
       const { store, dispose } = createHarness();
       try {
@@ -252,6 +339,9 @@ export function runStoreContract(createHarness: () => StoreHarness): void {
             "invalid project id",
           );
           await expect(store.listSnapshots(id)).rejects.toThrow(
+            "invalid project id",
+          );
+          await expect(store.listSnapshotHeads(id)).rejects.toThrow(
             "invalid project id",
           );
           await expect(store.putProject(project(id))).rejects.toThrow(
