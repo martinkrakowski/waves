@@ -7,7 +7,17 @@ export type ValidationResult<T> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly errors: readonly ValidationIssue[] };
 
+export type Normalised =
+  | { readonly ok: true; readonly value: unknown }
+  | { readonly ok: false; readonly errors: readonly ValidationIssue[] };
+
+export const ROOT_PATH = "/";
+
 const MAX_ISSUES = 50;
+const MAX_INPUT_BYTES = 1_048_576;
+const MAX_TIMESTAMP_CHARS = 24;
+const TIMESTAMP_RULE: StringRule = { maxChars: MAX_TIMESTAMP_CHARS };
+const ISO_UTC_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
 
 export class IssueCollector {
   readonly issues: ValidationIssue[] = [];
@@ -35,6 +45,10 @@ export function byteLength(text: string): number {
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function own(record: Record<string, unknown>, key: string): unknown {
+  return Object.hasOwn(record, key) ? record[key] : undefined;
 }
 
 export function escapeToken(token: string): string {
@@ -67,7 +81,14 @@ export function hasForbiddenCharacters(
 }
 
 export function isIsoUtc(text: string): boolean {
-  return text.endsWith("Z") && Number.isFinite(Date.parse(text));
+  if (!ISO_UTC_PATTERN.test(text)) {
+    return false;
+  }
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) {
+    return false;
+  }
+  return parsed.toISOString().slice(0, 19) === text.slice(0, 19);
 }
 
 export interface StringRule {
@@ -88,10 +109,6 @@ export function readText(
     ctx.add(path, "expected a string");
     return undefined;
   }
-  if (hasForbiddenCharacters(value, rule.lineBreaks === true)) {
-    ctx.add(path, "expected printable text");
-    return undefined;
-  }
   if (rule.minChars !== undefined && value.length < rule.minChars) {
     ctx.add(path, `expected at least ${rule.minChars} characters`);
     return undefined;
@@ -102,6 +119,10 @@ export function readText(
   }
   if (rule.maxBytes !== undefined && byteLength(value) > rule.maxBytes) {
     ctx.add(path, `expected at most ${rule.maxBytes} bytes`);
+    return undefined;
+  }
+  if (hasForbiddenCharacters(value, rule.lineBreaks === true)) {
+    ctx.add(path, "expected printable text");
     return undefined;
   }
   if (rule.pattern !== undefined && !rule.pattern.test(value)) {
@@ -116,7 +137,7 @@ export function readTimestamp(
   value: unknown,
   path: string,
 ): string | undefined {
-  const text = readText(ctx, value, path, {});
+  const text = readText(ctx, value, path, TIMESTAMP_RULE);
   if (text === undefined) {
     return undefined;
   }
@@ -263,4 +284,30 @@ export function readClosedObject(
     }
   }
   return value;
+}
+
+function notSerialisable(): Normalised {
+  return {
+    ok: false,
+    errors: [{ path: ROOT_PATH, message: "input is not serialisable JSON" }],
+  };
+}
+
+export function normalise(input: unknown, label: string): Normalised {
+  let json: string | undefined;
+  try {
+    json = JSON.stringify(input);
+  } catch {
+    return notSerialisable();
+  }
+  if (json === undefined) {
+    return notSerialisable();
+  }
+  if (byteLength(json) > MAX_INPUT_BYTES) {
+    return {
+      ok: false,
+      errors: [{ path: ROOT_PATH, message: `${label} larger than 1 MiB` }],
+    };
+  }
+  return { ok: true, value: JSON.parse(json) };
 }

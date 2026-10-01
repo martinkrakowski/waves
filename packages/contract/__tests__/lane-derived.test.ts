@@ -390,6 +390,14 @@ describe("validateEnvelope derived log", () => {
     );
   });
 
+  it("checks the tail byte cap before its characters", () => {
+    const tail = `${"t".repeat(4000)}${BELL}${"t".repeat(600)}`;
+
+    expectEnvelopePaths(derivedOf({ log: { bytes: 5000, mtimeMs: 1, tail } }), [
+      "/lanes/0/derived/log/tail",
+    ]);
+  });
+
   it("rejects a control character in a tail", () => {
     expectEnvelopePaths(
       derivedOf({ log: { bytes: 1, mtimeMs: 1, tail: `ok${BELL}` } }),

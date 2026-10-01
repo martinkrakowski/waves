@@ -5,6 +5,8 @@ import {
   type StringRule,
   type ValidationResult,
   IssueCollector,
+  normalise,
+  own,
   readClosedObject,
   readOptional,
   readText,
@@ -59,13 +61,13 @@ function readProject(ctx: Collector, input: unknown): Project | undefined {
   if (record === undefined) {
     return undefined;
   }
-  const id = readProjectId(ctx, record["id"], "/id");
-  const name = readText(ctx, record["name"], "/name", NAME_RULE) ?? "";
-  const repo = readOptional(ctx, record["repo"], "/repo", readRepo);
+  const id = readProjectId(ctx, own(record, "id"), "/id");
+  const name = readText(ctx, own(record, "name"), "/name", NAME_RULE) ?? "";
+  const repo = readOptional(ctx, own(record, "repo"), "/repo", readRepo);
   const tokenSha256 =
-    readText(ctx, record["tokenSha256"], "/tokenSha256", TOKEN_RULE) ?? "";
+    readText(ctx, own(record, "tokenSha256"), "/tokenSha256", TOKEN_RULE) ?? "";
   const registeredAt =
-    readTimestamp(ctx, record["registeredAt"], "/registeredAt") ?? "";
+    readTimestamp(ctx, own(record, "registeredAt"), "/registeredAt") ?? "";
   if (ctx.issues.length > 0) {
     return undefined;
   }
@@ -73,8 +75,12 @@ function readProject(ctx: Collector, input: unknown): Project | undefined {
 }
 
 export function validateProject(input: unknown): ValidationResult<Project> {
+  const normalised = normalise(input, "project");
+  if (!normalised.ok) {
+    return { ok: false, errors: normalised.errors };
+  }
   const ctx = new IssueCollector();
-  const value = readProject(ctx, input);
+  const value = readProject(ctx, normalised.value);
   if (value === undefined) {
     return { ok: false, errors: ctx.issues };
   }

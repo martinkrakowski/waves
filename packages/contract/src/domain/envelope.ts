@@ -21,6 +21,8 @@ import {
   byteLength,
   hasForbiddenCharacters,
   isRecord,
+  normalise,
+  own,
   readBoolean,
   readClosedObject,
   readEnum,
@@ -73,6 +75,14 @@ const MAX_TAIL_BYTES = 4096;
 const MAX_REVIEW_CHARS = 200;
 const MAX_DISAGREEMENTS = 20;
 const MAX_DISAGREEMENT_CHARS = 300;
+const MAX_DETAIL_DEPTH = 8;
+const MAX_DETAIL_KEYS = 256;
+
+const FORBIDDEN_DETAIL_KEYS: ReadonlySet<string> = new Set([
+  "__proto__",
+  "constructor",
+  "prototype",
+]);
 
 const SEAT_RULE: StringRule = { minChars: 1, maxChars: MAX_SEAT_CHARS };
 const STAGE_RULE: StringRule = {
@@ -140,33 +150,63 @@ function readIntervalSeconds(
   return seconds ?? null;
 }
 
-function serialize(value: unknown): string | undefined {
-  try {
-    const json = JSON.stringify(value);
-    return typeof json === "string" ? json : undefined;
-  } catch {
-    return undefined;
-  }
+interface DetailBudget {
+  keys: number;
 }
 
-function containsForbiddenCharacters(
+function detailProblem(
   value: unknown,
-  allowLineBreaks: boolean,
-): boolean {
+  depth: number,
+  budget: DetailBudget,
+): string | undefined {
   if (typeof value === "string") {
-    return hasForbiddenCharacters(value, allowLineBreaks);
+    return hasForbiddenCharacters(value, true)
+      ? "expected printable text"
+      : undefined;
   }
   if (Array.isArray(value)) {
-    return value.some((item) =>
-      containsForbiddenCharacters(item, allowLineBreaks),
-    );
+    return detailSequenceProblem(value, depth, budget);
   }
-  if (isRecord(value)) {
-    return Object.values(value).some((item) =>
-      containsForbiddenCharacters(item, allowLineBreaks),
-    );
+  if (!isRecord(value)) {
+    return undefined;
   }
-  return false;
+  if (depth > MAX_DETAIL_DEPTH) {
+    return `nested deeper than ${MAX_DETAIL_DEPTH} levels`;
+  }
+  for (const [key, item] of Object.entries(value)) {
+    budget.keys += 1;
+    if (budget.keys > MAX_DETAIL_KEYS) {
+      return `more than ${MAX_DETAIL_KEYS} keys`;
+    }
+    if (FORBIDDEN_DETAIL_KEYS.has(key)) {
+      return `the key ${key} is not allowed`;
+    }
+    if (hasForbiddenCharacters(key, false)) {
+      return "a key contains a control character";
+    }
+    const problem = detailProblem(item, depth + 1, budget);
+    if (problem !== undefined) {
+      return problem;
+    }
+  }
+  return undefined;
+}
+
+function detailSequenceProblem(
+  items: readonly unknown[],
+  depth: number,
+  budget: DetailBudget,
+): string | undefined {
+  if (depth > MAX_DETAIL_DEPTH) {
+    return `nested deeper than ${MAX_DETAIL_DEPTH} levels`;
+  }
+  for (const item of items) {
+    const problem = detailProblem(item, depth + 1, budget);
+    if (problem !== undefined) {
+      return problem;
+    }
+  }
+  return undefined;
 }
 
 function readDetail(
@@ -178,17 +218,13 @@ function readDetail(
     ctx.add(path, "expected an object");
     return undefined;
   }
-  const json = serialize(value);
-  if (json === undefined) {
-    ctx.add(path, "expected an object that serialises to JSON");
-    return undefined;
-  }
-  if (byteLength(json) > MAX_DETAIL_BYTES) {
+  if (byteLength(JSON.stringify(value)) > MAX_DETAIL_BYTES) {
     ctx.add(path, `expected at most ${MAX_DETAIL_BYTES} serialized bytes`);
     return undefined;
   }
-  if (containsForbiddenCharacters(value, true)) {
-    ctx.add(path, "expected printable text");
+  const problem = detailProblem(value, 1, { keys: 0 });
+  if (problem !== undefined) {
+    ctx.add(path, problem);
     return undefined;
   }
   return value;
@@ -207,24 +243,30 @@ function readCoverage(
     statements:
       readNumberInRange(
         ctx,
-        record["statements"],
+        own(record, "statements"),
         `${path}/statements`,
         0,
         100,
       ) ?? 0,
     branches:
-      readNumberInRange(ctx, record["branches"], `${path}/branches`, 0, 100) ??
-      0,
+      readNumberInRange(
+        ctx,
+        own(record, "branches"),
+        `${path}/branches`,
+        0,
+        100,
+      ) ?? 0,
     functions:
       readNumberInRange(
         ctx,
-        record["functions"],
+        own(record, "functions"),
         `${path}/functions`,
         0,
         100,
       ) ?? 0,
     lines:
-      readNumberInRange(ctx, record["lines"], `${path}/lines`, 0, 100) ?? 0,
+      readNumberInRange(ctx, own(record, "lines"), `${path}/lines`, 0, 100) ??
+      0,
   };
 }
 
@@ -238,10 +280,10 @@ function readGate(
     return undefined;
   }
   return {
-    exit: readOptional(ctx, record["exit"], `${path}/exit`, readInteger),
+    exit: readOptional(ctx, own(record, "exit"), `${path}/exit`, readInteger),
     coverage: readOptional(
       ctx,
-      record["coverage"],
+      own(record, "coverage"),
       `${path}/coverage`,
       readCoverage,
     ),
@@ -272,24 +314,25 @@ function readPullRequest(
     return undefined;
   }
   return {
-    number: readIntegerAtLeast(ctx, record["number"], `${path}/number`, 1) ?? 0,
+    number:
+      readIntegerAtLeast(ctx, own(record, "number"), `${path}/number`, 1) ?? 0,
     state:
       readEnum<PullRequestState>(
         ctx,
-        record["state"],
+        own(record, "state"),
         `${path}/state`,
         PULL_REQUEST_STATES,
       ) ?? "open",
     checks:
       readEnum<CheckStatus>(
         ctx,
-        record["checks"],
+        own(record, "checks"),
         `${path}/checks`,
         CHECK_STATUSES,
       ) ?? "unknown",
     unresolvedThreads: readUnresolvedThreads(
       ctx,
-      record["unresolvedThreads"],
+      own(record, "unresolvedThreads"),
       `${path}/unresolvedThreads`,
     ),
   };
@@ -305,12 +348,22 @@ function readDiff(
     return undefined;
   }
   return {
-    files: readIntegerAtLeast(ctx, record["files"], `${path}/files`, 0) ?? 0,
+    files:
+      readIntegerAtLeast(ctx, own(record, "files"), `${path}/files`, 0) ?? 0,
     insertions:
-      readIntegerAtLeast(ctx, record["insertions"], `${path}/insertions`, 0) ??
-      0,
+      readIntegerAtLeast(
+        ctx,
+        own(record, "insertions"),
+        `${path}/insertions`,
+        0,
+      ) ?? 0,
     deletions:
-      readIntegerAtLeast(ctx, record["deletions"], `${path}/deletions`, 0) ?? 0,
+      readIntegerAtLeast(
+        ctx,
+        own(record, "deletions"),
+        `${path}/deletions`,
+        0,
+      ) ?? 0,
   };
 }
 
@@ -324,9 +377,10 @@ function readLog(
     return undefined;
   }
   return {
-    bytes: readIntegerAtLeast(ctx, record["bytes"], `${path}/bytes`, 0) ?? 0,
+    bytes:
+      readIntegerAtLeast(ctx, own(record, "bytes"), `${path}/bytes`, 0) ?? 0,
     mtimeMs:
-      readNumberAtLeast(ctx, record["mtimeMs"], `${path}/mtimeMs`, 0) ?? 0,
+      readNumberAtLeast(ctx, own(record, "mtimeMs"), `${path}/mtimeMs`, 0) ?? 0,
     tail: readOptionalText(ctx, record, "tail", TAIL_RULE, path),
   };
 }
@@ -338,7 +392,7 @@ function readOptionalText(
   rule: StringRule,
   base: string,
 ): string | undefined {
-  const value = record[key];
+  const value = own(record, key);
   if (value === undefined) {
     return undefined;
   }
@@ -355,12 +409,12 @@ function readDerived(
     return undefined;
   }
   return {
-    alive: readBoolean(ctx, record["alive"], `${path}/alive`),
-    exit: readOptional(ctx, record["exit"], `${path}/exit`, readInteger),
-    gate: readOptional(ctx, record["gate"], `${path}/gate`, readGate),
-    pr: readOptional(ctx, record["pr"], `${path}/pr`, readPullRequest),
-    diff: readOptional(ctx, record["diff"], `${path}/diff`, readDiff),
-    log: readOptional(ctx, record["log"], `${path}/log`, readLog),
+    alive: readBoolean(ctx, own(record, "alive"), `${path}/alive`),
+    exit: readOptional(ctx, own(record, "exit"), `${path}/exit`, readInteger),
+    gate: readOptional(ctx, own(record, "gate"), `${path}/gate`, readGate),
+    pr: readOptional(ctx, own(record, "pr"), `${path}/pr`, readPullRequest),
+    diff: readOptional(ctx, own(record, "diff"), `${path}/diff`, readDiff),
+    log: readOptional(ctx, own(record, "log"), `${path}/log`, readLog),
     planReview: readOptionalText(ctx, record, "planReview", REVIEW_RULE, path),
     risk: readOptionalText(ctx, record, "risk", REVIEW_RULE, path),
   };
@@ -392,18 +446,25 @@ function readReported(
     return undefined;
   }
   return {
-    stage: readText(ctx, record["stage"], `${path}/stage`, STAGE_RULE) ?? "",
+    stage:
+      readText(ctx, own(record, "stage"), `${path}/stage`, STAGE_RULE) ?? "",
     event:
-      readEnum(ctx, record["event"], `${path}/event`, LANE_EVENTS) ?? "started",
-    ts: readTimestamp(ctx, record["ts"], `${path}/ts`) ?? "",
-    pr: readOptional(ctx, record["pr"], `${path}/pr`, readReportedPr),
+      readEnum(ctx, own(record, "event"), `${path}/event`, LANE_EVENTS) ??
+      "started",
+    ts: readTimestamp(ctx, own(record, "ts"), `${path}/ts`) ?? "",
+    pr: readOptional(ctx, own(record, "pr"), `${path}/pr`, readReportedPr),
     round: readOptional(
       ctx,
-      record["round"],
+      own(record, "round"),
       `${path}/round`,
       readReportedRound,
     ),
-    detail: readOptional(ctx, record["detail"], `${path}/detail`, readDetail),
+    detail: readOptional(
+      ctx,
+      own(record, "detail"),
+      `${path}/detail`,
+      readDetail,
+    ),
   };
 }
 
@@ -418,6 +479,7 @@ function readDisagreements(
   }
   if (value.length > MAX_DISAGREEMENTS) {
     ctx.add(path, `expected at most ${MAX_DISAGREEMENTS} entries`);
+    return [];
   }
   const entries: string[] = [];
   for (let index = 0; index < value.length; index += 1) {
@@ -443,18 +505,18 @@ function readLane(
   if (record === undefined) {
     return undefined;
   }
-  const id = readLaneId(ctx, record["id"], `${path}/id`);
+  const id = readLaneId(ctx, own(record, "id"), `${path}/id`);
   const seat = readOptionalText(ctx, record, "seat", SEAT_RULE, path);
   const reported = readOptional(
     ctx,
-    record["reported"],
+    own(record, "reported"),
     `${path}/reported`,
     readReported,
   );
-  const derived = readDerived(ctx, record["derived"], `${path}/derived`);
+  const derived = readDerived(ctx, own(record, "derived"), `${path}/derived`);
   const disagreements = readDisagreements(
     ctx,
-    record["disagreements"],
+    own(record, "disagreements"),
     `${path}/disagreements`,
   );
   if (derived === undefined) {
@@ -470,6 +532,7 @@ function readLanes(ctx: Collector, value: unknown, path: string): Lane[] {
   }
   if (value.length > MAX_LANES) {
     ctx.add(path, `expected at most ${MAX_LANES} lanes`);
+    return [];
   }
   const lanes: Lane[] = [];
   for (let index = 0; index < value.length; index += 1) {
@@ -486,28 +549,39 @@ function readEnvelope(ctx: Collector, input: unknown): Envelope | undefined {
   if (record === undefined) {
     return undefined;
   }
-  if (record["schema"] !== SCHEMA) {
+  if (own(record, "schema") !== SCHEMA) {
     ctx.add("/schema", `expected ${SCHEMA}`);
   }
-  const project = readProjectId(ctx, record["project"], "/project");
-  const wave = readWaveId(ctx, record["wave"], "/wave");
+  const project = readProjectId(ctx, own(record, "project"), "/project");
+  const wave = readWaveId(ctx, own(record, "wave"), "/wave");
   const generatedAt =
-    readTimestamp(ctx, record["generatedAt"], "/generatedAt") ?? "";
+    readTimestamp(ctx, own(record, "generatedAt"), "/generatedAt") ?? "";
   const intervalSeconds = readIntervalSeconds(
     ctx,
-    record["intervalSeconds"],
+    own(record, "intervalSeconds"),
     "/intervalSeconds",
   );
-  const lanes = readLanes(ctx, record["lanes"], "/lanes");
+  const lanes = readLanes(ctx, own(record, "lanes"), "/lanes");
   if (ctx.issues.length > 0) {
     return undefined;
   }
-  return { schema: SCHEMA, project, wave, generatedAt, intervalSeconds, lanes };
+  return {
+    schema: SCHEMA,
+    project,
+    wave,
+    generatedAt,
+    intervalSeconds,
+    lanes,
+  };
 }
 
 export function validateEnvelope(input: unknown): ValidationResult<Envelope> {
+  const normalised = normalise(input, "envelope");
+  if (!normalised.ok) {
+    return { ok: false, errors: normalised.errors };
+  }
   const ctx = new IssueCollector();
-  const value = readEnvelope(ctx, input);
+  const value = readEnvelope(ctx, normalised.value);
   if (value === undefined) {
     return { ok: false, errors: ctx.issues };
   }

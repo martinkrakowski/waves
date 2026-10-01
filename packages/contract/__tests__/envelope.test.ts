@@ -92,8 +92,36 @@ describe("validateEnvelope", () => {
       { ...minimalEnvelope(), generatedAt: "2026-10-01T12:00:00" },
       ["/generatedAt"],
     );
+  });
+
+  it.each([
+    "2026-10-01 12:00Z",
+    "2026-10-01Z",
+    "Oct 1 2026Z",
+    "2026-10-01t12:00:00z",
+    "2026-10-01T12:00:00.1234Z",
+    "2026-13-45T99:99:99Z",
+    "2026-99-99T99:99:99Z",
+    "2026-02-30T00:00:00Z",
+  ])("rejects the non UTC timestamp %j", (generatedAt) => {
+    expectEnvelopePaths({ ...minimalEnvelope(), generatedAt }, [
+      "/generatedAt",
+    ]);
+  });
+
+  it.each([
+    "2026-10-01T12:00:00Z",
+    "2026-10-01T12:00:00.123Z",
+    "2026-02-28T23:59:59Z",
+  ])("accepts the UTC timestamp %j", (generatedAt) => {
+    expect(
+      expectValidEnvelope({ ...minimalEnvelope(), generatedAt }).generatedAt,
+    ).toBe(generatedAt);
+  });
+
+  it("checks the timestamp length before its characters", () => {
     expectEnvelopePaths(
-      { ...minimalEnvelope(), generatedAt: "2026-13-45T99:99:99Z" },
+      { ...minimalEnvelope(), generatedAt: `2026-10-01T12:00:00Z${BELL}pad` },
       ["/generatedAt"],
     );
   });

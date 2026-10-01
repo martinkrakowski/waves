@@ -1,17 +1,14 @@
-import type {
-  Project,
-  ProjectId,
-  StoredSnapshot,
-  WaveId,
-} from "@hexagen-monaco/waves-contract";
+import type { Project, StoredSnapshot } from "@hexagen-monaco/waves-contract";
 
 import type { StorePort } from "../application/ports/store.js";
+import { assertIds } from "./ids.js";
 
 export class MemoryStore implements StorePort<Project, StoredSnapshot> {
-  readonly #projects = new Map<ProjectId, Project>();
-  readonly #waves = new Map<ProjectId, Map<WaveId, StoredSnapshot>>();
+  readonly #projects = new Map<string, Project>();
+  readonly #waves = new Map<string, Map<string, StoredSnapshot>>();
 
-  async getProject(id: ProjectId): Promise<Project | undefined> {
+  async getProject(id: string): Promise<Project | undefined> {
+    assertIds(id);
     const stored = this.#projects.get(id);
     if (stored === undefined) {
       return undefined;
@@ -26,25 +23,29 @@ export class MemoryStore implements StorePort<Project, StoredSnapshot> {
   }
 
   async putProject(project: Project): Promise<void> {
+    assertIds(project.id);
     this.#projects.set(project.id, structuredClone(project));
   }
 
-  async deleteProject(id: ProjectId): Promise<void> {
+  async deleteProject(id: string): Promise<void> {
+    assertIds(id);
     this.#projects.delete(id);
     this.#waves.delete(id);
   }
 
   async putSnapshot(snapshot: StoredSnapshot): Promise<void> {
     const project = snapshot.envelope.project;
-    const waves = this.#waves.get(project) ?? new Map<WaveId, StoredSnapshot>();
+    assertIds(project, snapshot.envelope.wave);
+    const waves = this.#waves.get(project) ?? new Map<string, StoredSnapshot>();
     waves.set(snapshot.envelope.wave, structuredClone(snapshot));
     this.#waves.set(project, waves);
   }
 
   async getSnapshot(
-    project: ProjectId,
-    wave: WaveId,
+    project: string,
+    wave: string,
   ): Promise<StoredSnapshot | undefined> {
+    assertIds(project, wave);
     const stored = this.#waves.get(project)?.get(wave);
     if (stored === undefined) {
       return undefined;
@@ -52,7 +53,8 @@ export class MemoryStore implements StorePort<Project, StoredSnapshot> {
     return structuredClone(stored);
   }
 
-  async listSnapshots(project: ProjectId): Promise<readonly StoredSnapshot[]> {
+  async listSnapshots(project: string): Promise<readonly StoredSnapshot[]> {
+    assertIds(project);
     const waves = this.#waves.get(project);
     if (waves === undefined) {
       return [];
@@ -62,7 +64,8 @@ export class MemoryStore implements StorePort<Project, StoredSnapshot> {
       .map((wave) => structuredClone(waves.get(wave) as StoredSnapshot));
   }
 
-  async deleteSnapshot(project: ProjectId, wave: WaveId): Promise<void> {
+  async deleteSnapshot(project: string, wave: string): Promise<void> {
+    assertIds(project, wave);
     this.#waves.get(project)?.delete(wave);
   }
 }

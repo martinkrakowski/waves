@@ -226,5 +226,115 @@ export function runStoreContract(createHarness: () => StoreHarness): void {
         await dispose();
       }
     });
+
+    it("returns undefined for an id that names an inherited property", async () => {
+      const { store, dispose } = createHarness();
+      try {
+        await expect(store.getProject("constructor")).resolves.toBeUndefined();
+        await expect(
+          store.getSnapshot("constructor", "wv1"),
+        ).resolves.toBeUndefined();
+        await expect(store.listProjects()).resolves.toEqual([]);
+      } finally {
+        await dispose();
+      }
+    });
+
+    it.each(["../escape", "a/b", "..", "ALPHA", "", "a".repeat(64)])(
+      "rejects the invalid project id %j",
+      async (id) => {
+        const { store, dispose } = createHarness();
+        try {
+          await expect(store.getProject(id)).rejects.toThrow(
+            "invalid project id",
+          );
+          await expect(store.deleteProject(id)).rejects.toThrow(
+            "invalid project id",
+          );
+          await expect(store.listSnapshots(id)).rejects.toThrow(
+            "invalid project id",
+          );
+          await expect(store.putProject(project(id))).rejects.toThrow(
+            "invalid project id",
+          );
+          await expect(store.getSnapshot(id, "wv1")).rejects.toThrow(
+            "invalid project id",
+          );
+          await expect(store.deleteSnapshot(id, "wv1")).rejects.toThrow(
+            "invalid project id",
+          );
+          await expect(
+            store.putSnapshot({
+              envelope: { ...snapshot("wv1").envelope, project: id },
+              receivedAt: "2026-10-01T12:00:01Z",
+            }),
+          ).rejects.toThrow("invalid project id");
+        } finally {
+          await dispose();
+        }
+      },
+    );
+
+    it.each(["wv/1", "..", "wv.1", "-wv", "", "w".repeat(81)])(
+      "rejects the invalid wave id %j",
+      async (wave) => {
+        const { store, dispose } = createHarness();
+        try {
+          await expect(store.getSnapshot("alpha", wave)).rejects.toThrow(
+            "invalid wave id",
+          );
+          await expect(store.deleteSnapshot("alpha", wave)).rejects.toThrow(
+            "invalid wave id",
+          );
+          await expect(
+            store.putSnapshot({
+              envelope: { ...snapshot("wv1").envelope, wave },
+              receivedAt: "2026-10-01T12:00:01Z",
+            }),
+          ).rejects.toThrow("invalid wave id");
+        } finally {
+          await dispose();
+        }
+      },
+    );
+
+    it("keeps every project of twenty concurrent writes", async () => {
+      const { store, dispose } = createHarness();
+      try {
+        const ids = Array.from({ length: 20 }, (_unused, index) => `p${index}`);
+
+        const writes = ids.map((id) => store.putProject(project(id)));
+
+        await expect(Promise.all(writes)).resolves.toHaveLength(20);
+        await expect(store.listProjects()).resolves.toEqual(
+          [...ids].sort().map((id) => project(id)),
+        );
+      } finally {
+        await dispose();
+      }
+    });
+
+    it("serialises a snapshot and a deletion of the same project", async () => {
+      const { store, dispose } = createHarness();
+      try {
+        await store.putProject(project("alpha"));
+        await store.putSnapshot(snapshot("wv1"));
+
+        const interleaved = await Promise.all([
+          store.putSnapshot(snapshot("wv2")),
+          store.deleteProject("alpha"),
+          store.putSnapshot(snapshot("wv3")),
+        ]);
+
+        expect(interleaved).toHaveLength(3);
+        await expect(store.getProject("alpha")).resolves.toBeUndefined();
+        await expect(store.listProjects()).resolves.toEqual([]);
+        await expect(store.listSnapshots("alpha")).resolves.toEqual([
+          snapshot("wv3"),
+        ]);
+      } finally {
+        await dispose();
+      }
+    });
   });
 }

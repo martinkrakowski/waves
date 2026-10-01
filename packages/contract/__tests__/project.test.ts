@@ -114,4 +114,32 @@ describe("validateProject", () => {
       "/repo",
     ]);
   });
+
+  it("rejects undefined with one root error", () => {
+    expect(
+      errors(undefined).map((issue) => [issue.path, issue.message]),
+    ).toEqual([["/", "input is not serialisable JSON"]]);
+  });
+
+  it("rejects a project larger than 1 MiB with one root error", () => {
+    const issues = errors({ ...project(), name: "n".repeat(1_048_576) });
+
+    expect(issues.map((issue) => [issue.path, issue.message])).toEqual([
+      ["/", "project larger than 1 MiB"],
+    ]);
+  });
+
+  it("does not see a field inherited from a prototype", () => {
+    const input = Object.create({ tokenSha256: TOKEN }) as Record<
+      string,
+      unknown
+    >;
+    Object.assign(input, {
+      id: "alpha",
+      name: "Alpha",
+      registeredAt: "2026-10-01T12:00:00Z",
+    });
+
+    expectPaths(input, ["/tokenSha256"]);
+  });
 });

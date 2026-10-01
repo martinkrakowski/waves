@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import type { Stats } from "node:fs";
 import {
+  lstat,
   mkdir,
   readFile,
   readdir,
@@ -10,156 +11,250 @@ import {
 } from "node:fs/promises";
 import { join } from "node:path";
 
-import {
-  isProjectId,
-  isWaveId,
-  type Project,
-  type ProjectId,
-  type StoredSnapshot,
-  type WaveId,
-} from "@hexagen-monaco/waves-contract";
+import type { Project, StoredSnapshot } from "@hexagen-monaco/waves-contract";
 
 import type { StorePort } from "../application/ports/store.js";
+import { assertIds } from "./ids.js";
 
 const DATA_DIR_MODE = 0o700;
+const FILE_MODE = 0o600;
 const PROJECTS_FILE = "projects.json";
 const SNAPSHOTS_DIR = "snapshots";
 const SNAPSHOT_SUFFIX = ".json";
 
-function requireProjectId(id: ProjectId): ProjectId {
-  if (!isProjectId(id)) {
-    throw new Error(`invalid project id: ${JSON.stringify(id)}`);
-  }
-  return id;
+function errorCode(error: unknown): string | undefined {
+  return (error as NodeJS.ErrnoException).code;
 }
 
-function requireWaveId(wave: WaveId): WaveId {
-  if (!isWaveId(wave)) {
-    throw new Error(`invalid wave id: ${JSON.stringify(wave)}`);
+function assertRealDirectory(info: Stats, path: string): void {
+  if (info.isSymbolicLink()) {
+    throw new Error(`${path} is a symbolic link, not a directory`);
   }
-  return wave;
+  if (!info.isDirectory()) {
+    throw new Error(`${path} is not a directory`);
+  }
+  if (info.uid !== process.getuid!()) {
+    throw new Error(`${path} is not owned by this process`);
+  }
+  if ((info.mode & 0o077) !== 0) {
+    throw new Error(`${path} is accessible to other users`);
+  }
 }
 
+function serialiseProjects(projects: ReadonlyMap<string, Project>): string {
+  return JSON.stringify(Object.fromEntries(projects), null, 2);
+}
+
+function ignore(): undefined {
+  return undefined;
+}
+
+/**
+ * Keeps `projects.json` and `snapshots/<project>/<wave>.json` under one data
+ * directory, writing every file atomically through a temporary file and a
+ * rename, with 0600 files under 0700 directories.
+ *
+ * One process owns a data directory: the deployment runs a single replica, and
+ * every mutating operation of an instance runs through one in-process queue, so
+ * a read-modify-write of `projects.json` never interleaves with another and a
+ * `putSnapshot` cannot race a `deleteProject`.
+ */
 export class FileStore implements StorePort<Project, StoredSnapshot> {
   readonly #dataDir: string;
+
+  #queue: Promise<void> = Promise.resolve();
 
   constructor(dataDir: string) {
     this.#dataDir = dataDir;
   }
 
-  async getProject(id: ProjectId): Promise<Project | undefined> {
-    const key = requireProjectId(id);
+  async getProject(id: string): Promise<Project | undefined> {
+    assertIds(id);
+    await this.#checkedDataDir(false);
     const projects = await this.#readProjects();
-    return projects[key];
+    return projects.get(id);
   }
 
   async listProjects(): Promise<readonly Project[]> {
+    await this.#checkedDataDir(false);
     const projects = await this.#readProjects();
-    return Object.keys(projects)
-      .sort()
-      .map((id) => projects[id] as Project);
+    return [...projects.keys()].sort().map((id) => projects.get(id) as Project);
   }
 
   async putProject(project: Project): Promise<void> {
-    const id = requireProjectId(project.id);
-    const projects = await this.#readProjects();
-    projects[id] = project;
-    await this.#writeAtomic(
-      this.#projectsPath(),
-      JSON.stringify(projects, null, 2),
-    );
+    await this.#serialised(async () => {
+      assertIds(project.id);
+      await this.#checkedDataDir(true);
+      const projects = await this.#readProjects();
+      projects.set(project.id, project);
+      await this.#writeAtomic(
+        this.#projectsPath(),
+        serialiseProjects(projects),
+      );
+    });
   }
 
-  async deleteProject(id: ProjectId): Promise<void> {
-    const key = requireProjectId(id);
-    const projects = await this.#readProjects();
-    delete projects[key];
-    await this.#writeAtomic(
-      this.#projectsPath(),
-      JSON.stringify(projects, null, 2),
-    );
-    await rm(this.#projectDir(key), { recursive: true, force: true });
+  async deleteProject(id: string): Promise<void> {
+    await this.#serialised(async () => {
+      assertIds(id);
+      await this.#checkedDataDir(true);
+      const projects = await this.#readProjects();
+      projects.delete(id);
+      await this.#writeAtomic(
+        this.#projectsPath(),
+        serialiseProjects(projects),
+      );
+      await rm(this.#projectDir(id), { recursive: true, force: true });
+    });
   }
 
   async putSnapshot(snapshot: StoredSnapshot): Promise<void> {
-    const project = requireProjectId(snapshot.envelope.project);
-    const wave = requireWaveId(snapshot.envelope.wave);
-    await mkdir(this.#projectDir(project), {
-      recursive: true,
-      mode: DATA_DIR_MODE,
+    await this.#serialised(async () => {
+      const project = snapshot.envelope.project;
+      const wave = snapshot.envelope.wave;
+      assertIds(project, wave);
+      await this.#checkedDataDir(true);
+      await this.#directoryForWrite(this.#snapshotsDir());
+      await this.#directoryForWrite(this.#projectDir(project));
+      await this.#writeAtomic(
+        this.#snapshotPath(project, wave),
+        JSON.stringify(snapshot, null, 2),
+      );
     });
-    await this.#writeAtomic(
-      this.#snapshotPath(project, wave),
-      JSON.stringify(snapshot, null, 2),
-    );
   }
 
   async getSnapshot(
-    project: ProjectId,
-    wave: WaveId,
+    project: string,
+    wave: string,
   ): Promise<StoredSnapshot | undefined> {
-    const path = this.#snapshotPath(
-      requireProjectId(project),
-      requireWaveId(wave),
-    );
-    if (!existsSync(path)) {
+    assertIds(project, wave);
+    await this.#checkedDataDir(false);
+    const raw = await this.#readText(this.#snapshotPath(project, wave));
+    if (raw === undefined) {
       return undefined;
     }
-    return JSON.parse(await readFile(path, "utf8")) as StoredSnapshot;
+    return JSON.parse(raw) as StoredSnapshot;
   }
 
-  async listSnapshots(project: ProjectId): Promise<readonly StoredSnapshot[]> {
-    const dir = this.#projectDir(requireProjectId(project));
-    if (!existsSync(dir)) {
-      return [];
-    }
-    const names = (await readdir(dir))
-      .filter((name) => name.endsWith(SNAPSHOT_SUFFIX))
-      .sort();
+  async listSnapshots(project: string): Promise<readonly StoredSnapshot[]> {
+    assertIds(project);
+    await this.#checkedDataDir(false);
+    const dir = this.#projectDir(project);
+    const names = await this.#snapshotNames(dir);
     const snapshots: StoredSnapshot[] = [];
     for (const name of names) {
-      const raw = await readFile(join(dir, name), "utf8");
-      snapshots.push(JSON.parse(raw) as StoredSnapshot);
+      const raw = await this.#readText(join(dir, name));
+      if (raw !== undefined) {
+        snapshots.push(JSON.parse(raw) as StoredSnapshot);
+      }
     }
     return snapshots;
   }
 
-  async deleteSnapshot(project: ProjectId, wave: WaveId): Promise<void> {
-    const path = this.#snapshotPath(
-      requireProjectId(project),
-      requireWaveId(wave),
-    );
-    await rm(path, { force: true });
+  async deleteSnapshot(project: string, wave: string): Promise<void> {
+    assertIds(project, wave);
+    await this.#serialised(async () => {
+      await this.#checkedDataDir(false);
+      await rm(this.#snapshotPath(project, wave), { force: true });
+    });
   }
 
-  async #readProjects(): Promise<Record<ProjectId, Project>> {
-    const path = this.#projectsPath();
-    if (!existsSync(path)) {
-      return {};
+  #serialised(operation: () => Promise<void>): Promise<void> {
+    const run = this.#queue.then(operation);
+    this.#queue = run.then(ignore, ignore);
+    return run;
+  }
+
+  async #checkedDataDir(create: boolean): Promise<void> {
+    const info = await this.#lstatOrUndefined(this.#dataDir);
+    if (info === undefined) {
+      if (create) {
+        await mkdir(this.#dataDir, { mode: DATA_DIR_MODE });
+      }
+      return;
     }
-    const raw = await readFile(path, "utf8");
-    return JSON.parse(raw) as Record<ProjectId, Project>;
+    assertRealDirectory(info, this.#dataDir);
+  }
+
+  async #directoryForWrite(dir: string): Promise<void> {
+    const info = await this.#lstatOrUndefined(dir);
+    if (info === undefined) {
+      await mkdir(dir, { mode: DATA_DIR_MODE });
+      return;
+    }
+    assertRealDirectory(info, dir);
+  }
+
+  async #lstatOrUndefined(path: string): Promise<Stats | undefined> {
+    try {
+      return await lstat(path);
+    } catch (error) {
+      if (errorCode(error) === "ENOENT") {
+        return undefined;
+      }
+      throw error;
+    }
+  }
+
+  async #readText(path: string): Promise<string | undefined> {
+    try {
+      return await readFile(path, "utf8");
+    } catch (error) {
+      if (errorCode(error) === "ENOENT") {
+        return undefined;
+      }
+      throw error;
+    }
+  }
+
+  async #snapshotNames(dir: string): Promise<string[]> {
+    let entries: string[];
+    try {
+      entries = await readdir(dir);
+    } catch (error) {
+      if (errorCode(error) === "ENOENT") {
+        return [];
+      }
+      throw error;
+    }
+    return entries.filter((name) => name.endsWith(SNAPSHOT_SUFFIX)).sort();
+  }
+
+  async #readProjects(): Promise<Map<string, Project>> {
+    const raw = await this.#readText(this.#projectsPath());
+    if (raw === undefined) {
+      return new Map();
+    }
+    return new Map(Object.entries(JSON.parse(raw) as Record<string, Project>));
   }
 
   async #writeAtomic(target: string, payload: string): Promise<void> {
-    await mkdir(this.#dataDir, { recursive: true, mode: DATA_DIR_MODE });
     const temporary = `${target}.tmp-${process.pid}-${randomUUID()}`;
-    await writeFile(temporary, payload, "utf8");
-    await rename(temporary, target);
+    try {
+      await writeFile(temporary, payload, {
+        encoding: "utf8",
+        mode: FILE_MODE,
+      });
+      await rename(temporary, target);
+    } catch (error) {
+      await rm(temporary, { force: true });
+      throw error;
+    }
   }
 
   #projectsPath(): string {
     return join(this.#dataDir, PROJECTS_FILE);
   }
 
-  #projectDir(project: ProjectId): string {
-    return join(this.#dataDir, SNAPSHOTS_DIR, requireProjectId(project));
+  #snapshotsDir(): string {
+    return join(this.#dataDir, SNAPSHOTS_DIR);
   }
 
-  #snapshotPath(project: ProjectId, wave: WaveId): string {
-    return join(
-      this.#projectDir(project),
-      requireWaveId(wave) + SNAPSHOT_SUFFIX,
-    );
+  #projectDir(project: string): string {
+    return join(this.#snapshotsDir(), project);
+  }
+
+  #snapshotPath(project: string, wave: string): string {
+    return join(this.#projectDir(project), `${wave}${SNAPSHOT_SUFFIX}`);
   }
 }
