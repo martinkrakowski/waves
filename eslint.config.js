@@ -55,4 +55,13 @@ export default tseslint.config(
       "no-console": "off",
     },
   },
+  {
+    files: ["packages/*/public/**/*.js"],
+    languageOptions: {
+      globals: {
+        document: "readonly",
+        fetch: "readonly",
+      },
+    },
+  },
 );
