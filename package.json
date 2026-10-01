@@ -1,0 +1,32 @@
+{
+  "name": "waves",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "packageManager": "yarn@4.12.0",
+  "engines": {
+    "node": ">=22.7.0"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "yarn workspaces foreach -At --exclude waves run build",
+    "typecheck": "tsc --noEmit -p tsconfig.json && yarn workspaces foreach -At --exclude waves run typecheck",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:cov": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9",
+    "@types/node": "^22",
+    "@vitest/coverage-v8": "^4",
+    "eslint": "^9",
+    "prettier": "^3",
+    "typescript": "^5",
+    "typescript-eslint": "^8",
+    "vitest": "^4"
+  }
+}
