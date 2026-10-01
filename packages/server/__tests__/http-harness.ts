@@ -59,12 +59,15 @@ export interface Started {
   ) => Promise<RawResult>;
   /**
    * A client that sends everything and holds the socket open, which is how a test
-   * watches a server drop a connection it is still being written to.
+   * watches a server drop a connection it is still being written to. With
+   * `keepAlive` it asks for no close on its behalf either, so the only thing that
+   * can end the connection is the server's own decision.
    */
   readonly sendAndHold: (
     requestLine: string,
     headers: readonly string[],
     body: string | Buffer,
+    options?: { readonly keepAlive?: boolean },
   ) => Promise<RawResult>;
   /**
    * The bytes the server has taken off its own sockets, which is how a test
@@ -177,8 +180,14 @@ export async function startHarness(
         body,
         expecting?.waitForContinue !== false,
       ),
-    sendAndHold: (requestLine, headers, body) =>
-      sendAndHold(port, requestLine, headers, body),
+    sendAndHold: (requestLine, headers, body, holding) =>
+      sendAndHold(
+        port,
+        requestLine,
+        headers,
+        body,
+        holding?.keepAlive === true,
+      ),
     bytesRead: () =>
       sockets.reduce((total, socket) => total + socket.bytesRead, 0),
     sockets: () =>

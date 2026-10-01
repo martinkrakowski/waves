@@ -24,12 +24,13 @@ export function finalStatus(raw: string): string {
 export function headOf(
   requestLine: string,
   headers: readonly string[],
+  keepAlive = false,
 ): string {
   return [
     requestLine,
     "Host: localhost",
+    ...(keepAlive ? [] : ["Connection: close"]),
     ...headers,
-    "Connection: close",
     "",
     "",
   ].join("\r\n");
@@ -111,12 +112,16 @@ export async function expectingRequest(
  * open: the whole body, whether or not the server wanted it, and no close from
  * this side. It settles when the server drops the connection — which is the thing
  * under test — or when it has given up.
+ *
+ * With `keepAlive` it asks for nothing to be closed on its behalf either, so the
+ * only thing that can end the connection is the server's own decision.
  */
 export async function sendAndHold(
   port: number,
   requestLine: string,
   headers: readonly string[],
   body: string | Buffer,
+  keepAlive = false,
 ): Promise<RawResult> {
   const socket = connect(port, "127.0.0.1");
   socket.setEncoding("utf8");
@@ -164,7 +169,7 @@ export async function sendAndHold(
       settle();
     });
     socket.on("connect", () => {
-      socket.write(headOf(requestLine, headers));
+      socket.write(headOf(requestLine, headers, keepAlive));
       headAt = socket.bytesWritten;
       while (
         socket.writable &&

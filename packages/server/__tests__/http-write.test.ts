@@ -254,6 +254,14 @@ async function firstDestroyed(started: Started): Promise<number> {
   return Number.POSITIVE_INFINITY;
 }
 
+/**
+ * A value that may never arrive, waited for a bounded time, so a test asserts on
+ * it rather than waiting out the timeout of the whole test.
+ */
+async function within<T>(work: Promise<T>, ms: number): Promise<T | undefined> {
+  return Promise.race([work, delay(ms).then(() => undefined)]);
+}
+
 afterEach(cleanupHarnesses);
 
 describe("pushing a wave", () => {
@@ -743,22 +751,26 @@ describe("reading the body", () => {
     const bytesBefore = started.bytesRead();
 
     // The whole body goes out, because a client does not know it is about to be
-    // refused. A server that authenticates first answers without reading it; a
-    // client whose write is cut sees a reset rather than the answer on some
-    // platforms, so either counts as the refusal.
+    // refused.
     const response = await put(started, "x".repeat(PUT_CAP), {
       headers: { authorization: `Bearer ${UNKNOWN_TOKEN}` },
-    }).catch((error: NodeJS.ErrnoException) => error);
+    }).catch((error: Error) => error);
 
+    // What the server did, first and without reference to the client: it took
+    // almost nothing off the socket and it stored nothing.
+    expect(started.bytesRead() - bytesBefore).toBeLessThan(PUT_CAP);
+    expect(await stateOf(store)).toEqual(before);
+
+    // What the client made of it, which is a set of accepted outcomes because it
+    // is not the same on every TCP stack. Destroying a socket that still holds
+    // unread data resets it, and BSD and macOS discard what the application has
+    // not read: there the client may never see the answer, and `fetch` rejects
+    // with a cause that has no code at all. Linux usually delivers the 401 first.
     if (response instanceof Error) {
-      expect(["ECONNRESET", "EPIPE", "UND_ERR_SOCKET"]).toContain(
-        response.code,
-      );
+      expect(response).toBeInstanceOf(TypeError);
     } else {
       expect(response.status).toBe(401);
     }
-    expect(started.bytesRead() - bytesBefore).toBeLessThan(PUT_CAP);
-    expect(await stateOf(store)).toEqual(before);
   });
 
   it("drops a refused connection as soon as the answer has flushed", async () => {
@@ -771,20 +783,31 @@ describe("reading the body", () => {
         `Content-Length: ${PUT_CAP}`,
       ],
       Buffer.alloc(PUT_CAP, 0x78),
+      // Nothing asked for a close on either side, so the only thing that can end
+      // this connection is the server refusing the request and dropping it.
+      { keepAlive: true },
     );
 
     // The client keeps the socket open and keeps writing into it, so the only way
     // the server socket can end is the server ending it: on the flush of the
-    // refusal, with nothing left to read off it.
+    // refusal, with nothing left to read off it. Both of those are the server's
+    // own behaviour and are the same on every TCP stack.
     const droppedAt = await firstDestroyed(started);
     const readAtDrop = started.bytesRead();
     await delay(200);
     const readLater = started.bytesRead();
-    const result = await held;
 
-    expect(result.status).toBe("HTTP/1.1 401");
     expect(droppedAt).toBeLessThan(500);
     expect(readLater).toBe(readAtDrop);
+
+    // What the client made of it is a set of accepted outcomes, because the reset
+    // that drops the connection can take the answer with it: where the kernel
+    // discards unread data on close — BSD and macOS — a raw socket reads nothing
+    // at all, and where it does not — Linux — the 401 arrives first. It is waited
+    // for briefly rather than for ever, so a server that never drops the
+    // connection is caught by the assertion above.
+    const result = await within(held, 1_000);
+    expect(["HTTP/1.1 401", ""]).toContain(result?.status);
   });
 
   it("answers a request with no body at all on the same socket", async () => {
