@@ -26,6 +26,7 @@ async function readJson(fetchImpl, path) {
 export function createApi(fetchImpl) {
   return {
     projects: () => readJson(fetchImpl, projectsPath()),
+    attention: () => readJson(fetchImpl, "/api/v1/attention"),
     waves: (projectId) => readJson(fetchImpl, wavesPath(projectId)),
     wave: (projectId, waveId) =>
       readJson(fetchImpl, wavePath(projectId, waveId)),

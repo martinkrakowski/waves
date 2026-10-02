@@ -37,11 +37,21 @@ function hereId(label) {
 }
 
 /**
+ * A project's own page, carrying the show-all state the reader has chosen when
+ * they leave the page they are on. A link that dropped it would show a project
+ * with fewer waves than the reader asked to see, for no reason they could see.
+ * The links back to the fleet are bare, because the fleet is not filtered.
+ */
+function projectHref(id, all) {
+  return all ? `/p/${id}?all=1` : `/p/${id}`;
+}
+
+/**
  * The trail to the page being shown: every part but the last is a link back up
  * it, the last is here. An id came out of a path the server served, so it is the
  * page's own text; only an id that is a whole route becomes a link.
  */
-function breadcrumb(route) {
+function breadcrumb(route, all) {
   if (route.kind !== "project") {
     return [here(BRAND)];
   }
@@ -49,7 +59,7 @@ function breadcrumb(route) {
   parts.push(
     route.wave === undefined
       ? hereId(route.id)
-      : internalLink(route.id, `/p/${route.id}`),
+      : internalLink(route.id, projectHref(route.id, all)),
   );
   if (route.wave !== undefined) {
     parts.push(hereId(route.wave));
@@ -65,18 +75,39 @@ function breadcrumb(route) {
 }
 
 /**
- * One project in the rail: its name as the link to its page, and its wave count
- * beneath. An id that is not one the app owns is not linked to at all, because
- * the rail is where every registered project is listed and a path there that
- * leads nowhere is a dead end the reader can see and not follow.
+ * How many of a project's lanes are asking for attention, or nothing: the
+ * count comes from the same view the fleet page lists, and a project it says
+ * nothing about, or a project asking for nothing, is not annotated at all.
  */
-function projectItem(project, current) {
+function attentionSuffix(attention, id) {
+  if (attention === undefined) {
+    return "";
+  }
+  const found = attention.projects.find((entry) => entry.id === id);
+  if (found === undefined || found.attention === 0) {
+    return "";
+  }
+  return found.attention === 1
+    ? " · 1 needs attention"
+    : ` · ${found.attention} need attention`;
+}
+
+/**
+ * One project in the rail: its name as the link to its page, and its wave count
+ * beneath, with what is asking for attention beside that. An id that is not one
+ * the app owns is not linked to at all, because the rail is where every
+ * registered project is listed and a path there that leads nowhere is a dead end
+ * the reader can see and not follow.
+ */
+function projectItem(project, current, attention, all) {
   const anchor = internalLink(
     project.name,
-    `/p/${project.id}`,
+    projectHref(project.id, all),
     current ? { "aria-current": "page" } : {},
   );
-  const meta = [waveCountText(project.waves)];
+  const meta = [
+    waveCountText(project.waves) + attentionSuffix(attention, project.id),
+  ];
   if (project.stale) {
     meta.push("stale");
   }
@@ -85,7 +116,7 @@ function projectItem(project, current) {
   });
 }
 
-function projectList(projects, route) {
+function projectList(projects, route, attention, all) {
   if (projects === undefined) {
     return [el("p", { text: LOADING })];
   }
@@ -97,7 +128,9 @@ function projectList(projects, route) {
   return [
     el("ul", {
       attrs: { class: "projects" },
-      children: kept.map((project) => projectItem(project, project.id === on)),
+      children: kept.map((project) =>
+        projectItem(project, project.id === on, attention, all),
+      ),
     }),
   ];
 }
@@ -117,7 +150,12 @@ function rail(model) {
         attrs: { class: "rail-nav", "aria-label": "Projects" },
         children: [
           el("h2", { text: "Projects" }),
-          ...projectList(model.projects, model.route),
+          ...projectList(
+            model.projects,
+            model.route,
+            model.attention,
+            model.all,
+          ),
         ],
       }),
       el("div", {
@@ -155,7 +193,7 @@ export function shell(model, body) {
         children: [
           el("nav", {
             attrs: { class: "crumbs", "aria-label": "Breadcrumb" },
-            children: breadcrumb(model.route),
+            children: breadcrumb(model.route, model.all),
           }),
           status(model.note),
         ],

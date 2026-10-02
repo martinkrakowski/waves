@@ -10,18 +10,27 @@ import type { AppGlobals } from "../../public/app.js";
 import { createApp } from "../../public/app.js";
 import type { ProjectCard } from "../../public/api.js";
 import { el } from "../../public/dom.js";
-import { projectList } from "../../public/projects.js";
 import { shell } from "../../public/shell.js";
+import { renderFleet } from "../../public/views/fleet.js";
 import { wavePanel } from "../../public/wave.js";
 
 import type { LaneView } from "../../src/application/read-model.js";
-import { lane, NOW_ISO, NOW_MS, projectCard, waveSummary } from "./fixtures.js";
+import {
+  attentionLane,
+  attentionView,
+  lane,
+  NOW_ISO,
+  NOW_MS,
+  projectCard,
+  waveSummary,
+} from "./fixtures.js";
 import {
   assertNoInjectedMarkup,
   browserGlobals,
   fetchStub,
   flush,
   freshRoot,
+  oneOf,
   root,
   textOf,
   textsOf,
@@ -45,7 +54,8 @@ const TEXT_PAYLOADS = [IMG, SCRIPT, HANDLER, CLOSING_DETAILS] as const;
  * How many times one payload appears in the rendered *text* of a project card:
  * the name, the id and the repository. `lastPush` is fed the payload too, and
  * reaches the document as a `title` attribute instead, which `CARD_TITLES`
- * counts; `assertNoInjectedMarkup` only checks attribute *names*.
+ * counts; `assertNoInjectedMarkup` only checks attribute *names*. The payload is
+ * also the project's id here, which is why the card links nothing at all.
  */
 const CARD_OCCURRENCES = 3;
 
@@ -97,12 +107,15 @@ function expectVerbatim(
 
 /**
  * Boots the app on the fleet route over the given projects, so the rail and the
- * card draw the same strings and the whole chain is walked, not one view.
+ * card draw the same strings and the whole chain is walked, not one view. The
+ * attention view is a parameter because a payload in one of its ids has to
+ * reach the app as a failed load, not as a page.
  */
 async function bootFleet(
   projects: readonly ProjectCard[],
   pathname = "/",
   search = "",
+  attention: unknown = attentionView(),
 ): Promise<ReturnType<typeof createApp>> {
   freshRoot();
   const timers = timerStub();
@@ -115,7 +128,9 @@ async function bootFleet(
     fetch: fetchStub((path) =>
       path === "/api/v1/projects"
         ? { status: 200, body: projects }
-        : { status: 404 },
+        : path === "/api/v1/attention"
+          ? { status: 200, body: attention }
+          : { status: 404 },
     ),
     setTimer: timers.setTimer,
     clearTimer: timers.clearTimer,
@@ -193,18 +208,27 @@ function hostileView(payload: string) {
   };
 }
 
-describe("the project list against stored markup", () => {
+describe("the fleet page against stored markup", () => {
   it("renders every field of every card as text", () => {
     for (const payload of TEXT_PAYLOADS) {
       freshRoot();
       const host = document.getElementById("root") as HTMLElement;
-      host.append(projectList([projectWith(payload)], NOW_MS));
+      host.append(
+        renderFleet(
+          { projects: [projectWith(payload)], attention: attentionView() },
+          NOW_MS,
+        ),
+      );
       assertNoInjectedMarkup();
       expect(host.querySelectorAll("img")).toHaveLength(0);
       expect(host.querySelectorAll("script")).toHaveLength(0);
-      expect(textsOf(host, "h2 a")).toStrictEqual([payload]);
-      expect(textsOf(host, "code")).toStrictEqual([payload]);
-      expect(textsOf(host, "dd span[title]")).toStrictEqual(["unknown"]);
+      // The id is not one the app owns, so there is nothing to link to and the
+      // name is plain text: a card a reader can read and cannot click.
+      expect(host.querySelectorAll("h3 a")).toHaveLength(0);
+      const heading = oneOf(host, "h3");
+      expect(textOf(heading?.firstChild as Element)).toBe(payload);
+      expect(textsOf(host, ".facts dd code")).toStrictEqual([payload]);
+      expect(textsOf(host, ".facts dd span[title]")).toStrictEqual(["unknown"]);
       expectVerbatim(payload, CARD_OCCURRENCES, CARD_TITLES);
     }
   });
@@ -213,25 +237,62 @@ describe("the project list against stored markup", () => {
     for (const payload of REPO_PAYLOADS) {
       freshRoot();
       const host = document.getElementById("root") as HTMLElement;
-      host.append(projectList([projectCard({ repo: payload })], NOW_MS));
+      host.append(
+        renderFleet(
+          {
+            projects: [projectCard({ repo: payload })],
+            attention: attentionView(),
+          },
+          NOW_MS,
+        ),
+      );
       assertNoInjectedMarkup();
       expect(host.querySelectorAll("a[href^='javascript:']")).toHaveLength(0);
       expect(host.querySelectorAll("a[href^='data:']")).toHaveLength(0);
       expect(host.querySelectorAll("a[href*='@']")).toHaveLength(0);
-      expect(textsOf(host, "dd")[1]).toBe(payload);
+      expect(textsOf(host, ".facts dd")[1]).toBe(payload);
       expectVerbatim(payload, 1, 0);
     }
   });
 
-  it("keeps a hostile project id out of the link it builds", () => {
+  it("keeps a hostile project id out of every link and every attribute", () => {
     freshRoot();
     const host = document.getElementById("root") as HTMLElement;
-    host.append(projectList([projectCard({ id: SCRIPT })], NOW_MS));
-    assertNoInjectedMarkup();
-    expect(host.querySelector("h2 a")?.getAttribute("href")).toBe(
-      "/p/%22%3E%3Cscript%3Ealert(1)%3C%2Fscript%3E",
+    host.append(
+      renderFleet(
+        { projects: [projectCard({ id: SCRIPT })], attention: attentionView() },
+        NOW_MS,
+      ),
     );
+    assertNoInjectedMarkup();
+    expect(host.querySelectorAll("h3 a")).toHaveLength(0);
+    for (const value of attributeValues()) {
+      expect(value).not.toContain(SCRIPT);
+    }
     expectVerbatim(SCRIPT, 1, 0);
+  });
+
+  it("renders a lane's seat as text", () => {
+    for (const payload of TEXT_PAYLOADS) {
+      freshRoot();
+      const host = document.getElementById("root") as HTMLElement;
+      host.append(
+        renderFleet(
+          {
+            projects: [projectCard()],
+            attention: attentionView({
+              lanes: [attentionLane({ seat: payload })],
+            }),
+          },
+          NOW_MS,
+        ),
+      );
+      assertNoInjectedMarkup();
+      expect(host.querySelectorAll("img")).toHaveLength(0);
+      expect(host.querySelectorAll("script")).toHaveLength(0);
+      expect(textsOf(host, ".seat")).toStrictEqual([payload]);
+      expectVerbatim(payload, 1, 0);
+    }
   });
 });
 
@@ -383,6 +444,8 @@ describe("the rail against stored markup", () => {
           {
             route: { kind: "project", id: "alpha", wave: "wv1" },
             projects: [projectCard({ name: payload })],
+            attention: undefined,
+            all: false,
             note: "",
           },
           el("p", { text: "the page" }),
@@ -400,6 +463,38 @@ describe("the rail against stored markup", () => {
   });
 });
 
+describe("the attention ids against stored markup", () => {
+  /**
+   * The three ids of one lane are what the attention panel builds its link
+   * from, so a payload in any of them has to make the whole response
+   * undrawable rather than be encoded into a path.
+   */
+  const IDS = ["project", "wave", "lane"] as const;
+
+  it.each(IDS)(
+    "refuses the whole attention view when its %s carries a payload",
+    async (field) => {
+      for (const payload of TEXT_PAYLOADS) {
+        const app = await bootFleet([projectCard()], "/", "", {
+          lanes: [{ ...attentionLane(), [field]: payload }],
+          projects: [{ id: "alpha", attention: 1 }],
+          truncated: false,
+        });
+        assertNoInjectedMarkup();
+        // A failed load: the note, once, and nothing drawn from the view.
+        expect(root().querySelectorAll(".note")).toHaveLength(1);
+        expect(textOf(root().querySelector(".note"))).toBe("offline, retrying");
+        expect(root().querySelectorAll(".attention")).toHaveLength(0);
+        expect(documentText()).not.toContain(payload);
+        for (const value of attributeValues()) {
+          expect(value).not.toContain(payload);
+        }
+        app.stop();
+      }
+    },
+  );
+});
+
 describe("the query string against stored markup", () => {
   const KEYS = ["reason", "stage", "seat", "q", "lane", "all"] as const;
 
@@ -414,7 +509,7 @@ describe("the query string against stored markup", () => {
       expect(root().querySelectorAll("img")).toHaveLength(0);
       expect(root().querySelectorAll("script")).toHaveLength(0);
       expect(documentText()).not.toContain(payload);
-      expect(textsOf(root(), ".card-name")).toStrictEqual(["Alpha"]);
+      expect(textsOf(root(), ".project-card h3 a")).toStrictEqual(["Alpha"]);
       app.stop();
     }
   });

@@ -1,3 +1,4 @@
+import { drawableAttention } from "./attention.js";
 import { createApi } from "./api.js";
 import { el } from "./dom.js";
 import { drawableProjects } from "./projects.js";
@@ -95,6 +96,13 @@ export function createApp(deps) {
    */
   let railProjects;
   /**
+   * The last attention view the API gave us, held exactly as the project list
+   * is: the rail counts from it on every route, so a navigation is not a reason
+   * to stop knowing what is being asked for, and a failed load is not a reason
+   * to forget it.
+   */
+  let railAttention;
+  /**
    * Whether the data on screen was kept across a move to another wave of the
    * same project and the pass for that wave has not answered yet. Until it does,
    * the lane panel has nothing to show for the selection and must say it is
@@ -119,6 +127,23 @@ export function createApp(deps) {
   }
 
   /**
+   * What every project's lanes are asking for, which the rail counts and the
+   * fleet page lists. A 404 is a failed load, not an empty answer: the route is
+   * not optional, and a page whose counters silently became zero would be
+   * claiming nothing is wrong.
+   */
+  async function loadAttention() {
+    const attention = await api.attention();
+    if (attention === undefined) {
+      throw new Error("the attention view is not there");
+    }
+    if (!drawableAttention(attention)) {
+      throw new Error("the attention view is not an attention view");
+    }
+    return attention;
+  }
+
+  /**
    * One pass, for the route and the selection this call started with. The
    * snapshot is taken before the first `await` and is the only thing read after
    * it: `read()` rewrites `route` and `selected` on every navigation, so a pass
@@ -133,26 +158,40 @@ export function createApp(deps) {
     const want = selected;
     const mine = generation;
     if (at.kind === "unknown") {
-      return { kind: "unknown" };
-    }
-    if (at.kind === "projects") {
-      const projects = await loadProjects();
+      // Not a page of ours, but the rail is: the reader still has to be able to
+      // get to a project from here, and the rail's two lists are the whole of
+      // what the route has to know.
+      const [projects, attention] = await Promise.all([
+        loadProjects(),
+        loadAttention(),
+      ]);
       if (mine !== generation) {
         return undefined;
       }
-      return { kind: "projects", projects };
+      return { kind: "unknown", projects, attention };
     }
-    // One call for the rail, one for the waves, both at once: the fleet needs
-    // only the first, and a project route needs both before it can draw.
-    const [projects, waves] = await Promise.all([
+    if (at.kind === "projects") {
+      const [projects, attention] = await Promise.all([
+        loadProjects(),
+        loadAttention(),
+      ]);
+      if (mine !== generation) {
+        return undefined;
+      }
+      return { kind: "projects", projects, attention };
+    }
+    // Three calls in one Promise.all, in the order the page needs them: the
+    // rail's two, then the waves of the project the route names.
+    const [projects, attention, waves] = await Promise.all([
       loadProjects(),
+      loadAttention(),
       api.waves(at.id),
     ]);
     if (mine !== generation) {
       return undefined;
     }
     if (waves === undefined) {
-      return { kind: "missing", project: at.id, projects };
+      return { kind: "missing", project: at.id, projects, attention };
     }
     if (!drawableWaves(waves)) {
       throw new Error("the wave list is not a list of waves");
@@ -165,6 +204,7 @@ export function createApp(deps) {
         kind: "project",
         project: at.id,
         projects,
+        attention,
         waves,
         view: undefined,
       };
@@ -182,7 +222,14 @@ export function createApp(deps) {
         throw new Error("the wave is not the one requested");
       }
     }
-    return { kind: "project", project: at.id, projects, waves, view };
+    return {
+      kind: "project",
+      project: at.id,
+      projects,
+      attention,
+      waves,
+      view,
+    };
   }
 
   /** The lanes on screen, and only ever the lanes of the selected wave. */
@@ -195,6 +242,11 @@ export function createApp(deps) {
   }
 
   function body() {
+    if (route.kind === "unknown") {
+      // A path that is not a page is not one whatever the load says, so it is
+      // said at once and stays said while the rail's data loads or fails.
+      return el("p", { attrs: { class: "empty" }, text: "No such page." });
+    }
     if (data === undefined) {
       // Only the shell's status region carries the note: saying it here as well
       // would put "offline, retrying" on the page twice, once before there is
@@ -202,7 +254,10 @@ export function createApp(deps) {
       return el("p", { attrs: { class: "empty" }, text: LOADING });
     }
     if (data.kind === "projects") {
-      return renderFleet({ projects: data.projects }, clock());
+      return renderFleet(
+        { projects: data.projects, attention: data.attention },
+        clock(),
+      );
     }
     if (data.kind === "project") {
       const project = data.project;
@@ -230,13 +285,48 @@ export function createApp(deps) {
         },
       });
     }
-    if (data.kind === "missing") {
-      return el("p", {
-        attrs: { class: "empty" },
-        text: "No such project.",
-      });
+    return el("p", { attrs: { class: "empty" }, text: "No such project." });
+  }
+
+  /**
+   * The link the reader's focus is on — its address, and which of the links
+   * with that address it is — so a redraw can put them back on the same one.
+   * Several links share an address (the rail and a card both lead to a project),
+   * and landing on the first of them would pull a reader out of the list they
+   * were working down. `draw()` replaces every node, which on the ten-second
+   * refresh would otherwise take the focus with it and drop a keyboard reader
+   * at the top of the page. Compared by value, never by selector: an `href` is
+   * an API string and does not belong in a query.
+   */
+  function focusedLink() {
+    const active = doc.activeElement;
+    if (active === null || !root.contains(active)) {
+      return undefined;
     }
-    return el("p", { attrs: { class: "empty" }, text: "No such page." });
+    const href = active.getAttribute("href");
+    if (href === null) {
+      return undefined;
+    }
+    const anchors = [...root.querySelectorAll("a")];
+    const nth = anchors
+      .slice(0, Math.max(anchors.indexOf(active), 0))
+      .filter((anchor) => anchor.getAttribute("href") === href).length;
+    return { href, nth };
+  }
+
+  /**
+   * Puts the focus on the link of the new document that stands where the old
+   * one stood among the links with its address, without scrolling to it: a
+   * reader who scrolled away is not dragged back every ten seconds.
+   */
+  function refocus(link) {
+    if (link === undefined) {
+      return;
+    }
+    const same = [...root.querySelectorAll("a")].filter(
+      (anchor) => anchor.getAttribute("href") === link.href,
+    );
+    same[link.nth]?.focus({ preventScroll: true });
   }
 
   function draw() {
@@ -244,9 +334,20 @@ export function createApp(deps) {
     if (root === null) {
       return;
     }
+    const focused = focusedLink();
     root.replaceChildren(
-      shell({ route, projects: railProjects, note }, body()),
+      shell(
+        {
+          route,
+          projects: railProjects,
+          attention: railAttention,
+          all: showAll,
+          note,
+        },
+        body(),
+      ),
     );
+    refocus(focused);
   }
 
   /**
@@ -272,9 +373,12 @@ export function createApp(deps) {
       }
       data = next;
       awaitingWave = false;
-      if (next.projects !== undefined) {
-        railProjects = next.projects;
-      }
+      // Every pass that answered carries both of the rail's lists, on every
+      // route, so this is where they move and nowhere else: a navigation keeps
+      // them and a failed load never reaches this line, so neither can clear
+      // what the reader can already see.
+      railProjects = next.projects;
+      railAttention = next.attention;
       note = "";
       draw();
     } catch {

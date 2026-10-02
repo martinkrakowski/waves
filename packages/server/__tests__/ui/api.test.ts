@@ -3,7 +3,13 @@ import { describe, expect, it } from "vitest";
 import type { FetchLike } from "../../public/api.js";
 import { createApi } from "../../public/api.js";
 
-import { projectCard, waveSummary, waveView } from "./fixtures.js";
+import {
+  attentionLane,
+  attentionView,
+  projectCard,
+  waveSummary,
+  waveView,
+} from "./fixtures.js";
 
 interface Seen {
   readonly path: string;
@@ -27,14 +33,16 @@ function recorder(answer: { status: number; body?: unknown }): {
 }
 
 describe("createApi", () => {
-  it("asks for JSON from the three read endpoints", async () => {
+  it("asks for JSON from the four read endpoints", async () => {
     const { fetch: fetchImpl, seen } = recorder({ status: 200, body: [] });
     const api = createApi(fetchImpl);
     await api.projects();
+    await api.attention();
     await api.waves("alpha");
     await api.wave("alpha", "w-3");
     expect(seen).toStrictEqual([
       { path: "/api/v1/projects", accept: "application/json" },
+      { path: "/api/v1/attention", accept: "application/json" },
       { path: "/api/v1/projects/alpha/waves", accept: "application/json" },
       { path: "/api/v1/projects/alpha/waves/w-3", accept: "application/json" },
     ]);
@@ -62,6 +70,7 @@ describe("createApi", () => {
     const api = createApi(fetchImpl);
     await expect(api.waves("nope")).resolves.toBeUndefined();
     await expect(api.wave("nope", "w-1")).resolves.toBeUndefined();
+    await expect(api.attention()).resolves.toBeUndefined();
   });
 
   it("throws on any other unhappy status", async () => {
@@ -74,7 +83,12 @@ describe("createApi", () => {
   it("keeps the shape the read model promises", async () => {
     const waves = [waveSummary()];
     const view = waveView();
+    const attention = attentionView({
+      lanes: [attentionLane()],
+      projects: [{ id: "alpha", attention: 1 }],
+    });
     const bodies: Readonly<Record<string, unknown>> = {
+      "/api/v1/attention": attention,
       "/api/v1/projects/alpha/waves": waves,
       "/api/v1/projects/alpha/waves/w-3": view,
     };
@@ -85,6 +99,7 @@ describe("createApi", () => {
         json: () => Promise.resolve(bodies[path]),
       }),
     );
+    expect(await api.attention()).toStrictEqual(attention);
     expect(await api.waves("alpha")).toStrictEqual(waves);
     expect(await api.wave("alpha", "w-3")).toStrictEqual(view);
   });

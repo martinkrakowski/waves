@@ -1,0 +1,164 @@
+/*
+ * The fleet page's own rules: the counters, the two-column grid the page and
+ * the attention panel share, and the labels inside them. Colours come only from
+ * tokens.css, so both schemes read the same names, and every state that is shown
+ * in a colour is also shown in a word.
+ */
+
+/* The grid on the fleet page is the point of the page, so it takes the whole
+   width the frame has rather than the reading measure the other views use. */
+.view.fleet {
+  max-width: none;
+}
+
+.lede {
+  color: var(--muted);
+  margin: 0.25rem 0 1rem;
+  max-width: 68ch;
+}
+
+.kpis {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  margin: 0;
+}
+
+.kpi {
+  background: var(--bg-raise);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.8rem;
+}
+
+.kpi dt {
+  color: var(--muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.kpi dd {
+  font-family: var(--mono);
+  font-size: 1.6rem;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.kpi.warn dd {
+  color: var(--amber);
+}
+
+/* Two columns: the projects, which are wide, and the panel, which is not. There
+   are exactly two children, so the grid's own order places them. */
+.fleet-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  margin-top: 1rem;
+}
+
+.fleet-projects h2,
+.fleet-attention h2 {
+  margin: 0 0 0.5rem;
+}
+
+.project-card {
+  background: var(--bg-raise);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  margin: 0 0 0.75rem;
+  padding: 0.75rem 1rem;
+}
+
+/* The name and the freshness pill at either end of the card's heading. */
+.project-card h3 {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 1.05rem;
+  gap: 0.5rem;
+  justify-content: space-between;
+  margin: 0 0 0.5rem;
+}
+
+/* The card's own facts: dt and dd are direct children of the dl, so the grid
+   below is the whole layout. */
+.facts {
+  display: grid;
+  gap: 0.15rem 0.75rem;
+  grid-template-columns: max-content 1fr;
+  margin: 0.5rem 0 0;
+}
+
+.facts dt {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.facts dd {
+  margin: 0;
+}
+
+.attention {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* A row that wraps: a long seat or a long id breaks the row rather than the
+   panel, so one project's seat cannot widen the page. */
+.attention li {
+  align-items: baseline;
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.6rem;
+  margin: 0 0 0.35rem;
+  padding: 0.45rem 0.6rem;
+}
+
+.pill,
+.fleet .badge {
+  text-transform: none;
+  border: 1px solid currentcolor;
+  border-radius: 0.75rem;
+  font-size: 0.75rem;
+  padding: 0 0.45rem;
+  white-space: nowrap;
+}
+
+.pill.stale,
+.fleet .badge.stale {
+  color: var(--amber);
+}
+
+.pill.fresh {
+  color: var(--teal);
+}
+
+.fleet .badge.reason {
+  color: var(--red);
+}
+
+.where,
+.pr,
+.note-inline {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.seat {
+  color: var(--muted);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+/* One column below the width the shell drops its rail at: the same breakpoint,
+   so the page reflows at the same moment the frame does. */
+@media (max-width: 1080px) {
+  .fleet-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
