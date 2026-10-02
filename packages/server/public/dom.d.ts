@@ -15,6 +15,19 @@ export declare function stamp(
 
 export declare function httpsUrl(value: unknown): string | undefined;
 
-export declare function internalLink(label: string, path: string): HTMLElement;
+export interface LinkAttrs {
+  readonly [name: string]: string;
+}
+
+/**
+ * `attrs` is spelled out by the caller and is refused unless every name is in
+ * `dom.js`'s table, so a view cannot reach an attribute the table does not
+ * allow.
+ */
+export declare function internalLink(
+  label: string,
+  path: string,
+  attrs?: LinkAttrs,
+): HTMLElement;
 
 export declare function repoLink(label: string, value: unknown): HTMLElement;

@@ -9,20 +9,31 @@ import { waveSummary, waveView } from "./fixtures.js";
 /** Every tag the page shell or a view in `public/` is allowed to create. */
 export const ALLOWED_TAGS: ReadonlySet<string> = new Set([
   "A",
+  "ARTICLE",
+  "ASIDE",
   "BUTTON",
   "CODE",
   "DD",
   "DETAILS",
+  "DIALOG",
   "DIV",
   "DL",
   "DT",
   "H1",
   "H2",
+  "H3",
+  "HEADER",
+  "INPUT",
+  "LABEL",
   "LI",
   "MAIN",
+  "METER",
+  "NAV",
+  "OPTION",
   "P",
   "PRE",
   "SECTION",
+  "SELECT",
   "SMALL",
   "SPAN",
   "SUMMARY",
@@ -54,10 +65,10 @@ const PROTOCOL_RELATIVE = /^[/\\]{2}/;
 export function freshRoot(): HTMLElement {
   document.body.replaceChildren();
   document.title = "waves";
-  const main = document.createElement("main");
-  main.setAttribute("id", "root");
-  document.body.append(main);
-  return main;
+  const host = document.createElement("div");
+  host.setAttribute("id", "root");
+  document.body.append(host);
+  return host;
 }
 
 export function root(): HTMLElement {
@@ -264,6 +275,73 @@ export function flush(): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, 0);
   });
+}
+
+export interface BrowserGlobals {
+  /**
+   * ONE object, mutable: `history.pushState` writes to it, and a test navigates
+   * by moving it. A fresh object per read would let the app navigate and then
+   * re-read the address it started from.
+   */
+  readonly location: { pathname: string; search: string };
+  readonly history: {
+    pushState(data: unknown, unused: string, url: string): void;
+  };
+  readonly win: {
+    addEventListener(type: "popstate", listener: () => void): void;
+    removeEventListener(type: "popstate", listener: () => void): void;
+  };
+  /** Every URL a `pushState` was given, in order. */
+  readonly pushes: string[];
+  /** How many `popstate` listeners the app has attached. */
+  readonly popstates: number;
+  popstate(): void;
+}
+
+/**
+ * The browser's own objects, as the app is handed them: a location, a history
+ * that moves that location, and a window carrying the popstate listeners. Never
+ * the real `window.location` or `window.history`, and never asserted on either.
+ */
+export function browserGlobals(pathname = "/", search = ""): BrowserGlobals {
+  const location = { pathname, search };
+  const pushes: string[] = [];
+  const listeners: (() => void)[] = [];
+  const history = {
+    pushState: (_data: unknown, _unused: string, url: string): void => {
+      pushes.push(url);
+      const target = new URL(url, "http://test");
+      location.pathname = target.pathname;
+      location.search = target.search;
+    },
+  };
+  const win = {
+    addEventListener: (type: string, listener: () => void): void => {
+      expect(type).toBe("popstate");
+      listeners.push(listener);
+    },
+    removeEventListener: (type: string, listener: () => void): void => {
+      expect(type).toBe("popstate");
+      const at = listeners.indexOf(listener);
+      if (at >= 0) {
+        listeners.splice(at, 1);
+      }
+    },
+  };
+  return {
+    location,
+    history,
+    win,
+    pushes,
+    get popstates() {
+      return listeners.length;
+    },
+    popstate: () => {
+      for (const listener of [...listeners]) {
+        listener();
+      }
+    },
+  };
 }
 
 export interface PanelHarness {

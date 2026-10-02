@@ -1,0 +1,190 @@
+/*
+ * The frame and nothing else: a rail on the left, a top bar, and the page area
+ * the views draw into. Colours come only from tokens.css, so both schemes and
+ * every later stylesheet read the same names.
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* Three children in two columns: the rail takes the whole first column, and the
+   top bar and the page share the second. Each is placed by name, because left to
+   auto-placement the page wraps into a second row under the rail. */
+.app {
+  display: grid;
+  grid-template-columns: var(--rail) minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  min-height: 100vh;
+}
+
+/* The rail holds its place while the page scrolls under it. */
+.rail {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  height: 100vh;
+  overflow-y: auto;
+  padding: 1rem 0.9rem;
+  position: sticky;
+  top: 0;
+}
+
+.brand {
+  align-items: baseline;
+  display: flex;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+
+.brand a {
+  color: var(--text);
+  font-size: 1.15rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.rail h2 {
+  color: var(--muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  margin: 0 0 0.5rem;
+  text-transform: uppercase;
+}
+
+.projects {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.projects li {
+  margin-bottom: 0.75rem;
+}
+
+.projects a {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.projects a[aria-current="page"] {
+  color: var(--blue);
+}
+
+.projects small {
+  color: var(--muted);
+  display: block;
+  font-size: 0.75rem;
+}
+
+.legend {
+  border-top: 1px solid var(--line);
+  margin-top: auto;
+  padding-top: 0.9rem;
+}
+
+.legend p {
+  color: var(--muted);
+  font-size: 0.75rem;
+  margin: 0 0 0.4rem;
+}
+
+.topbar {
+  grid-column: 2;
+  grid-row: 1;
+  align-items: baseline;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: space-between;
+  padding: 0.75rem 1.25rem;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.crumbs {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.95rem;
+  gap: 0.4rem;
+}
+
+.crumbs a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.crumbs a:hover {
+  color: var(--blue);
+}
+
+.crumbs .here {
+  color: var(--text);
+}
+
+/* The note in the top bar is one line of text, not the boxed banner the old
+   views still use. */
+.topbar .note {
+  background: none;
+  border: none;
+  color: var(--amber);
+  font-size: 0.85rem;
+  margin: 0;
+  padding: 0;
+}
+
+.page {
+  grid-column: 2;
+  grid-row: 2;
+  min-width: 0;
+  padding: 1.25rem;
+}
+
+a:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+/* One column, rail first: the rail is the navigation on a narrow screen too. */
+@media (max-width: 1080px) {
+  .app {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+  }
+
+  .rail {
+    border-bottom: 1px solid var(--line);
+    border-right: none;
+    grid-column: 1;
+    grid-row: auto;
+    height: auto;
+    position: static;
+  }
+
+  .topbar {
+    grid-column: 1;
+    grid-row: auto;
+    position: static;
+  }
+
+  .page {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}

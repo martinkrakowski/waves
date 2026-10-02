@@ -154,8 +154,14 @@ function waveHeading(view, nowMs) {
   });
 }
 
-/** Why there are no lanes: nothing pushed, nothing chosen, or nothing stored. */
+/**
+ * Why there are no lanes: still loading, nothing pushed, nothing chosen, or
+ * nothing stored.
+ */
 function lanePanelMessage(model) {
+  if (model.loading === true) {
+    return "Loading…";
+  }
   if (model.waves.length === 0) {
     return "This project has no waves yet.";
   }

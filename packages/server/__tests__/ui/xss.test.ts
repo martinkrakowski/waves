@@ -6,13 +6,27 @@ import type {
   PullRequestState,
 } from "@hexagen-monaco/waves-contract";
 
+import type { AppGlobals } from "../../public/app.js";
+import { createApp } from "../../public/app.js";
 import type { ProjectCard } from "../../public/api.js";
+import { el } from "../../public/dom.js";
 import { projectList } from "../../public/projects.js";
+import { shell } from "../../public/shell.js";
 import { wavePanel } from "../../public/wave.js";
 
 import type { LaneView } from "../../src/application/read-model.js";
 import { lane, NOW_ISO, NOW_MS, projectCard, waveSummary } from "./fixtures.js";
-import { assertNoInjectedMarkup, freshRoot, textsOf } from "./helpers.js";
+import {
+  assertNoInjectedMarkup,
+  browserGlobals,
+  fetchStub,
+  flush,
+  freshRoot,
+  root,
+  textOf,
+  textsOf,
+  timerStub,
+} from "./helpers.js";
 
 const IMG = "<img src=x onerror=alert(1)>";
 const SCRIPT = '"><script>alert(1)</script>';
@@ -79,6 +93,44 @@ function expectVerbatim(
 ): void {
   expect(occurrencesOf(payload)).toBe(textTimes);
   expect(titledWith(payload)).toBe(titleTimes);
+}
+
+/**
+ * Boots the app on the fleet route over the given projects, so the rail and the
+ * card draw the same strings and the whole chain is walked, not one view.
+ */
+async function bootFleet(
+  projects: readonly ProjectCard[],
+  pathname = "/",
+  search = "",
+): Promise<ReturnType<typeof createApp>> {
+  freshRoot();
+  const timers = timerStub();
+  const browser = browserGlobals(pathname, search);
+  const app = createApp({
+    doc: document,
+    location: browser.location,
+    history: browser.history,
+    win: browser.win,
+    fetch: fetchStub((path) =>
+      path === "/api/v1/projects"
+        ? { status: 200, body: projects }
+        : { status: 404 },
+    ),
+    setTimer: timers.setTimer,
+    clearTimer: timers.clearTimer,
+    clock: () => NOW_MS,
+  } satisfies AppGlobals);
+  app.start();
+  await flush();
+  return app;
+}
+
+/** Every attribute value in the document, one flat list, names not checked. */
+function attributeValues(): string[] {
+  return Array.from(document.querySelectorAll("*")).flatMap((element) =>
+    element.getAttributeNames().map((name) => element.getAttribute(name) ?? ""),
+  );
 }
 
 /** Every field that reaches the DOM, each carrying the payload it was given. */
@@ -276,5 +328,94 @@ describe("the wave panel against stored markup", () => {
     expect(host.querySelectorAll("details > *")).toHaveLength(2);
     expect(textsOf(host, "pre")).toStrictEqual([CLOSING_DETAILS]);
     expectVerbatim(CLOSING_DETAILS, 1, 0);
+  });
+});
+
+/**
+ * How many times a payload name reaches the document text on the fleet route:
+ * once as the rail link's own text, and once as the card's link text. The card
+ * also shows the id, the wave count and the last push, none of which carry it.
+ */
+const RAIL_AND_CARD_OCCURRENCES = 2;
+
+/** And with the payload in the id: the rail skips it, the card shows it once. */
+const CARD_ONLY_OCCURRENCES = 1;
+
+describe("the rail against stored markup", () => {
+  it("renders a project's name as text in the rail and in the card", async () => {
+    for (const payload of TEXT_PAYLOADS) {
+      const app = await bootFleet([projectCard({ name: payload })]);
+      assertNoInjectedMarkup();
+      expect(root().querySelectorAll("img")).toHaveLength(0);
+      expect(root().querySelectorAll("script")).toHaveLength(0);
+      expect(textsOf(root(), ".projects a")).toStrictEqual([payload]);
+      expect(root().querySelector(".projects a")?.getAttribute("href")).toBe(
+        "/p/alpha",
+      );
+      expectVerbatim(payload, RAIL_AND_CARD_OCCURRENCES, 0);
+      app.stop();
+    }
+  });
+
+  it("keeps a payload project id out of the rail and out of every attribute", async () => {
+    for (const payload of TEXT_PAYLOADS) {
+      const app = await bootFleet([
+        projectCard({ id: payload, name: "Alpha" }),
+      ]);
+      assertNoInjectedMarkup();
+      expect(root().querySelectorAll(".projects")).toHaveLength(0);
+      expect(textsOf(root(), ".rail-nav p")).toStrictEqual([
+        "No projects registered yet.",
+      ]);
+      for (const value of attributeValues()) {
+        expect(value).not.toContain(payload);
+      }
+      expectVerbatim(payload, CARD_ONLY_OCCURRENCES, 0);
+      app.stop();
+    }
+  });
+
+  it("never puts a payload name in the breadcrumb either", async () => {
+    for (const payload of TEXT_PAYLOADS) {
+      const host = freshRoot();
+      host.append(
+        shell(
+          {
+            route: { kind: "project", id: "alpha", wave: "wv1" },
+            projects: [projectCard({ name: payload })],
+            note: "",
+          },
+          el("p", { text: "the page" }),
+        ),
+      );
+      assertNoInjectedMarkup();
+      const crumbs = host.querySelector(".crumbs") as Element;
+      expect(textOf(host.querySelector(".crumbs") as Element)).toBe(
+        "waves / alpha / wv1",
+      );
+      expect(crumbs.querySelectorAll("img")).toHaveLength(0);
+      expect(crumbs.querySelectorAll("script")).toHaveLength(0);
+      expect(textOf(crumbs)).not.toContain(payload);
+    }
+  });
+});
+
+describe("the query string against stored markup", () => {
+  const KEYS = ["reason", "stage", "seat", "q", "lane", "all"] as const;
+
+  it.each(KEYS)("keeps a payload in %s out of the document", async (key) => {
+    for (const payload of TEXT_PAYLOADS) {
+      const app = await bootFleet(
+        [projectCard()],
+        "/",
+        `?${key}=${encodeURIComponent(payload)}`,
+      );
+      assertNoInjectedMarkup();
+      expect(root().querySelectorAll("img")).toHaveLength(0);
+      expect(root().querySelectorAll("script")).toHaveLength(0);
+      expect(documentText()).not.toContain(payload);
+      expect(textsOf(root(), ".card-name")).toStrictEqual(["Alpha"]);
+      app.stop();
+    }
   });
 });

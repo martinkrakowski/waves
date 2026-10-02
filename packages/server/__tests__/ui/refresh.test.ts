@@ -17,6 +17,7 @@ import {
   waveView,
 } from "./fixtures.js";
 import {
+  browserGlobals,
   fetchStub,
   flush,
   freshRoot,
@@ -33,10 +34,15 @@ import {
 interface Harness {
   readonly app: ReturnType<typeof createApp>;
   readonly timers: TimerStub;
+  readonly browser: ReturnType<typeof browserGlobals>;
 }
+
+/** The only note the app ever writes, as the reader sees it. */
+const OFFLINE = "offline, retrying";
 
 function harness(options: {
   pathname?: string;
+  search?: string;
   fetchImpl: FetchStub;
   withoutRoot?: boolean;
   refreshMs?: number;
@@ -47,16 +53,19 @@ function harness(options: {
     freshRoot();
   }
   const timers = timerStub();
+  const browser = browserGlobals(options.pathname ?? "/", options.search ?? "");
   const app = createApp({
     doc: document,
-    location: { pathname: options.pathname ?? "/" },
+    location: browser.location,
+    history: browser.history,
+    win: browser.win,
     fetch: options.fetchImpl,
     setTimer: timers.setTimer,
     clearTimer: timers.clearTimer,
     clock: () => NOW_MS,
     refreshMs: options.refreshMs ?? REFRESH_MS,
   } satisfies AppGlobals);
-  return { app, timers };
+  return { app, timers, browser };
 }
 
 function listing(...projects: unknown[]): (path: string) => Answer {
@@ -66,7 +75,18 @@ function listing(...projects: unknown[]): (path: string) => Answer {
       : { status: 404 };
 }
 
+/** The rail's answer on any route: one project, so the rail has something. */
+function railAnswer(path: string): Answer | undefined {
+  return path === "/api/v1/projects"
+    ? { status: 200, body: [projectCard()] }
+    : undefined;
+}
+
 function projectWaves(path: string): Answer {
+  const rail = railAnswer(path);
+  if (rail !== undefined) {
+    return rail;
+  }
   if (path === "/api/v1/projects/alpha/waves") {
     return {
       status: 200,
@@ -164,12 +184,26 @@ describe("the project list route", () => {
     });
     app.start();
     await flush();
-    expect(textsOf(root(), ".empty")).toStrictEqual(["offline, retrying"]);
+    // The status region carries the note; the body still says it is loading.
+    expect(textsOf(root(), ".empty")).toStrictEqual(["Loading…"]);
+    expect(textOf(root().querySelector(".note"))).toBe("offline, retrying");
 
     timers.runLast();
     await flush();
     expect(timers.scheduled).toHaveLength(1);
-    expect(textsOf(root(), ".empty")).toStrictEqual(["offline, retrying"]);
+    expect(textsOf(root(), ".empty")).toStrictEqual(["Loading…"]);
+    expect(textOf(root().querySelector(".note"))).toBe("offline, retrying");
+    app.stop();
+  });
+
+  it("says the note once, and only in the status region", async () => {
+    const { app } = harness({
+      fetchImpl: fetchStub(() => ({ status: 404 })),
+    });
+    app.start();
+    await flush();
+    expect(root().querySelectorAll(".note")).toHaveLength(1);
+    expect(textOf(root()).split(OFFLINE).length - 1).toBe(1);
     app.stop();
   });
 
@@ -209,6 +243,10 @@ describe("the project list route", () => {
   it("keeps the last good lanes when the wave comes back without one", async () => {
     let second = false;
     const flaky = fetchStub((path) => {
+      const rail = railAnswer(path);
+      if (rail !== undefined) {
+        return rail;
+      }
       if (path.endsWith("/waves")) {
         return { status: 200, body: [waveSummary()] };
       }
@@ -242,16 +280,21 @@ describe("the project list route", () => {
   it("says it is offline when the very first wave is not a wave at all", async () => {
     const { app, timers } = harness({
       pathname: "/p/alpha",
-      fetchImpl: fetchStub((path) =>
-        path.endsWith("/waves")
+      fetchImpl: fetchStub((path) => {
+        const rail = railAnswer(path);
+        if (rail !== undefined) {
+          return rail;
+        }
+        return path.endsWith("/waves")
           ? { status: 200, body: [waveSummary()] }
-          : { status: 200, body: {} },
-      ),
+          : { status: 200, body: {} };
+      }),
     });
     app.start();
     await flush();
     expect(timers.scheduled).toHaveLength(1);
-    expect(textsOf(root(), ".empty")).toStrictEqual(["offline, retrying"]);
+    expect(textsOf(root(), ".empty")).toStrictEqual(["Loading…"]);
+    expect(textOf(root().querySelector(".note"))).toBe("offline, retrying");
     app.stop();
   });
 
@@ -301,7 +344,8 @@ describe("the project list route", () => {
     const { app } = harness({ fetchImpl: throwingFetch() });
     app.start();
     await flush();
-    expect(textsOf(root(), ".empty")).toStrictEqual(["offline, retrying"]);
+    expect(textsOf(root(), ".empty")).toStrictEqual(["Loading…"]);
+    expect(textOf(root().querySelector(".note"))).toBe("offline, retrying");
     app.stop();
   });
 
@@ -386,12 +430,13 @@ describe("stopping", () => {
 });
 
 describe("the project route", () => {
-  it("loads the newest wave and its lanes", async () => {
+  it("loads the newest wave and its lanes, and the rail's list beside them", async () => {
     const fetchImpl = fetchStub(projectWaves);
     const { app } = harness({ pathname: "/p/alpha", fetchImpl });
     app.start();
     await flush();
     expect(fetchImpl.calls).toStrictEqual([
+      "/api/v1/projects",
       "/api/v1/projects/alpha/waves",
       "/api/v1/projects/alpha/waves/w-3",
     ]);
@@ -457,7 +502,7 @@ describe("the project route", () => {
       return {
         status: answer.status,
         body: answer.body,
-        hold: !path.endsWith("/waves"),
+        hold: /\/waves\/[^/]+$/.test(path),
       };
     });
     const { app, timers } = harness({ pathname: "/p/alpha", fetchImpl: gate });
@@ -497,6 +542,10 @@ describe("the project route", () => {
     let second = false;
     const other = waveView({ envelope: envelope({ wave: "w-9" }) });
     const flaky = fetchStub((path) => {
+      const rail = railAnswer(path);
+      if (rail !== undefined) {
+        return rail;
+      }
       if (path.endsWith("/waves")) {
         return { status: 200, body: [waveSummary({ wave: "w-3" })] };
       }
@@ -543,6 +592,10 @@ describe("the project route", () => {
     async (_label, body) => {
       let second = false;
       const flaky = fetchStub((path) => {
+        const rail = railAnswer(path);
+        if (rail !== undefined) {
+          return rail;
+        }
         if (path.endsWith("/waves")) {
           return { status: 200, body: [waveSummary({ wave: "w-3" })] };
         }
@@ -575,6 +628,10 @@ describe("the project route", () => {
       envelope: envelope({ lanes: [lane({ id: "wv-c" })] }),
     });
     const flaky = fetchStub((path) => {
+      const rail = railAnswer(path);
+      if (rail !== undefined) {
+        return rail;
+      }
       if (path.endsWith("/waves")) {
         return { status: 200, body: [waveSummary({ wave: "w-3" })] };
       }
@@ -601,6 +658,10 @@ describe("the project route", () => {
   it("says the wave is gone when its detail answers 404", async () => {
     let second = false;
     const flaky = fetchStub((path) => {
+      const rail = railAnswer(path);
+      if (rail !== undefined) {
+        return rail;
+      }
       if (path.endsWith("/waves")) {
         return { status: 200, body: [waveSummary({ wave: "w-3" })] };
       }
@@ -627,6 +688,10 @@ describe("the project route", () => {
   it("keeps the last good waves when a later wave list holds none it can show", async () => {
     let second = false;
     const flaky = fetchStub((path) => {
+      const rail = railAnswer(path);
+      if (rail !== undefined) {
+        return rail;
+      }
       if (path.endsWith("/waves")) {
         return second
           ? { status: 200, body: [{}] }
@@ -672,15 +737,22 @@ describe("the project route", () => {
   });
 
   it("asks for no wave at all when every wave is past retention", async () => {
-    const fetchImpl = fetchStub((path) =>
-      path === "/api/v1/projects/alpha/waves"
+    const fetchImpl = fetchStub((path) => {
+      const rail = railAnswer(path);
+      if (rail !== undefined) {
+        return rail;
+      }
+      return path === "/api/v1/projects/alpha/waves"
         ? { status: 200, body: [waveSummary({ retained: false })] }
-        : { status: 200, body: waveView() },
-    );
+        : { status: 200, body: waveView() };
+    });
     const { app } = harness({ pathname: "/p/alpha", fetchImpl });
     app.start();
     await flush();
-    expect(fetchImpl.calls).toStrictEqual(["/api/v1/projects/alpha/waves"]);
+    expect(fetchImpl.calls).toStrictEqual([
+      "/api/v1/projects",
+      "/api/v1/projects/alpha/waves",
+    ]);
     expect(textsOf(root(), ".empty")).toStrictEqual([
       "Every wave is past retention.",
       "That wave is no longer stored.",
@@ -691,7 +763,7 @@ describe("the project route", () => {
   it("says so when the project is not registered", async () => {
     const { app } = harness({
       pathname: "/p/nope",
-      fetchImpl: fetchStub(() => ({ status: 404 })),
+      fetchImpl: fetchStub((path) => railAnswer(path) ?? { status: 404 }),
     });
     app.start();
     await flush();

@@ -1,45 +1,9 @@
-:root {
-  color-scheme: light dark;
-  --bg: #fbfbfd;
-  --fg: #16181d;
-  --muted: #5b6270;
-  --line: #d9dce3;
-  --card: #ffffff;
-  --accent: #1c4fd8;
-  --ok: #12693a;
-  --warn: #8a4b00;
-  --bad: #a11026;
-  font-family:
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    sans-serif;
-  line-height: 1.5;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #101216;
-    --fg: #e8eaee;
-    --muted: #9aa2b1;
-    --line: #2a2f39;
-    --card: #171a20;
-    --accent: #8fb4ff;
-    --ok: #6ede9f;
-    --warn: #f0b866;
-    --bad: #ff8f9c;
-  }
-}
-
-* {
-  box-sizing: border-box;
-}
+/* The old views' own rules. The frame and every colour live in shell.css and
+   tokens.css; what is left here is deleted by K4 and K5 as each view lands. */
 
 body {
-  background: var(--bg);
-  color: var(--fg);
-  margin: 0;
-  padding: 1rem;
+  font-family: var(--sans);
+  line-height: 1.5;
 }
 
 .view {
@@ -59,12 +23,12 @@ h2 {
 }
 
 a {
-  color: var(--accent);
+  color: var(--blue);
   overflow-wrap: anywhere;
 }
 
 code {
-  font-family: ui-monospace, "SFMono-Regular", "Consolas", monospace;
+  font-family: var(--mono);
   font-size: 0.9em;
   overflow-wrap: anywhere;
 }
@@ -84,10 +48,10 @@ small {
 
 .note,
 .banner {
-  background: var(--card);
-  border: 1px solid var(--warn);
+  background: var(--bg-raise);
+  border: 1px solid var(--amber);
   border-radius: 0.4rem;
-  color: var(--warn);
+  color: var(--amber);
   margin: 0.5rem 0;
   padding: 0.5rem 0.75rem;
 }
@@ -97,8 +61,8 @@ small {
 }
 
 .banner.stale {
-  border-color: var(--bad);
-  color: var(--bad);
+  border-color: var(--red);
+  color: var(--red);
 }
 
 .cards {
@@ -111,7 +75,7 @@ small {
 }
 
 .card {
-  background: var(--card);
+  background: var(--bg-raise);
   border: 1px solid var(--line);
   border-radius: 0.5rem;
   padding: 0.75rem 1rem;
@@ -157,19 +121,19 @@ dd {
 
 .badge.running,
 .badge.pass {
-  color: var(--ok);
+  color: var(--teal);
 }
 
 .badge.stopped,
 .badge.fail {
-  color: var(--bad);
+  color: var(--red);
 }
 
 .badge.stale,
 .badge.unknown,
 .badge.pending,
 .badge.aging {
-  color: var(--warn);
+  color: var(--amber);
 }
 
 .waves {
@@ -187,7 +151,7 @@ dd {
 
 .wave {
   align-items: center;
-  background: var(--card);
+  background: var(--bg-raise);
   border: 1px solid var(--line);
   border-radius: 0.4rem;
   color: inherit;
@@ -202,15 +166,15 @@ dd {
 }
 
 .wave.current {
-  border-color: var(--accent);
-  outline: 1px solid var(--accent);
+  border-color: var(--blue);
+  outline: 1px solid var(--blue);
 }
 
 .toggle {
   background: none;
   border: 1px solid var(--line);
   border-radius: 0.4rem;
-  color: var(--accent);
+  color: var(--blue);
   cursor: pointer;
   font: inherit;
   font-size: 0.9rem;
