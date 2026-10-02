@@ -1,7 +1,7 @@
 {
   "name": "@hexagen-monaco/waves-contract",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "The waves/v1 contract: the envelope, its validator, and the staleness and retention rules.",
   "type": "module",
   "license": "MIT",
   "main": "./dist/index.js",
@@ -21,5 +21,14 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/martinkrakowski/waves.git",
+    "directory": "packages/contract"
+  },
+  "homepage": "https://github.com/martinkrakowski/waves#readme",
+  "engines": {
+    "node": ">=22.7.0"
   }
 }
