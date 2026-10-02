@@ -90,6 +90,17 @@ writable by uid 1000, and the server creates `store/` itself, owned by uid 1000
 at mode 0700. Keep that, or bind a volume that already hands the directory over
 with those two properties.
 
+Keep `fsGroupChangePolicy: OnRootMismatch` as well. The pod sets `fsGroup` so the
+admin Secret is readable, and on a volume type that honours it — a local-path
+volume does — the kubelet otherwise re-applies the group to everything under the
+mount on every pod start, which turns `store/` into mode 2770. The store refuses
+that, so the first start works and every restart after it answers 503 on
+`/readyz`. If a volume is already in that state, repair it from inside the pod:
+
+```sh
+kubectl -n waves exec deploy/waves -- chmod -R g-rwxs,o-rwx /data/store
+```
+
 ## midnight
 
 ### deploy.sh

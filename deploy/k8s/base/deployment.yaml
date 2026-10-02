@@ -34,6 +34,13 @@ spec:
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
+        # Without this the kubelet re-applies fsGroup to the whole data volume on
+        # every pod start, which adds group access and the setgid bit to the store
+        # directory the server created at 0700. The store refuses a directory other
+        # users can reach, so the second start of any pod answered 503 on /readyz.
+        # With it the kubelet looks only at the volume root, finds it already in
+        # the right group, and leaves what is under it alone.
+        fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -42,10 +49,10 @@ spec:
           image: waves
           imagePullPolicy: IfNotPresent
           env:
-            # A subdirectory, not the mount root: a local-path (hostPath) volume is
-            # root-owned 0777 and fsGroup does not apply to it, while the file store
-            # refuses any data dir it does not own at mode 0700. It creates this one
-            # itself, owned by uid 1000, mode 0700.
+            # A subdirectory, not the mount root: a local-path volume root is owned
+            # by root, while the file store refuses any data dir it does not own at
+            # mode 0700. It creates this one itself, owned by uid 1000, mode 0700,
+            # and fsGroupChangePolicy above keeps the kubelet from widening it.
             - name: WAVES_DATA_DIR
               value: /data/store
             - name: WAVES_PORT
