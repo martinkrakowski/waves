@@ -30,18 +30,24 @@ function laneWithDerived(
 }
 
 describe("validateEnvelope lane seat", () => {
-  it("accepts a seat of 64 characters", () => {
+  it("accepts a seat of 128 characters", () => {
     expect(
-      expectValidEnvelope(oneLane({ seat: "s".repeat(64) })).lanes[0]?.seat,
-    ).toBe("s".repeat(64));
+      expectValidEnvelope(oneLane({ seat: "s".repeat(128) })).lanes[0]?.seat,
+    ).toBe("s".repeat(128));
   });
 
   it("accepts a lane without a seat", () => {
     expect(expectValidEnvelope(oneLane()).lanes[0]?.seat).toBeUndefined();
   });
 
-  it("rejects a seat of 65 characters", () => {
-    expectEnvelopePaths(oneLane({ seat: "s".repeat(65) }), ["/lanes/0/seat"]);
+  it("accepts a seat of one character", () => {
+    expect(expectValidEnvelope(oneLane({ seat: "s" })).lanes[0]?.seat).toBe(
+      "s",
+    );
+  });
+
+  it("rejects a seat of 129 characters", () => {
+    expectEnvelopePaths(oneLane({ seat: "s".repeat(129) }), ["/lanes/0/seat"]);
   });
 
   it("rejects an empty seat", () => {
@@ -58,7 +64,7 @@ describe("validateEnvelope lane seat", () => {
   });
 
   it("checks the seat length before its characters", () => {
-    const seat = `${"s".repeat(60)}${BELL}${"s".repeat(4)}`;
+    const seat = `${"s".repeat(124)}${BELL}${"s".repeat(4)}`;
 
     expectEnvelopePaths(oneLane({ seat }), ["/lanes/0/seat"]);
   });

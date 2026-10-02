@@ -49,7 +49,7 @@ Closed object; keys exactly `id`, `seat`, `reported`, `derived`,
 | field           | type             | required | bounds                                          |
 | --------------- | ---------------- | -------- | ----------------------------------------------- |
 | `id`            | string           | yes      | 1 to 80 characters, `A-Za-z0-9_-`               |
-| `seat`          | string           | no       | 1 to 64 characters, no control characters       |
+| `seat`          | string           | no       | 1 to 128 characters, no control characters      |
 | `reported`      | object           | no       | see 2.4                                         |
 | `derived`       | object           | yes      | see below                                       |
 | `disagreements` | array of strings | yes      | at most 20 entries, each at most 300 characters |
