@@ -121,8 +121,8 @@ reported, not just the lane:
 A lane whose `derived.pr.state` is `merged` or `closed` is never listed, for any
 reason: it is finished, and what its gate or its checks last said is history.
 Staleness uses the server's receive time, as everywhere else
-(`docs/waves-v1.md` §4), and `silent` is the same condition under which the wave
-view already shows `alive` as `unknown` (`read-model.ts:99-101`).
+(`docs/waves-v1.md` §4), and `silent` starts from the condition under which the
+wave view already shows `alive` as `unknown` (`read-model.ts:99-101`).
 
 **Why `silent` also needs a missing `exit`.** Every wave ends up stale, because
 pushes stop when it finishes, and `alive` is not a lifecycle state. In
