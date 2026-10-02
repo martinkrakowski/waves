@@ -69,11 +69,20 @@ describe("the frame", () => {
     expect(host.querySelectorAll(".brand")).toHaveLength(0);
   });
 
-  it("opens the top bar with the breadcrumb and the menu", () => {
+  it("opens the top bar with the mark, the breadcrumb and the menu", () => {
     const bar = oneOf(draw(), "header.topbar") as HTMLElement;
     expect(
       Array.from(bar.children).map((child) => child.tagName),
-    ).toStrictEqual(["NAV", "DETAILS"]);
+    ).toStrictEqual(["svg", "NAV", "DETAILS"]);
+  });
+
+  it("puts the mark first on the fleet page and on a project page", () => {
+    for (const route of [FLEET, PROJECT]) {
+      const bar = oneOf(draw({ route }), "header.topbar") as HTMLElement;
+      const first = bar.children[0] as Element;
+      expect(first.tagName).toBe("svg");
+      expect(first.getAttribute("class")).toBe("logo");
+    }
   });
 });
 

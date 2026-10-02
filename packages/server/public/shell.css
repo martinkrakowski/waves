@@ -41,6 +41,20 @@ body {
   z-index: 2;
 }
 
+/* The mark sits beside the word, so it needs less room than the bar's own gap. */
+.logo {
+  color: var(--blue);
+  fill: none;
+  flex: none;
+  height: 1rem;
+  margin-right: -0.5rem;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  width: 1rem;
+}
+
 .crumbs {
   align-items: baseline;
   display: flex;

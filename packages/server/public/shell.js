@@ -1,13 +1,15 @@
 import { el, internalLink, text } from "./dom.js";
 import { waveCountText } from "./format.js";
+import { logo } from "./logo.js";
 import { isProjectId } from "./patterns.js";
 
 /**
- * The frame around whatever a view drew: a top bar holding the breadcrumb and
- * the projects menu, the page itself, and a footer bar for what the page has to
- * say out loud. Every node here is built by `dom.js`, and every project field
- * has already passed the shape check, so a name a pusher chose reaches the
- * document as text and as nothing else.
+ * The frame around whatever a view drew: a top bar holding the mark, the
+ * breadcrumb and the projects menu, the page itself, and a footer bar for what
+ * the page has to say out loud. Every node here is built by `dom.js` — the mark
+ * by `logo.js`, from constants — and every project field has already passed the
+ * shape check, so a name a pusher chose reaches the document as text and as
+ * nothing else.
  */
 
 const BRAND = "waves";
@@ -219,6 +221,7 @@ export function shell(model, body) {
       el("header", {
         attrs: { class: "topbar" },
         children: [
+          logo(),
           el("nav", {
             attrs: { class: "crumbs", "aria-label": "Breadcrumb" },
             children: breadcrumb(model.route, model.all),
