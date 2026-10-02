@@ -18,10 +18,16 @@ const PROJECT_TOKEN = "project-token-0123456789abcdefghijklmnopq";
 const ADMIN_TOKEN = "admin-token-0123456789abcdefghijklmnop";
 const UNKNOWN_TOKEN = "unknown-token-0123456789abcdefghijklmno";
 const OTHER_TOKEN = "other-token-0123456789abcdefghijklmnopqr";
+const VIEWER_TOKEN = "viewer-token-0123456789abcdefghijklmnop";
 const WAVE = "wv1";
 const COLLECTION = "/api/v1/projects";
 
-for (const secret of [PROJECT_TOKEN, UNKNOWN_TOKEN, OTHER_TOKEN]) {
+for (const secret of [
+  PROJECT_TOKEN,
+  UNKNOWN_TOKEN,
+  OTHER_TOKEN,
+  VIEWER_TOKEN,
+]) {
   watchSecret(secret);
 }
 
@@ -390,6 +396,36 @@ describe("readiness", () => {
       expect(response.status).toBe(405);
       expect(response.headers.get("allow")).toBe("GET, HEAD");
     }
+  });
+
+  it.each([
+    ["with a viewer token configured", VIEWER_TOKEN],
+    ["with no viewer token", undefined],
+  ])("405s a non-read method on readiness %s", async (_label, readToken) => {
+    const started = await startHarness({ store: await seeded(), readToken });
+
+    for (const method of ["OPTIONS", "PATCH"]) {
+      const response = await fetch(`${started.origin}/readyz`, { method });
+      expect(response.status).toBe(405);
+      expect(response.headers.get("allow")).toBe("GET, HEAD");
+    }
+  });
+
+  it("answers GET and HEAD on readiness with no token at all", async () => {
+    const started = await startHarness({
+      store: await seeded(),
+      readToken: VIEWER_TOKEN,
+    });
+
+    const ready = await fetch(`${started.origin}/readyz`);
+    const head = await fetch(`${started.origin}/readyz`, { method: "HEAD" });
+
+    expect(ready.status).toBe(200);
+    expect(ready.headers.get("cache-control")).toBe("no-store");
+    expect(await ready.json()).toEqual({ ok: true });
+    expect(head.status).toBe(200);
+    expect(head.headers.get("cache-control")).toBe("no-store");
+    expect(await head.text()).toBe("");
   });
 
   it("keeps no token, a header or a body out of every log line", () => {

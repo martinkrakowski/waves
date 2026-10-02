@@ -273,21 +273,25 @@ A request is decided in this order, and the order is what picks the status you
 see (`respond`, `packages/server/src/infrastructure/http-server.ts:171-220`):
 
 1. A parser refusal (`431`, `408`, `400`) happens before the request exists.
-2. The URL length (`414`).
-3. A `PUT`, `POST` or `DELETE` leaves for the write pipeline of section 5.4,
+2. An HTTP/1.1 `Expect` with any value other than `100-continue` is a `417`
+   `{"error":"expectation failed"}`, answered before the URL length is looked at
+   (section 5.4).
+3. The URL length (`414`).
+4. A `PUT`, `POST` or `DELETE` leaves for the write pipeline of section 5.4,
    whatever the path. The viewer token is never consulted for a write.
-4. `/readyz` is answered, for any method that reached this step: it is a
-   probe, and an `OPTIONS` or `PATCH` on it gets the same `200` or `503`.
-5. When a viewer token is configured, authorization (`401`), for every path
+5. `/readyz` is answered, for the two methods it is a probe for — `GET` and
+   `HEAD`, which get the same `200` or `503`. Any other method on it falls
+   through to step 7 and is a `405` carrying `Allow: GET, HEAD`.
+6. When a viewer token is configured, authorization (`401`), for every path
    except `/healthz` and `/readyz`.
-6. The method (`405`): anything other than `GET` and `HEAD`, and any read method
+7. The method (`405`): anything other than `GET` and `HEAD`, and any read method
    on `/api/v1/projects/<id>`, which has no read representation.
-7. The route.
+8. The route.
 
 So with a viewer token configured an unauthenticated `OPTIONS` or `PATCH`
-answers `401`, not `405` — except on `/healthz`, which the token does not
-guard and where it is a `405` — while an unauthenticated `POST` goes to the write
-pipeline and is answered by it.
+answers `401`, not `405` — except on `/healthz` and `/readyz`, which the token
+does not guard and where it is a `405` — while an unauthenticated `POST` goes to
+the write pipeline and is answered by it.
 
 | path                                     | 200 response                                                                                                                               |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -363,17 +367,22 @@ frame-ancestors 'none'`, `X-Content-Type-Options: nosniff` and
 `Referrer-Policy: no-referrer`, plus its own `Content-Type` and `Content-Length`
 unless it is a `204` (`BASE_HEADERS` and `send`,
 `packages/server/src/infrastructure/http-security.ts:14-18`, `68-89`). A path
-under `/api/`, `/readyz` and every answer of the write pipeline also carry
+under `/api/`, the `GET` and `HEAD` answers of `/readyz` and every answer of the
+write pipeline also carry
 `Cache-Control: no-store` (`isApiPath`,
 `packages/server/src/infrastructure/http-routes.ts:83`; `extraFor`,
 `packages/server/src/infrastructure/http-server.ts:148-150`, `186-194`;
-`answer`, `packages/server/src/infrastructure/http-write.ts:255-265`).
+`answer`, `packages/server/src/infrastructure/http-write.ts:255-265`). The `405`
+that an `OPTIONS` or `PATCH` gets on `/readyz` carries no `Cache-Control`; a
+`PUT`, `POST` or `DELETE` on it is the write pipeline's `405` and does.
 
 There is **no CORS**: no `Access-Control-Allow-Origin` is ever sent, no
 `OPTIONS` preflight is answered — an `OPTIONS` request is a `405`, or a `401`
-behind a viewer token, with the two probe exceptions of section 5.1 — and a write that carries an `Origin` header is refused
-(section 5.4). A browser page on another origin therefore can neither read these
-routes nor write to them; call them from a server, not from a page.
+behind a viewer token, with the two probe paths as the only exception: the
+viewer token does not guard them, so an `OPTIONS` on `/healthz` or `/readyz` is
+always a `405` (section 5.1) — and a write that carries an `Origin` header is
+refused (section 5.4). A browser page on another origin therefore can neither
+read these routes nor write to them; call them from a server, not from a page.
 
 ### 5.4 Write and registration routes
 
@@ -473,10 +482,14 @@ sees the connection reset mid-body (`continueIfExpected`,
 `packages/server/src/infrastructure/http-write.ts:233-242`; `SendOptions`,
 `packages/server/src/infrastructure/http-security.ts:47-66`).
 
-An `Expect` header with any other value never reaches this pipeline: Node
-answers it `417 Expectation Failed` itself, and that one answer carries none of
-the headers of section 5.3. No `checkExpectation` listener is registered
-(`packages/server/src/infrastructure/http-server.ts:260-282`).
+Over HTTP/1.1, an `Expect` header with any other value never reaches this
+pipeline: the service
+answers it itself, before any route, any authorization and even before the URL
+length is looked at, with `417` `{"error":"expectation failed"}`, the headers of
+section 5.3 and — on a path under `/api/` — `Cache-Control: no-store`. The
+connection is closed rather than left for a body nobody will read, and the
+answer is logged like any other (`checkExpectation`,
+`packages/server/src/infrastructure/http-server.ts:295-305`).
 
 After the body:
 
