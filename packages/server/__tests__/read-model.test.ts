@@ -7,6 +7,8 @@ import {
   MAX_CACHED_ROWS,
   MAX_CACHED_WAVES,
   MAX_PROJECT_LANES,
+  MAX_PROJECT_LANES_BYTES,
+  utf8Length,
 } from "../src/application/read-model.js";
 import { MemoryStore } from "../src/infrastructure/memory-store.js";
 import { project, snapshot, withLanes } from "./store-contract.js";
@@ -97,14 +99,20 @@ function bigLaneId(index: number): string {
 
 /**
  * A lane as large as the contract allows: every string at its cap, a full gate,
- * a pull request, a diff, a log with a tail and a detail. It is alive with no
- * exit, so in a wave that has gone stale it carries five reasons of its own:
- * `failed`, `disagreement`, `checks`, `gate` and `silent`.
+ * a pull request, a diff, a log with a tail and a detail. The caps are in
+ * characters and the contract refuses only control characters, so the fill
+ * decides what the row costs in bytes: a `"` is two once JSON has escaped it,
+ * CJK text is three, and a lone surrogate is six as `\udXXX`. The lane id and
+ * the stage keep to their patterns, which are ASCII.
+ *
+ * The lane is alive with no exit, so in a wave that has gone stale it carries
+ * five reasons of its own: `failed`, `disagreement`, `checks`, `gate` and
+ * `silent`.
  */
-function biggestLane(index: number): Lane {
+function biggestLane(index: number, fill: string): Lane {
   return {
     id: bigLaneId(index),
-    seat: "s".repeat(SEAT_CHARS),
+    seat: fill.repeat(SEAT_CHARS),
     reported: {
       // A stage is a-z and hyphens, so 32 characters is 31 hyphens after the first.
       stage: `s${"-".repeat(STAGE_CHARS - 1)}`,
@@ -133,14 +141,28 @@ function biggestLane(index: number): Lane {
       },
       diff: { files: 12, insertions: 3_456, deletions: 789 },
       log: { bytes: 9_999_999, mtimeMs: 1_759_320_000_000, tail: TAIL_TEXT },
-      planReview: "p".repeat(REVIEW_CHARS),
-      risk: "r".repeat(REVIEW_CHARS),
+      planReview: fill.repeat(REVIEW_CHARS),
+      risk: fill.repeat(REVIEW_CHARS),
     },
     disagreements: Array.from(
       { length: DISAGREEMENTS },
       (_unused, at) =>
-        `${String(at).padStart(3, "0")}${"d".repeat(DISAGREEMENT_CHARS - 3)}`,
+        `${String(at).padStart(3, "0")}${fill.repeat(DISAGREEMENT_CHARS - 3)}`,
     ),
+  };
+}
+
+/** A lane small enough that the cap's whole 2 000 fit inside the byte bound. */
+function plainLane(index: number): Lane {
+  return {
+    id: bigLaneId(index),
+    reported: {
+      stage: "implement",
+      event: "settled",
+      ts: "2026-10-01T12:00:00Z",
+    },
+    derived: { alive: false, exit: 0, planReview: "looks good" },
+    disagreements: [],
   };
 }
 
@@ -1020,23 +1042,19 @@ describe("the project lanes view", () => {
     expect(store.asked[10]).toBe("wv002");
   });
 
-  it("answers the cap of the largest legal lanes in under four mebibytes", async () => {
+  it("answers the whole cap of small lanes without cutting it", async () => {
     const store = new MemoryStore();
-    // Ten waves of 200 lanes, every id, seat, stage, review, risk and
-    // disagreement string at the cap `waves/v1` puts on it.
     await filled(
       store,
       "alpha",
       MAX_PROJECT_LANES / LANES_PER_WAVE,
       (_wave, index) =>
         Array.from({ length: LANES_PER_WAVE }, (_unused, at) =>
-          biggestLane(index * 10_000 + at),
+          plainLane(index * 10_000 + at),
         ),
       longWaveIdOf,
     );
 
-    // Long enough after the newest wave that all ten are past their own interval,
-    // which is what gives every lane its fifth reason.
     const view = await model(store, RECEIVED_AT_MS + 40_001).listLanes(
       "alpha",
       true,
@@ -1045,17 +1063,93 @@ describe("the project lanes view", () => {
 
     expect(view?.lanes).toHaveLength(MAX_PROJECT_LANES);
     expect(view?.truncated).toBe(false);
-    expect(view?.lanes[0]?.reasons).toStrictEqual([
-      "failed",
-      "disagreement",
-      "checks",
-      "gate",
-      "silent",
-    ]);
-    // The largest legal lanes of the cap measure 3 190 058 bytes: about 1.6 KB each.
-    expect(Buffer.byteLength(body)).toBeLessThan(4 * 1024 * 1024);
-    expect(body).not.toContain(TAIL_TEXT);
-    expect(body).not.toContain(DETAIL_TEXT);
+    expect(Buffer.byteLength(body)).toBeLessThan(MAX_PROJECT_LANES_BYTES);
+  });
+
+  it.each([
+    // A quote is one character and two bytes once JSON has escaped it.
+    ["a quote", '"'],
+    // One CJK ideograph is one character and three UTF-8 bytes.
+    ["CJK text", "\u4e2d"],
+    // A lone surrogate is one character, and `JSON.stringify` writes it as six
+    // ASCII bytes of `\udXXX`. The contract refuses control characters, and a
+    // surrogate is not one.
+    ["a lone surrogate", "\ud83d"],
+  ])(
+    "bounds a project of 2 000 largest lanes filled with %s",
+    async (_what, fill) => {
+      const store = new MemoryStore();
+      await filled(
+        store,
+        "alpha",
+        MAX_PROJECT_LANES / LANES_PER_WAVE,
+        (_wave, index) =>
+          Array.from({ length: LANES_PER_WAVE }, (_unused, at) =>
+            biggestLane(index * 10_000 + at, fill),
+          ),
+        longWaveIdOf,
+      );
+
+      const view = await model(store, RECEIVED_AT_MS + 40_001).listLanes(
+        "alpha",
+        true,
+      );
+      const body = JSON.stringify(view);
+
+      expect(view?.lanes.length).toBeGreaterThan(0);
+      expect(view?.lanes.length).toBeLessThan(MAX_PROJECT_LANES);
+      expect(view?.truncated).toBe(true);
+      // The rows themselves are bounded, and what the answer wraps them in is the
+      // project's own name and the wave strip.
+      expect(Buffer.byteLength(body)).toBeLessThan(
+        MAX_PROJECT_LANES_BYTES + 256 * 1024,
+      );
+      expect(body).not.toContain(TAIL_TEXT);
+      expect(body).not.toContain(DETAIL_TEXT);
+    },
+  );
+
+  it("reads no wave past the one the byte bound stopped in", async () => {
+    const store = new WaryStore("wv-absent");
+    await filled(store, "alpha", 10, () =>
+      Array.from({ length: LANES_PER_WAVE }, (_unused, at) =>
+        biggestLane(10_000 + at, '"'),
+      ),
+    );
+
+    const view = await model(store, RECEIVED_AT_MS + 40_001).listLanes(
+      "alpha",
+      true,
+    );
+
+    expect(view?.truncated).toBe(true);
+    expect(view?.lanes.length).toBeLessThan(MAX_PROJECT_LANES);
+    expect(store.asked.length).toBeGreaterThan(0);
+    expect(store.asked.length).toBeLessThan(10);
+    // The waves asked for are the newest ones, in the order the view lists them,
+    // and the read stopped there.
+    expect(store.asked).toEqual(
+      (view?.waves ?? []).map((wave) => wave.wave).slice(0, store.asked.length),
+    );
+  });
+});
+
+describe("utf8Length", () => {
+  it.each([
+    ["", 0],
+    ["waves/v1", 8],
+    ["é", 2],
+    ["\u4e2d", 3],
+    ["\u{1f680}", 4],
+    // A lone high surrogate is three bytes, and so is a lone low one.
+    ["\ud83d", 3],
+    ["\udc00", 3],
+    // A high surrogate that is not followed by a low one is not a pair.
+    ["\ud83dA", 4],
+    ["\ud83d\ue000", 6],
+    ['a\u{1f680}\u4e2d"', 9],
+  ])("counts %j as %i bytes", (text, expected) => {
+    expect(utf8Length(text)).toBe(expected);
   });
 });
 

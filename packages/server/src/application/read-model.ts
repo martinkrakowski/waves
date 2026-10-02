@@ -30,6 +30,24 @@ export type AliveView = boolean | "unknown";
 export const MAX_PROJECT_LANES = 2_000;
 
 /**
+ * The most bytes one project's listing answers with. The contract caps `seat`,
+ * `planReview`, `risk` and every disagreement in characters, so a lane of
+ * non-ASCII text is several times larger in bytes than one of ASCII at the same
+ * length: a `"` is two bytes once JSON has escaped it, a CJK ideograph is three,
+ * and a lone surrogate — which is not a control character, so the contract
+ * accepts it — is six. Counting rows alone would not bound the answer, so the
+ * rows are bounded in bytes as well.
+ */
+export const MAX_PROJECT_LANES_BYTES = 2 * 1024 * 1024;
+
+/**
+ * What one row costs beyond its own JSON: the wave id, the reasons and the
+ * `alive` value that the request settles. Generous by design — the bound is on
+ * what leaves the server, and this is the part of it that is not measured.
+ */
+export const ROW_OVERHEAD_BYTES = 256;
+
+/**
  * How many waves' computed rows one read model holds at once, and how many rows
  * they may add up to. A poll every ten seconds over a large fleet walks more
  * waves than the first bound allows, so the second one bounds what those rows
@@ -264,11 +282,14 @@ function retainedLanes(heads: readonly SnapshotHead[], nowMs: number): number {
  * One lane with everything that does not depend on the request settled and the
  * heavy text left out: no `reported.detail`, no tail, no disagreement after the
  * first, and the two answers for the lane's reasons, one for a fresh wave and
- * one for a wave that has gone past its own interval. Nothing time-dependent is
- * kept, so an entry stays the answer for as long as its wave is the same wave.
+ * one for a wave that has gone past its own interval. `bytes` is what the row
+ * costs in the answer, so nothing has to measure it per request. Nothing
+ * time-dependent is kept, so an entry stays the answer for as long as its wave
+ * is the same wave.
  */
 interface CachedLane {
   readonly id: string;
+  readonly bytes: number;
   readonly seat?: string;
   readonly reported?: LaneRow["reported"];
   readonly derived: {
@@ -308,10 +329,52 @@ function reportedOf(reported: LaneReported): NonNullable<LaneRow["reported"]> {
   };
 }
 
+/**
+ * The UTF-8 length of a string, counted over its code units: below `0x80` is one
+ * byte, below `0x800` is two, a well-formed surrogate pair is four for the pair
+ * and anything else is three — a lone surrogate among them. It is asked for the
+ * JSON text of a row, in which `JSON.stringify` has already written a lone
+ * surrogate as an ASCII escape, so the answer is the length in bytes of what the
+ * response will carry. No `Buffer` and no `TextEncoder`: this is the
+ * application layer.
+ */
+export function utf8Length(text: string): number {
+  let bytes = 0;
+  let at = 0;
+  while (at < text.length) {
+    const code = text.charCodeAt(at);
+    if (code < 0x80) {
+      bytes += 1;
+      at += 1;
+    } else if (code < 0x800) {
+      bytes += 2;
+      at += 1;
+    } else if (opensPairAt(text, at)) {
+      bytes += 4;
+      at += 2;
+    } else {
+      bytes += 3;
+      at += 1;
+    }
+  }
+  return bytes;
+}
+
+/** Whether the code unit at `at` is a high surrogate with its low one after it. */
+function opensPairAt(text: string, at: number): boolean {
+  const high = text.charCodeAt(at);
+  if (high < 0xd800 || high > 0xdbff) {
+    return false;
+  }
+  // Past the end of the string `charCodeAt` answers NaN, which is in no range.
+  const low = text.charCodeAt(at + 1);
+  return low >= 0xdc00 && low <= 0xdfff;
+}
+
 function cachedLane(lane: Lane): CachedLane {
   const derived = lane.derived;
   const log = derived.log;
-  return {
+  const row: Omit<CachedLane, "bytes" | "freshReasons" | "staleReasons"> = {
     id: lane.id,
     ...(lane.seat === undefined ? {} : { seat: lane.seat }),
     ...(lane.reported === undefined
@@ -343,6 +406,12 @@ function cachedLane(lane: Lane): CachedLane {
     ...(lane.disagreements[0] === undefined
       ? {}
       : { disagreement: lane.disagreements[0] }),
+  };
+  return {
+    ...row,
+    // What the row costs, measured once: the wave it belongs to, the reasons and
+    // the resolved `alive` are added per request and counted separately.
+    bytes: utf8Length(JSON.stringify(row)),
     freshReasons: attentionReasons(lane, false),
     staleReasons: attentionReasons(lane, true),
   };
@@ -514,8 +583,8 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
      * answers its waves: newest wave first, and each wave's own order inside it.
      * `all` widens the scope from the waves the store is meant to be holding to
      * every wave it holds. The rows are the cache's, so a poll that finds nothing
-     * new parses nothing, and the read stops at the cap rather than reading the
-     * waves whose rows it would have to throw away.
+     * new parses nothing, and the read stops at whichever bound it reaches first
+     * rather than reading the waves whose rows it would have to throw away.
      */
     async listLanes(
       projectId: string,
@@ -531,13 +600,17 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
         nowMs,
       );
       const rows: LaneRow[] = [];
+      let bytes = 0;
       let truncated = false;
+      // Set when a bound has stopped the rows. No later wave can add one either,
+      // and each of them that holds lanes means rows that are not listed.
+      let stopped = false;
       for (const summary of waves) {
         if (!all && !summary.retained) {
           continue;
         }
-        if (rows.length === MAX_PROJECT_LANES) {
-          // The cap is spent. The head carries the number of lanes, so a wave
+        if (rows.length === MAX_PROJECT_LANES || stopped) {
+          // A bound is spent. The head carries the number of lanes, so a wave
           // that has any is known to hold rows that are not listed, and no
           // snapshot is read to learn it.
           truncated = truncated || summary.lanes > 0;
@@ -548,10 +621,18 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
           continue;
         }
         for (const lane of entry.lanes) {
-          if (rows.length === MAX_PROJECT_LANES) {
+          const cost = lane.bytes + ROW_OVERHEAD_BYTES;
+          // The first row is answered whatever it costs: a reader told nothing
+          // cannot tell a lane from a lane that is missing.
+          if (
+            rows.length === MAX_PROJECT_LANES ||
+            (rows.length > 0 && bytes + cost > MAX_PROJECT_LANES_BYTES)
+          ) {
             truncated = true;
+            stopped = true;
             break;
           }
+          bytes += cost;
           rows.push(laneRow(lane, summary.wave, summary.stale));
         }
       }
