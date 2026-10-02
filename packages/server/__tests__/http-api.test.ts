@@ -57,8 +57,52 @@ async function seeded(): Promise<StorePort<Project, StoredSnapshot>> {
 }
 
 function bodyOf(raw: string): string {
-  return raw.split("\r\n\r\n").slice(1).join("\r\n\r\n");
+  return raw.split("\r\n\r\n").slice(1).join("\r\n");
 }
+
+/** One wave the store is meant to be holding and one it is past retaining. */
+async function withAnOldWave(): Promise<StorePort<Project, StoredSnapshot>> {
+  const store = await seeded();
+  await store.putSnapshot({
+    ...snapshot("wv0"),
+    receivedAt: "2026-09-16T12:00:01Z",
+    envelope: {
+      ...snapshot("wv0").envelope,
+      lanes: [
+        { id: "wv0-a", derived: { alive: false, exit: 1 }, disagreements: [] },
+      ],
+    },
+  });
+  return store;
+}
+
+const LANES_BODY = {
+  project: {
+    id: "alpha",
+    name: "Alpha",
+    repo: "https://example.com/alpha.git",
+  },
+  waves: [
+    {
+      wave: "wv1",
+      receivedAt: "2026-10-01T12:00:01Z",
+      intervalSeconds: 10,
+      stale: true,
+      retained: true,
+      lanes: 1,
+    },
+  ],
+  lanes: [
+    {
+      wave: "wv1",
+      id: "wv1-a",
+      derived: { alive: "unknown" },
+      disagreements: 0,
+      reasons: ["silent"],
+    },
+  ],
+  truncated: false,
+};
 
 afterEach(cleanupHarnesses);
 
@@ -221,6 +265,9 @@ describe("the API surface", () => {
     ["/api/v1/projects/Bad%20Id/waves", "an invalid project id"],
     ["/api/v1/projects/alpha/waves/not.a.wave", "an invalid wave id"],
     ["/api/v1/attention/x", "a path under the attention route"],
+    ["/api/v1/projects/alpha/lanes/x", "a path under the lanes route"],
+    ["/api/v1/projects/ALPHA/lanes", "a project id the contract refuses"],
+    ["/api/v1/projects/absent/lanes", "an unknown project's lanes"],
   ])("answers 404 for %s (%s)", async (path) => {
     const started = await startHarness({ store: await seeded() });
 
@@ -347,7 +394,238 @@ describe("the read token", () => {
   });
 });
 
+describe("the project lanes route", () => {
+  it("answers every lane of a project in one read", async () => {
+    const started = await startHarness({ store: await seeded() });
+
+    const response = await fetch(
+      `${started.origin}/api/v1/projects/alpha/lanes`,
+    );
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe(
+      "application/json; charset=utf-8",
+    );
+    expectSecurityHeaders(response.headers, true);
+    expect(JSON.parse(body)).toEqual(LANES_BODY);
+    expect(body).not.toContain("tokenSha256");
+  });
+
+  it("lists the waves the store is past retaining when the query asks for all", async () => {
+    const started = await startHarness({ store: await withAnOldWave() });
+
+    const retained = await fetch(
+      `${started.origin}/api/v1/projects/alpha/lanes`,
+    );
+    const all = await fetch(
+      `${started.origin}/api/v1/projects/alpha/lanes?all=1`,
+    );
+    const kept = (await retained.json()) as {
+      readonly waves: readonly { wave: string; retained: boolean }[];
+      readonly lanes: readonly { id: string }[];
+      readonly truncated: boolean;
+    };
+    const every = (await all.json()) as {
+      readonly lanes: readonly { id: string }[];
+    };
+
+    expect(retained.status).toBe(200);
+    expect(all.status).toBe(200);
+    expectSecurityHeaders(retained.headers, true);
+    // Every wave is in `waves` either way, whether or not its lanes are listed.
+    expect(kept.waves.map((wave) => [wave.wave, wave.retained])).toEqual([
+      ["wv1", true],
+      ["wv0", false],
+    ]);
+    expect(kept.lanes.map((row) => row.id)).toEqual(["wv1-a"]);
+    expect(kept.truncated).toBe(false);
+    expect(every.lanes.map((row) => row.id)).toEqual(["wv1-a", "wv0-a"]);
+  });
+
+  it("answers a bare trailing question mark as no query at all", async () => {
+    const started = await startHarness({ store: await seeded() });
+
+    const response = await fetch(
+      `${started.origin}/api/v1/projects/alpha/lanes?`,
+    );
+
+    expect(response.status).toBe(200);
+    expectSecurityHeaders(response.headers, true);
+    expect(await response.json()).toEqual(LANES_BODY);
+  });
+
+  it.each([
+    ["?all=0"],
+    ["?all=1&x=1"],
+    ["?x"],
+    ["?all=1&all=1"],
+    ["?all=11"],
+    ["?ALL=1"],
+    ["?all"],
+  ])("refuses %s as a query it does not know", async (query) => {
+    const started = await startHarness({ store: await seeded() });
+
+    const response = await fetch(
+      `${started.origin}/api/v1/projects/alpha/lanes${query}`,
+    );
+
+    expect(response.status).toBe(400);
+    expectSecurityHeaders(response.headers, true);
+    expect(await response.json()).toEqual({ error: "bad query" });
+  });
+
+  it("refuses a bad query on a HEAD with no body", async () => {
+    const started = await startHarness({ store: await seeded() });
+
+    const response = await fetch(
+      `${started.origin}/api/v1/projects/alpha/lanes?all=0`,
+      { method: "HEAD" },
+    );
+
+    expect(response.status).toBe(400);
+    expectSecurityHeaders(response.headers, true);
+    expect(await response.text()).toBe("");
+  });
+
+  it("refuses a bad query before the project is read", async () => {
+    const store = new MemoryStore();
+    await store.putProject(project("alpha", "Alpha"));
+    const calls: string[] = [];
+    const watched = new Proxy(store, {
+      get(target, property, receiver): unknown {
+        if (typeof property === "string" && property !== "constructor") {
+          calls.push(property);
+        }
+        return Reflect.get(target, property, receiver) as unknown;
+      },
+    });
+    const started = await startHarness({
+      store: watched as StorePort<Project, StoredSnapshot>,
+    });
+
+    const response = await fetch(
+      `${started.origin}/api/v1/projects/absent/lanes?all=0`,
+    );
+
+    expect(response.status).toBe(400);
+    expect(calls).toEqual([]);
+  });
+
+  it("logs the path of a query without the query", async () => {
+    const started = await startHarness({ store: await seeded() });
+
+    await fetch(`${started.origin}/api/v1/projects/alpha/lanes?all=1`);
+    await fetch(`${started.origin}/api/v1/projects/alpha/lanes?all=0`);
+
+    const lines = started.logLines().map((line) => JSON.parse(line));
+
+    expect(lines.map((line) => [line.path, line.status])).toEqual([
+      ["/api/v1/projects/alpha/lanes", 200],
+      ["/api/v1/projects/alpha/lanes", 400],
+    ]);
+    expect(started.logLines().join("\n")).not.toContain("all=");
+  });
+
+  it.each([["GET"], ["HEAD"]])(
+    "refuses %s without a token, query or no query",
+    async (method) => {
+      const started = await startHarness({
+        store: await seeded(),
+        readToken: TOKEN,
+      });
+
+      const good = await fetch(
+        `${started.origin}/api/v1/projects/alpha/lanes`,
+        {
+          method,
+        },
+      );
+      const bad = await fetch(
+        `${started.origin}/api/v1/projects/alpha/lanes?all=0`,
+        { method },
+      );
+
+      expect(good.status).toBe(401);
+      expect(bad.status).toBe(401);
+      expect(good.headers.get("www-authenticate")).toBe(
+        'Basic realm="waves", charset="UTF-8"',
+      );
+      expect(bad.headers.get("www-authenticate")).toBe(
+        'Basic realm="waves", charset="UTF-8"',
+      );
+      expectSecurityHeaders(good.headers, true);
+      expectSecurityHeaders(bad.headers, true);
+    },
+  );
+
+  it("answers the lanes of a project a token lets in", async () => {
+    const started = await startHarness({
+      store: await seeded(),
+      readToken: TOKEN,
+    });
+
+    const response = await fetch(
+      `${started.origin}/api/v1/projects/alpha/lanes`,
+      {
+        headers: {
+          authorization: `Basic ${Buffer.from(`reader:${TOKEN}`).toString("base64")}`,
+        },
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(LANES_BODY);
+  });
+});
+
 describe("failures", () => {
+  it("answers 405 with the read methods for a write on the lanes route", async () => {
+    const started = await startHarness({ store: await seeded() });
+
+    for (const method of ["PUT", "DELETE", "PATCH"]) {
+      const response = await fetch(
+        `${started.origin}/api/v1/projects/alpha/lanes`,
+        { method },
+      );
+
+      expect(response.status).toBe(405);
+      expect(response.headers.get("allow")).toBe("GET, HEAD");
+      expectSecurityHeaders(response.headers, true);
+      expect(await response.json()).toEqual({ error: "method not allowed" });
+    }
+  });
+
+  it("answers 405 before it looks at the query", async () => {
+    const started = await startHarness({ store: await seeded() });
+
+    for (const method of ["PATCH", "PUT"]) {
+      const response = await fetch(
+        `${started.origin}/api/v1/projects/alpha/lanes?all=0`,
+        { method },
+      );
+
+      expect(response.status).toBe(405);
+      expect(response.headers.get("allow")).toBe("GET, HEAD");
+      expect(await response.json()).toEqual({ error: "method not allowed" });
+    }
+  });
+
+  it("answers 405 with the read methods for every method the attention route does not take", async () => {
+    const started = await startHarness({ store: await seeded() });
+
+    for (const method of ["POST", "DELETE"]) {
+      const response = await fetch(`${started.origin}/api/v1/attention`, {
+        method,
+      });
+
+      expect(response.status).toBe(405);
+      expect(response.headers.get("allow")).toBe("GET, HEAD");
+      expectSecurityHeaders(response.headers, true);
+      expect(await response.json()).toEqual({ error: "method not allowed" });
+    }
+  });
+
   it("answers 405 with the path's own Allow for every method that path does not take", async () => {
     const started = await startHarness({ store: await seeded() });
 

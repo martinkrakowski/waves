@@ -1,10 +1,15 @@
 import {
+  type DiffStat,
   type Envelope,
+  type Gate,
   isRetained,
   isStale,
   type Lane,
   type LaneDerived,
+  type LaneEvent,
+  type LaneReported,
   type Project,
+  type PullRequest,
   staleAfterMs,
   type StoredSnapshot,
 } from "@hexagen-monaco/waves-contract";
@@ -20,6 +25,18 @@ import { type SnapshotHead, type StorePort } from "./ports/store.js";
 export type Now = () => number;
 
 export type AliveView = boolean | "unknown";
+
+/** The most lanes one project's listing answers with, whatever the project holds. */
+export const MAX_PROJECT_LANES = 2_000;
+
+/**
+ * How many waves' computed rows one read model holds at once, and how many rows
+ * they may add up to. A poll every ten seconds over a large fleet walks more
+ * waves than the first bound allows, so the second one bounds what those rows
+ * cost to keep; the wave count is the first to be spent.
+ */
+export const MAX_CACHED_WAVES = 64;
+export const MAX_CACHED_ROWS = 10_000;
 
 export interface ProjectSummary {
   readonly id: string;
@@ -93,6 +110,62 @@ export interface AttentionView {
   readonly truncated: boolean;
 }
 
+/**
+ * One lane as a project's listing answers it. It is the wave's own lane with the
+ * three heavy things left out — `reported.detail`, the text of the log tail and
+ * every disagreement after the first — so that the whole project fits in one
+ * answer. Every optional key is absent when the stored lane has none, never
+ * present holding nothing: a client reading `row.seat` has to be able to tell a
+ * lane with no seat from a seat the server has not been told about.
+ */
+export interface LaneRow {
+  readonly wave: string;
+  readonly id: string;
+  readonly seat?: string;
+  readonly reported?: {
+    readonly stage: string;
+    readonly event: LaneEvent;
+    readonly ts: string;
+    readonly pr?: number;
+    readonly round?: number;
+  };
+  readonly derived: {
+    readonly alive: AliveView;
+    readonly exit?: number;
+    readonly gate?: Gate;
+    readonly pr?: PullRequest;
+    readonly diff?: DiffStat;
+    readonly planReview?: string;
+    readonly risk?: string;
+    readonly log?: {
+      readonly bytes: number;
+      readonly mtimeMs: number;
+      readonly tail: boolean;
+    };
+  };
+  /** How many disagreements the lane has. */
+  readonly disagreements: number;
+  /** The first of them, when there is one. */
+  readonly disagreement?: string;
+  readonly reasons: readonly AttentionReason[];
+}
+
+/**
+ * Every lane of one project's waves, with the wave strip beside them so a reader
+ * needs no second request. `truncated` says that more lanes matched than the cap
+ * let through.
+ */
+export interface ProjectLanesView {
+  readonly project: {
+    readonly id: string;
+    readonly name: string;
+    readonly repo?: string;
+  };
+  readonly waves: readonly WaveSummary[];
+  readonly lanes: readonly LaneRow[];
+  readonly truncated: boolean;
+}
+
 export interface ReadModelDeps {
   readonly store: StorePort<Project, StoredSnapshot>;
   readonly now: Now;
@@ -101,6 +174,10 @@ export interface ReadModelDeps {
 export interface ReadModel {
   listProjects(): Promise<readonly ProjectSummary[]>;
   listWaves(projectId: string): Promise<readonly WaveSummary[] | undefined>;
+  listLanes(
+    projectId: string,
+    all: boolean,
+  ): Promise<ProjectLanesView | undefined>;
   listAttention(): Promise<AttentionView>;
   getWave(projectId: string, wave: string): Promise<WaveView | undefined>;
 }
@@ -155,6 +232,23 @@ function waveSummary(head: SnapshotHead, nowMs: number): WaveSummary {
   };
 }
 
+/**
+ * A project's waves newest receive first, which is the order the wave list has
+ * always answered in and the order both the wave route and the project listing
+ * read their waves in.
+ */
+function waveSummaries(
+  heads: readonly SnapshotHead[],
+  nowMs: number,
+): readonly WaveSummary[] {
+  return heads
+    .map((head) => waveSummary(head, nowMs))
+    .sort(
+      (left, right) =>
+        Date.parse(right.receivedAt) - Date.parse(left.receivedAt),
+    );
+}
+
 /** The lanes in a project's waves the store is still meant to be holding. */
 function retainedLanes(heads: readonly SnapshotHead[], nowMs: number): number {
   let lanes = 0;
@@ -167,6 +261,116 @@ function retainedLanes(heads: readonly SnapshotHead[], nowMs: number): number {
 }
 
 /**
+ * One lane with everything that does not depend on the request settled and the
+ * heavy text left out: no `reported.detail`, no tail, no disagreement after the
+ * first, and the two answers for the lane's reasons, one for a fresh wave and
+ * one for a wave that has gone past its own interval. Nothing time-dependent is
+ * kept, so an entry stays the answer for as long as its wave is the same wave.
+ */
+interface CachedLane {
+  readonly id: string;
+  readonly seat?: string;
+  readonly reported?: LaneRow["reported"];
+  readonly derived: {
+    readonly alive: boolean;
+    readonly exit?: number;
+    readonly gate?: Gate;
+    readonly pr?: PullRequest;
+    readonly diff?: DiffStat;
+    readonly planReview?: string;
+    readonly risk?: string;
+    readonly log?: {
+      readonly bytes: number;
+      readonly mtimeMs: number;
+      readonly tail: boolean;
+    };
+  };
+  readonly disagreements: number;
+  readonly disagreement?: string;
+  readonly freshReasons: readonly AttentionReason[];
+  readonly staleReasons: readonly AttentionReason[];
+}
+
+/** One wave's lanes, kept against the `receivedAt` they were read at. */
+interface CachedWave {
+  readonly receivedAt: string;
+  readonly lanes: readonly CachedLane[];
+}
+
+/** The reported half of a lane without the free-form detail it may carry. */
+function reportedOf(reported: LaneReported): NonNullable<LaneRow["reported"]> {
+  return {
+    stage: reported.stage,
+    event: reported.event,
+    ts: reported.ts,
+    ...(reported.pr === undefined ? {} : { pr: reported.pr }),
+    ...(reported.round === undefined ? {} : { round: reported.round }),
+  };
+}
+
+function cachedLane(lane: Lane): CachedLane {
+  const derived = lane.derived;
+  const log = derived.log;
+  return {
+    id: lane.id,
+    ...(lane.seat === undefined ? {} : { seat: lane.seat }),
+    ...(lane.reported === undefined
+      ? {}
+      : { reported: reportedOf(lane.reported) }),
+    derived: {
+      alive: derived.alive,
+      ...(derived.exit === undefined ? {} : { exit: derived.exit }),
+      ...(derived.gate === undefined ? {} : { gate: derived.gate }),
+      ...(derived.pr === undefined ? {} : { pr: derived.pr }),
+      ...(derived.diff === undefined ? {} : { diff: derived.diff }),
+      ...(derived.planReview === undefined
+        ? {}
+        : { planReview: derived.planReview }),
+      ...(derived.risk === undefined ? {} : { risk: derived.risk }),
+      // Whether a tail was pushed, never the tail: it is the heaviest string in
+      // the envelope and the only drawer reads it.
+      ...(log === undefined
+        ? {}
+        : {
+            log: {
+              bytes: log.bytes,
+              mtimeMs: log.mtimeMs,
+              tail: typeof log.tail === "string",
+            },
+          }),
+    },
+    disagreements: lane.disagreements.length,
+    ...(lane.disagreements[0] === undefined
+      ? {}
+      : { disagreement: lane.disagreements[0] }),
+    freshReasons: attentionReasons(lane, false),
+    staleReasons: attentionReasons(lane, true),
+  };
+}
+
+/**
+ * One lane as a project's listing answers it. The wave and its staleness are
+ * the request's to settle; the row is what the cache holds.
+ */
+function laneRow(cached: CachedLane, wave: string, stale: boolean): LaneRow {
+  return {
+    wave,
+    id: cached.id,
+    ...(cached.seat === undefined ? {} : { seat: cached.seat }),
+    ...(cached.reported === undefined ? {} : { reported: cached.reported }),
+    derived: {
+      ...cached.derived,
+      alive: aliveView(cached.derived.alive, stale),
+    },
+    disagreements: cached.disagreements,
+    ...(cached.disagreement === undefined
+      ? {}
+      : { disagreement: cached.disagreement }),
+    reasons: stale ? cached.staleReasons : cached.freshReasons,
+  };
+}
+
+/**
  * One lane as the cross-project view answers it. `seat` and `pr` are keys the
  * lane has, not keys holding nothing: a client reading `entry.pr` must be able
  * to tell a lane with no pull request from one whose pull request the server
@@ -175,9 +379,9 @@ function retainedLanes(heads: readonly SnapshotHead[], nowMs: number): number {
 function attentionLane(
   project: string,
   head: SnapshotHead,
-  lane: Lane,
+  lane: CachedLane,
   reasons: readonly AttentionReason[],
-  snapshot: StoredSnapshot,
+  receivedAt: string,
   stale: boolean,
 ): AttentionLane {
   const pr = lane.derived.pr?.number;
@@ -187,7 +391,7 @@ function attentionLane(
     lane: lane.id,
     ...(lane.seat === undefined ? {} : { seat: lane.seat }),
     reasons,
-    receivedAt: snapshot.receivedAt,
+    receivedAt,
     stale,
     ...(pr === undefined ? {} : { pr }),
   };
@@ -195,6 +399,75 @@ function attentionLane(
 
 export function createReadModel(deps: ReadModelDeps): ReadModel {
   const { store, now } = deps;
+
+  /**
+   * The lanes each wave has already been parsed into, keyed by project and wave.
+   * A ten-second poll over a fleet re-reads the same waves every time, and a wave
+   * is only re-parsed when its head says it is not the wave that was read: the
+   * same `receivedAt` with a different number of lanes is a push that landed
+   * inside one millisecond, which the store's own resolution cannot tell apart.
+   */
+  const cache = new Map<string, CachedWave>();
+  let cachedRows = 0;
+
+  const forget = (key: string): void => {
+    const dropped = cache.get(key);
+    cache.delete(key);
+    cachedRows -= dropped?.lanes.length ?? 0;
+  };
+
+  const overBounds = (): boolean =>
+    cache.size > MAX_CACHED_WAVES || cachedRows > MAX_CACHED_ROWS;
+
+  /**
+   * Keeps a wave, and drops the oldest-inserted ones while either bound is
+   * exceeded. A `Map` iterates in insertion order, so its first key is the
+   * oldest one. The entry just inserted is the last key and is never the one
+   * dropped, so a wave that is over the row bound on its own is kept whole and
+   * read from the store again rather than re-parsed on every poll.
+   */
+  const remember = (key: string, entry: CachedWave): void => {
+    // A replaced key is deleted first, so that the entry answers as the newest.
+    forget(key);
+    cache.set(key, entry);
+    cachedRows += entry.lanes.length;
+    for (const oldest of cache.keys()) {
+      if (oldest !== key && overBounds()) {
+        forget(oldest);
+      }
+    }
+  };
+
+  /**
+   * The lanes of one wave, from the cache when its head still describes the wave
+   * the entry was built from, and from the store when it does not. A wave the
+   * store no longer holds is not an answer and is not cached: the head may
+   * describe a push that has not landed yet, so the next read asks again.
+   */
+  const cachedWave = async (
+    projectId: string,
+    head: SnapshotHead,
+  ): Promise<CachedWave | undefined> => {
+    const key = `${projectId}/${head.wave}`;
+    const hit = cache.get(key);
+    if (
+      hit !== undefined &&
+      hit.receivedAt === head.receivedAt &&
+      hit.lanes.length === head.lanes
+    ) {
+      return hit;
+    }
+    const snapshot = await store.getSnapshot(projectId, head.wave);
+    if (snapshot === undefined) {
+      return undefined;
+    }
+    const entry: CachedWave = {
+      receivedAt: snapshot.receivedAt,
+      lanes: snapshot.envelope.lanes.map(cachedLane),
+    };
+    remember(key, entry);
+    return entry;
+  };
 
   return {
     async listProjects(): Promise<readonly ProjectSummary[]> {
@@ -233,19 +506,73 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
       }
       const nowMs = now();
       const heads = await store.listSnapshotHeads(projectId);
-      return heads
-        .map((head) => waveSummary(head, nowMs))
-        .sort(
-          (left, right) =>
-            Date.parse(right.receivedAt) - Date.parse(left.receivedAt),
-        );
+      return waveSummaries(heads, nowMs);
+    },
+
+    /**
+     * Every lane of one project's waves in the order the wave route already
+     * answers its waves: newest wave first, and each wave's own order inside it.
+     * `all` widens the scope from the waves the store is meant to be holding to
+     * every wave it holds. The rows are the cache's, so a poll that finds nothing
+     * new parses nothing, and the read stops at the cap rather than reading the
+     * waves whose rows it would have to throw away.
+     */
+    async listLanes(
+      projectId: string,
+      all: boolean,
+    ): Promise<ProjectLanesView | undefined> {
+      const project = await store.getProject(projectId);
+      if (project === undefined) {
+        return undefined;
+      }
+      const nowMs = now();
+      const waves = waveSummaries(
+        await store.listSnapshotHeads(projectId),
+        nowMs,
+      );
+      const rows: LaneRow[] = [];
+      let truncated = false;
+      for (const summary of waves) {
+        if (!all && !summary.retained) {
+          continue;
+        }
+        if (rows.length === MAX_PROJECT_LANES) {
+          // The cap is spent. The head carries the number of lanes, so a wave
+          // that has any is known to hold rows that are not listed, and no
+          // snapshot is read to learn it.
+          truncated = truncated || summary.lanes > 0;
+          continue;
+        }
+        const entry = await cachedWave(projectId, summary);
+        if (entry === undefined) {
+          continue;
+        }
+        for (const lane of entry.lanes) {
+          if (rows.length === MAX_PROJECT_LANES) {
+            truncated = true;
+            break;
+          }
+          rows.push(laneRow(lane, summary.wave, summary.stale));
+        }
+      }
+      return {
+        project: {
+          id: project.id,
+          name: project.name,
+          ...(project.repo === undefined ? {} : { repo: project.repo }),
+        },
+        waves,
+        lanes: rows,
+        truncated,
+      };
     },
 
     /**
      * Every lane of every project's recent waves that wants a reader, newest
-     * receive first. It reads the wave heads of every project and then the full
-     * snapshot of the waves still inside the attention window, and never
-     * `listSnapshots`: a fleet of projects is answered from one wave each.
+     * receive first. It reads the wave heads of every project and then the lanes
+     * of the waves still inside the attention window, through the same cache the
+     * project listing uses, and never `listSnapshots`: a fleet of projects is
+     * answered from one wave each.
      */
     async listAttention(): Promise<AttentionView> {
       const nowMs = now();
@@ -260,26 +587,33 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
           if (!inAttentionWindow(Date.parse(head.receivedAt), nowMs)) {
             continue;
           }
-          const snapshot = await store.getSnapshot(project.id, head.wave);
-          if (snapshot === undefined) {
+          const entry = await cachedWave(project.id, head);
+          if (entry === undefined) {
             // The wave went away between the heads and the snapshot: another
             // push for the same wave, or a deletion. Either way it is not there
             // to be listed, and there is nothing to fail this answer over.
             continue;
           }
           const stale = isStale(
-            Date.parse(snapshot.receivedAt),
-            snapshot.envelope.intervalSeconds,
+            Date.parse(entry.receivedAt),
+            head.intervalSeconds,
             nowMs,
           );
-          for (const lane of snapshot.envelope.lanes) {
-            const reasons = attentionReasons(lane, stale);
+          for (const lane of entry.lanes) {
+            const reasons = stale ? lane.staleReasons : lane.freshReasons;
             if (reasons.length === 0) {
               continue;
             }
             count += 1;
             matched.push(
-              attentionLane(project.id, head, lane, reasons, snapshot, stale),
+              attentionLane(
+                project.id,
+                head,
+                lane,
+                reasons,
+                entry.receivedAt,
+                stale,
+              ),
             );
           }
         }

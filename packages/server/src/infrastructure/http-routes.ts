@@ -15,6 +15,7 @@ export type Route =
   | { readonly kind: "projects" }
   | { readonly kind: "project"; readonly project: string }
   | { readonly kind: "waves"; readonly project: string }
+  | { readonly kind: "lanes"; readonly project: string }
   | { readonly kind: "wave"; readonly project: string; readonly wave: string }
   | { readonly kind: "index" }
   | { readonly kind: "file"; readonly file: StaticFile }
@@ -32,6 +33,7 @@ const ALLOWED: Readonly<Record<Route["kind"], string>> = {
   projects: "GET, HEAD, POST",
   project: "DELETE",
   waves: "GET, HEAD",
+  lanes: "GET, HEAD",
   wave: "GET, HEAD, PUT, DELETE",
   index: "GET, HEAD",
   file: "GET, HEAD",
@@ -83,6 +85,16 @@ export function pathOf(target: string): string {
   return cut === -1 ? target : target.slice(0, cut);
 }
 
+/**
+ * The part of a target after its first `?`, or `""` when it carries none. Every
+ * read route ignores its query string; the one route that reads it takes the
+ * query from here.
+ */
+export function queryOf(target: string): string {
+  const cut = target.indexOf("?");
+  return cut === -1 ? "" : target.slice(cut + 1);
+}
+
 export function isApiPath(pathname: string): boolean {
   return pathname.startsWith("/api/");
 }
@@ -116,6 +128,9 @@ export function route(pathname: string, root: string): Route {
       }
       if (parts.length === 6 && parts[5] === "waves") {
         return { kind: "waves", project };
+      }
+      if (parts.length === 6 && parts[5] === "lanes") {
+        return { kind: "lanes", project };
       }
       if (
         parts.length === 7 &&
