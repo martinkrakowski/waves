@@ -183,7 +183,7 @@ export function createHttpServer(deps: HttpServerDeps): Server {
       return write(req, res, method, target, matched);
     }
     const extra = extraFor(pathname);
-    if (matched.kind === "ready") {
+    if (matched.kind === "ready" && READ_METHODS.has(method)) {
       return send(
         res,
         await replyFor(matched, readModel, store, root, await realRoot),
@@ -246,6 +246,16 @@ export function createHttpServer(deps: HttpServerDeps): Server {
         extra: extraFor(pathname),
       });
     }
+    logAnswer(startedMs, method, pathname, status);
+  };
+
+  /** The one access-log line every answer carries, whoever wrote it. */
+  const logAnswer = (
+    startedMs: number,
+    method: string,
+    pathname: string,
+    status: number,
+  ): void => {
     log(
       JSON.stringify({
         ts: new Date(startedMs).toISOString(),
@@ -275,6 +285,23 @@ export function createHttpServer(deps: HttpServerDeps): Server {
   // way to make it cheaper to refuse than to accept.
   server.on("checkContinue", (req, res) => {
     void handle(req, res);
+  });
+  // An `Expect` this server does not implement is refused before the request is
+  // ever routed: there is no body it would read, and the client asked for a
+  // promise nobody is going to keep. Answering it here rather than letting Node
+  // answer it is what keeps the refusal in the same shape as every other one —
+  // the security headers, the JSON body and the access-log line included — and
+  // the socket goes with it, so a body still on its way is never drained.
+  server.on("checkExpectation", (req, res) => {
+    const startedMs = now();
+    const method = String(req.method);
+    const pathname = pathOf(String(req.url));
+    const status = send(res, jsonReply(417, { error: "expectation failed" }), {
+      method,
+      extra: extraFor(pathname),
+      socket: req.socket,
+    });
+    logAnswer(startedMs, method, pathname, status);
   });
   server.on("clientError", (error, socket) => {
     refuseParsedRequest(socket, parserRefusal(error));

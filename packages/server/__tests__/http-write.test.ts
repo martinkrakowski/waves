@@ -949,6 +949,55 @@ describe("reading the body", () => {
     expect(statusLines(old.body)).toEqual(["HTTP/1.1 200"]);
     expect(old.sent).toBe(Buffer.byteLength(body));
   });
+
+  it("answers an expectation it does not keep with the headers every other answer carries", async () => {
+    const started = await startHarness({ store: await seeded() });
+    const body = JSON.stringify(envelope());
+
+    const refused = await started.expecting(
+      `PUT ${wavePath()} HTTP/1.1`,
+      [
+        "Content-Type: application/json",
+        `Authorization: Bearer ${PROJECT_TOKEN}`,
+        `Content-Length: ${Buffer.byteLength(body)}`,
+        "Expect: 200-ok",
+      ],
+      body,
+    );
+
+    expect(statusLines(refused.body)).toEqual(["HTTP/1.1 417"]);
+    expect(refused.body).toContain(
+      "Content-Security-Policy: default-src 'none'",
+    );
+    expect(refused.body).toContain("X-Content-Type-Options: nosniff");
+    expect(refused.body).toContain("Referrer-Policy: no-referrer");
+    expect(refused.body).toContain("Connection: close");
+    expect(refused.body).toContain('{"error":"expectation failed"}');
+    expect(refused.sent).toBe(0);
+  });
+
+  it("answers a read that asks for the expectation too, uncached on an api path, and logs it", async () => {
+    const started = await startHarness({ store: await seeded() });
+
+    const refused = await started.expecting(
+      `GET ${wavePath()} HTTP/1.1`,
+      ["Expect: 200-ok"],
+      "",
+    );
+
+    expect(statusLines(refused.body)).toEqual(["HTTP/1.1 417"]);
+    expect(refused.body).toContain("Cache-Control: no-store");
+    expect(refused.body).toContain("X-Content-Type-Options: nosniff");
+    expect(started.logLines().map((line) => JSON.parse(line))).toEqual([
+      {
+        ts: expect.any(String),
+        method: "GET",
+        path: wavePath(),
+        status: 417,
+        ms: expect.any(Number),
+      },
+    ]);
+  });
 });
 
 describe("a viewer token and a write token side by side", () => {
