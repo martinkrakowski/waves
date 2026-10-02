@@ -765,6 +765,31 @@ function searchFilter(chosen, handlers) {
  * move, and it is a status region so that narrowing the table is something a
  * reader is told rather than something they have to notice.
  */
+/**
+ * The copy button and what it last said. It carries `data-key="digest"`, so the
+ * app's own focus code finds it again by that key after the redraw the copy
+ * causes — otherwise the reader's focus would be dropped at the top of the page
+ * by a control they are still using. The note beside it is a status region, so
+ * that copying is something a reader is told rather than something they have to
+ * notice.
+ */
+function copyDigest(model, handlers) {
+  const button = el("button", {
+    attrs: { type: "button", "data-key": "digest", class: "copy" },
+    text: "Copy digest",
+  });
+  button.addEventListener("click", () => {
+    handlers.onCopy();
+  });
+  return [
+    button,
+    el("span", {
+      attrs: { class: "copied", role: "status", "aria-live": "polite" },
+      text: model.copied ?? "",
+    }),
+  ];
+}
+
 function toolbar(model, scope, handlers) {
   const shown = filterRows(scope, model.query).length;
   return el("div", {
@@ -794,6 +819,7 @@ function toolbar(model, scope, handlers) {
         attrs: { class: "shown", role: "status" },
         text: `${shown} of ${scope.length} shown`,
       }),
+      ...copyDigest(model, handlers),
     ],
   });
 }

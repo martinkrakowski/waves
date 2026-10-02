@@ -645,9 +645,9 @@ describe("the focus across a redraw", () => {
     });
     app.start();
     await flush();
-    // No view of this lane draws a button, so the only way to have one focused
-    // inside the page is to put it there: which is what a control a reader's own
-    // browser extension or a future view would do.
+    // A control the page did not draw and carries no key for, which is what a
+    // reader's own browser extension would do. The page's own buttons are keyed,
+    // so this is the one the redraw cannot put back.
     const button = document.createElement("button");
     root().append(button);
     button.focus();
@@ -658,7 +658,11 @@ describe("the focus across a redraw", () => {
     const anchors = Array.from(root().querySelectorAll("a"));
     expect(anchors.length).toBeGreaterThan(0);
     expect(anchors).not.toContain(document.activeElement);
-    expect(root().querySelector("button")).toBeNull();
+    expect(document.activeElement).not.toBe(button);
+    expect(root().contains(button)).toBe(false);
+    // And the focus is not pulled onto the page's own controls either: nothing
+    // was focused that the redraw can recognise.
+    expect(document.activeElement).toBe(document.body);
     app.stop();
   });
 

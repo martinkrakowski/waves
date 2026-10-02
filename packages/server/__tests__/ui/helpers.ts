@@ -296,9 +296,13 @@ export interface BrowserGlobals {
   /**
    * ONE object, mutable: `history.pushState` writes to it, and a test navigates
    * by moving it. A fresh object per read would let the app navigate and then
-   * re-read the address it started from.
+   * re-read the address it started from. The origin never moves, so it is fixed.
    */
-  readonly location: { pathname: string; search: string };
+  readonly location: {
+    readonly origin: string;
+    pathname: string;
+    search: string;
+  };
   readonly history: {
     pushState(data: unknown, unused: string, url: string): void;
     replaceState(data: unknown, unused: string, url: string): void;
@@ -321,8 +325,12 @@ export interface BrowserGlobals {
  * that moves that location, and a window carrying the popstate listeners. Never
  * the real `window.location` or `window.history`, and never asserted on either.
  */
-export function browserGlobals(pathname = "/", search = ""): BrowserGlobals {
-  const location = { pathname, search };
+export function browserGlobals(
+  pathname = "/",
+  search = "",
+  origin = "http://test",
+): BrowserGlobals {
+  const location = { origin, pathname, search };
   const pushes: string[] = [];
   const replaces: string[] = [];
   const listeners: (() => void)[] = [];
@@ -382,7 +390,7 @@ export function browserGlobals(pathname = "/", search = ""): BrowserGlobals {
 export function renderProjectView(
   model: Partial<ProjectModel> = {},
   nowMs: number = NOW_MS,
-  handlers: ProjectHandlers = { onFilter() {}, onSearch() {} },
+  handlers: ProjectHandlers = { onFilter() {}, onSearch() {}, onCopy() {} },
 ): HTMLElement {
   const full: ProjectModel = {
     lanes: projectLanes(),

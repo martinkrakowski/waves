@@ -7,6 +7,10 @@
  * and a scrollbar on the dialog would make a click on that scrollbar a click on
  * the backdrop too. The drawer scrolls instead, so a long log tail never turns
  * the frame into something a reader cannot dismiss.
+ *
+ * The Close control's own look is not here: it is shared with the project's
+ * "Copy digest" in `app.css`, so a control that has to look like a control on
+ * both sides of a dialog is one rule rather than two.
  */
 
 dialog.lane-drawer {
@@ -44,23 +48,6 @@ dialog.lane-drawer::backdrop {
 
 .drawer header .close {
   margin-left: auto;
-}
-
-/* The same look as `.toolbar select`, so the one control on this page that is
-   not a link looks like the other controls that are not links. */
-.drawer .close {
-  background: var(--bg-sink);
-  border: 1px solid var(--line);
-  border-radius: 0.4rem;
-  color: var(--text);
-  cursor: pointer;
-  font: inherit;
-  padding: 0.25rem 0.6rem;
-}
-
-.drawer .close:focus-visible {
-  outline: 2px solid var(--blue);
-  outline-offset: 2px;
 }
 
 .drawer section {

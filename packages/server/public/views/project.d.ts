@@ -10,6 +10,8 @@ export interface ProjectModel {
   /** The wave the path names, or undefined on the project's own page. */
   readonly wave: string | undefined;
   readonly query: ViewQuery;
+  /** What the last copy of the digest said, or nothing when it said nothing. */
+  readonly copied?: string;
 }
 
 /** The rows a route shows: every row, or the rows of the wave it names. */
@@ -101,6 +103,8 @@ export interface ProjectHandlers {
   }): void;
   /** The search text changed. `""` clears it. */
   onSearch(text: string): void;
+  /** Copy the digest of the rows on screen. */
+  onCopy(): void;
 }
 
 /** Reasons first, then the newest wave, then the lane id. */

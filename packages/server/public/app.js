@@ -1,5 +1,6 @@
 import { drawableAttention } from "./attention.js";
 import { createApi } from "./api.js";
+import { digestOf } from "./digest.js";
 import { el } from "./dom.js";
 import { drawableProjectLanes } from "./project-lanes.js";
 import { drawableProjects } from "./projects.js";
@@ -8,7 +9,14 @@ import { parseQuery } from "./query.js";
 import { shell } from "./shell.js";
 import { renderDrawer } from "./views/drawer.js";
 import { renderFleet } from "./views/fleet.js";
-import { hrefFor, renderProject } from "./views/project.js";
+import {
+  hrefFor,
+  filterRows,
+  renderProject,
+  scopeOf,
+  sortRows,
+  staleWavesOf,
+} from "./views/project.js";
 import { drawableWave } from "./wave.js";
 
 export const REFRESH_MS = 10_000;
@@ -66,6 +74,12 @@ export function createApp(deps) {
     setTimer,
     clearTimer,
     clock,
+    /**
+     * The browser's clipboard, or nothing at all: outside a secure context it is
+     * not there, and a page with no clipboard is the "copy failed" case rather
+     * than a page that pretends.
+     */
+    clipboard,
     refreshMs = REFRESH_MS,
   } = deps;
   const api = createApi(fetchImpl);
@@ -75,6 +89,12 @@ export function createApp(deps) {
   let data = undefined;
   let note = "";
   let menuOpen = false;
+  /**
+   * What the last copy of the digest said. Cleared by every navigation, in both
+   * of its branches: an address that changed is a page the note is no longer
+   * about, and a note left standing would claim a copy this page did not do.
+   */
+  let copied = "";
   let generation = 0;
   /**
    * The last project list the API gave us and the rail could show. It has its
@@ -233,7 +253,7 @@ export function createApp(deps) {
     }
     if (data.kind === "project") {
       return renderProject(
-        { lanes: data.lanes, wave: route.wave, query },
+        { lanes: data.lanes, wave: route.wave, query, copied },
         clock(),
         projectHandlers(),
       );
@@ -270,7 +290,71 @@ export function createApp(deps) {
           { replace: true },
         );
       },
+      onCopy,
     };
+  }
+
+  /**
+   * The address this view is at, as the browser holds it: never a decoded one, so
+   * that a seat or a search in the query goes into the digest in the only form it
+   * can be read back in.
+   */
+  function address() {
+    return `${location.origin}${location.pathname}${location.search}`;
+  }
+
+  /** What the copy did, said beside the button — unless the reader has moved on. */
+  function said(text, forUrl) {
+    if (forUrl !== address()) {
+      return;
+    }
+    copied = text;
+    draw();
+  }
+
+  /**
+   * Puts a plain-text digest of the rows on screen on the clipboard.
+   *
+   * The rows are the ones the table shows, in the table's order, over the scope
+   * the route names: the digest answers "what does this page say", and a digest
+   * of rows the reader filtered away answers a question nobody asked. The
+   * clipboard is the browser's own, so the promise is not this page's to keep:
+   * a refusal, a rejection and a browser with no clipboard are all the same
+   * thing to a reader — the copy did not happen — and a note that settles after
+   * the address has moved on says nothing at all, because it would be about a
+   * page that is no longer on screen.
+   */
+  function onCopy() {
+    const lanes = data.lanes;
+    const scope = scopeOf(lanes, route.wave);
+    const url = address();
+    const text = digestOf({
+      project: route.id,
+      wave: route.wave,
+      shown: sortRows(filterRows(scope, query), lanes.waves),
+      inScope: scope.length,
+      staleWaves: staleWavesOf(lanes, route.wave, query.all).map(
+        (head) => head.wave,
+      ),
+      url,
+    });
+    if (clipboard === undefined) {
+      said("Copy failed", url);
+      return;
+    }
+    try {
+      void clipboard.writeText(text).then(
+        () => {
+          said("Digest copied", url);
+        },
+        () => {
+          said("Copy failed", url);
+        },
+      );
+    } catch {
+      // A clipboard that throws rather than refusing is the same answer.
+      said("Copy failed", url);
+    }
   }
 
   /**
@@ -739,6 +823,9 @@ export function createApp(deps) {
     const wasAll = query.all;
     read();
     menuOpen = false;
+    // One line for both branches below: whatever the address became, the note is
+    // about a view that is no longer on screen.
+    copied = "";
     if (data !== undefined && sameProject(was, route) && wasAll === query.all) {
       draw();
       return;

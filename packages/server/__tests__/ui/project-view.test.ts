@@ -24,7 +24,7 @@ import {
   projectLanes,
   waveSummary,
 } from "./fixtures.js";
-import { oneOf, renderProjectView, textsOf } from "./helpers.js";
+import { oneOf, renderProjectView, textOf, textsOf } from "./helpers.js";
 
 /** The text of every cell of one lane row, in column order. */
 function cells(host: HTMLElement, row: number): string[] {
@@ -974,15 +974,17 @@ describe("the toolbar", () => {
     readonly host: HTMLElement;
     readonly onFilter: ReturnType<typeof vi.fn>;
     readonly onSearch: ReturnType<typeof vi.fn>;
+    readonly onCopy: ReturnType<typeof vi.fn>;
   } {
     const onFilter = vi.fn();
     const onSearch = vi.fn();
+    const onCopy = vi.fn();
     const host = renderProjectView(
       { lanes: LISTING, query: { all: false, ...query } },
       NOW_MS,
-      { onFilter, onSearch },
+      { onFilter, onSearch, onCopy },
     );
-    return { host, onFilter, onSearch };
+    return { host, onFilter, onSearch, onCopy };
   }
 
   it("counts a chip for every reason that asks for something, and none else", () => {
@@ -1166,6 +1168,40 @@ describe("the toolbar", () => {
     expect(textsOf(drawn().host, ".toolbar .shown")).toStrictEqual([
       "3 of 3 shown",
     ]);
+  });
+
+  it("offers the digest after the count, keyed so a redraw can find it", () => {
+    const { host } = drawn();
+    const button = oneOf(host, ".toolbar button.copy");
+    expect(button?.tagName).toBe("BUTTON");
+    expect(button?.getAttribute("type")).toBe("button");
+    expect(button?.getAttribute("data-key")).toBe("digest");
+    expect(textOf(button)).toBe("Copy digest");
+    // The last two children of the toolbar: the count, then the button and what
+    // it last said.
+    expect(textsOf(host, ".toolbar > span:last-child")).toStrictEqual([""]);
+  });
+
+  it("asks for the digest when the button is clicked", () => {
+    const { host, onCopy } = drawn();
+    const button = oneOf(host, ".toolbar button.copy") as HTMLElement;
+    button.click();
+    button.click();
+    expect(onCopy).toHaveBeenCalledTimes(2);
+  });
+
+  it("says what the last copy said, in a status region of its own", () => {
+    const said = (copied: string): Element | null =>
+      oneOf(
+        renderProjectView({ lanes: LISTING, query: { all: false }, copied }),
+        ".toolbar .copied",
+      );
+    expect(textOf(said("Digest copied"))).toBe("Digest copied");
+    expect(said("Digest copied")?.getAttribute("role")).toBe("status");
+    expect(said("Digest copied")?.getAttribute("aria-live")).toBe("polite");
+    // And nothing at all when no copy has been made.
+    expect(textOf(said(""))).toBe("");
+    expect(textOf(said("Copy failed"))).toBe("Copy failed");
   });
 
   it("draws the table the filter leaves, and the chips the filter does not move", () => {
