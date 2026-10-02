@@ -887,7 +887,39 @@ describe("the project lanes view", () => {
     expect(store.wholeLists).toBe(0);
   });
 
-  it("keeps no more than the wave bound, dropping the oldest-inserted wave", async () => {
+  it("reads a polled wave once however many polls a project takes", async () => {
+    const store = new WaryStore("wv-absent");
+    // More waves than the map used to hold. A poll of all of them evicted each
+    // wave just before the same poll asked for it, so every poll parsed every
+    // wave again.
+    const waves = 65;
+    await filled(store, "alpha", waves, (wave) => [laneOf(`${wave}-a`)]);
+    const read = model(store);
+
+    for (const poll of [1, 2, 3]) {
+      const view = await read.listLanes("alpha", true);
+      expect(view?.lanes).toHaveLength(waves);
+      expect(store.asked.length).toBeLessThanOrEqual(waves * poll);
+    }
+    expect(store.asked).toHaveLength(waves);
+  });
+
+  it("reads each in-window wave of a fleet once across two polls", async () => {
+    const store = new WaryStore("wv-absent");
+    for (const at of [...Array(7).keys()]) {
+      await filled(store, `p${String(at + 1).padStart(3, "0")}`, 10, (wave) => [
+        laneOf(`${wave}-a`),
+      ]);
+    }
+    const read = model(store);
+
+    await read.listAttention();
+    await read.listAttention();
+
+    expect(store.asked).toHaveLength(70);
+  });
+
+  it("keeps no more than the wave bound, dropping the least recently used wave", async () => {
     const store = new WaryStore("wv-absent");
     await store.putProject(project("p1"));
     // Every wave received in the same millisecond, so the order they are read in
@@ -907,60 +939,68 @@ describe("the project lanes view", () => {
     );
     const read = model(store);
 
-    await read.listLanes("p1", true);
-    expect(store.asked).toHaveLength(MAX_CACHED_WAVES);
+    // The cross-project view reads every wave of both projects in one answer.
+    await read.listAttention();
+    expect(store.asked).toHaveLength(MAX_CACHED_WAVES + 1);
     expect(store.asked[0]).toBe("wv001");
-    // A project holding exactly the bound is held whole, so a poll of it again
-    // parses nothing.
-    await read.listLanes("p1", true);
-    expect(store.asked).toHaveLength(MAX_CACHED_WAVES);
+    expect(store.asked[MAX_CACHED_WAVES]).toBe("wv1");
 
-    // The read that fills the map past its bound drops p1's first-inserted wave.
-    await read.listLanes("p2", true);
-    expect(store.asked).toHaveLength(MAX_CACHED_WAVES + 1);
+    // The map never grew past its bound: p2's wave was the last one used and is
+    // still held, so reading that project again parses nothing.
     await read.listLanes("p2", true);
     expect(store.asked).toHaveLength(MAX_CACHED_WAVES + 1);
 
-    // The wave the bound dropped is the first one p1 is asked for again.
+    // And p1 is asked first for the wave the bound dropped: the one used longest
+    // ago. Its other waves are still held, but this project fills the map on its
+    // own, so its reads roll the entry it has just used off the end.
     await read.listLanes("p1", true);
     expect(store.asked[MAX_CACHED_WAVES + 1]).toBe("wv001");
   });
 
-  it("keeps no more than the row bound, dropping the oldest-inserted wave", async () => {
+  it("keeps no more than the row bound, dropping the least recently used wave", async () => {
     const store = new WaryStore("wv-absent");
-    // Fewer projects than the wave bound, so it is the rows that fill the map
-    // past a bound: every wave is at the contract's own cap of 200 lanes.
-    const projects = Math.floor(MAX_CACHED_ROWS / LANES_PER_WAVE) + 10;
-    expect(projects).toBeLessThan(MAX_CACHED_WAVES);
-    const ids = [...Array(projects)].map(
-      (_unused, at) => `p${String(at + 1).padStart(3, "0")}`,
-    );
-    for (const [at, id] of ids.entries()) {
-      await store.putProject(project(id));
-      const wave = `wv${String(at + 1).padStart(3, "0")}`;
+    // One wave per project, every wave at the contract's own cap of 200 lanes,
+    // so it is the rows that fill the map past a bound and never the waves.
+    const held = Math.floor(MAX_CACHED_ROWS / LANES_PER_WAVE);
+    const id = (at: number): string => `p${String(at).padStart(3, "0")}`;
+    const full = (wave: string): Lane[] =>
+      Array.from({ length: LANES_PER_WAVE }, (_unused, lane) =>
+        laneOf(`${wave}-${lane}`),
+      );
+    for (const at of [...Array(held).keys()]) {
+      await store.putProject(project(id(at + 1)));
       await store.putSnapshot(
-        pushed(
-          id,
-          wave,
-          RECEIVED_AT,
-          Array.from({ length: LANES_PER_WAVE }, (_unused, lane) =>
-            laneOf(`${wave}-${lane}`),
-          ),
-        ),
+        pushed(id(at + 1), "wv001", RECEIVED_AT, full("wv001")),
       );
     }
     const read = model(store);
-    for (const id of ids) {
-      await read.listLanes(id, true);
+    for (const at of [...Array(held).keys()]) {
+      await read.listLanes(id(at + 1), true);
     }
-    expect(store.asked).toHaveLength(projects);
+    expect(store.asked).toHaveLength(held);
 
-    // The newest wave is still cached, and the oldest-inserted one is not.
-    await read.listLanes(ids.at(-1) ?? "", true);
-    expect(store.asked).toHaveLength(projects);
+    // Reading a wave again is a use: p001's wave is the most recently used of
+    // all, and a map at its row bound still answers it.
     await read.listLanes("p001", true);
-    expect(store.asked).toHaveLength(projects + 1);
-    expect(store.asked[projects]).toBe("wv001");
+    expect(store.asked).toHaveLength(held);
+
+    // Ten more projects take the map past the row bound again, and what goes
+    // each time is the wave used longest ago: never the wave just read.
+    for (const at of [...Array(10).keys()]) {
+      const next = id(held + at + 1);
+      await store.putProject(project(next));
+      await store.putSnapshot(
+        pushed(next, "wv001", RECEIVED_AT, full("wv001")),
+      );
+      await read.listLanes(next, true);
+    }
+    expect(store.asked).toHaveLength(held + 10);
+
+    // So the touched wave is still held, and the one beside it is read again.
+    await read.listLanes("p001", true);
+    expect(store.asked).toHaveLength(held + 10);
+    await read.listLanes("p002", true);
+    expect(store.asked).toHaveLength(held + 11);
   });
 
   it("stops at the lane cap and reads no wave past it", async () => {

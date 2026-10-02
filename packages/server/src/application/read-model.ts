@@ -49,11 +49,12 @@ export const ROW_OVERHEAD_BYTES = 256;
 
 /**
  * How many waves' computed rows one read model holds at once, and how many rows
- * they may add up to. A poll every ten seconds over a large fleet walks more
- * waves than the first bound allows, so the second one bounds what those rows
- * cost to keep; the wave count is the first to be spent.
+ * they may add up to. The wave count is generous on purpose: a poll that asks
+ * for more waves than this would evict each of them just before it asked for it,
+ * so what bounds memory is the row count. A wave is dropped only when it has not
+ * been used for longer than every other one.
  */
-export const MAX_CACHED_WAVES = 64;
+export const MAX_CACHED_WAVES = 512;
 export const MAX_CACHED_ROWS = 10_000;
 
 export interface ProjectSummary {
@@ -470,11 +471,12 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
   const { store, now } = deps;
 
   /**
-   * The lanes each wave has already been parsed into, keyed by project and wave.
-   * A ten-second poll over a fleet re-reads the same waves every time, and a wave
-   * is only re-parsed when its head says it is not the wave that was read: the
-   * same `receivedAt` with a different number of lanes is a push that landed
-   * inside one millisecond, which the store's own resolution cannot tell apart.
+   * The lanes each wave has already been parsed into, keyed by project and wave,
+   * in the order they were last used. A ten-second poll over a fleet re-reads the
+   * same waves every time, and a wave is only re-parsed when its head says it is
+   * not the wave that was read: the same `receivedAt` with a different number of
+   * lanes is a push that landed inside one millisecond, which the store's own
+   * resolution cannot tell apart.
    */
   const cache = new Map<string, CachedWave>();
   let cachedRows = 0;
@@ -489,11 +491,12 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
     cache.size > MAX_CACHED_WAVES || cachedRows > MAX_CACHED_ROWS;
 
   /**
-   * Keeps a wave, and drops the oldest-inserted ones while either bound is
-   * exceeded. A `Map` iterates in insertion order, so its first key is the
-   * oldest one. The entry just inserted is the last key and is never the one
-   * dropped, so a wave that is over the row bound on its own is kept whole and
-   * read from the store again rather than re-parsed on every poll.
+   * Keeps a wave, and drops the ones used longest ago while either bound is
+   * exceeded. A `Map` iterates in insertion order, which is the order of last
+   * use here, so its first key is the one to go. The entry just inserted is the
+   * last key and is never the one dropped, so a wave that is over the row bound
+   * on its own is kept whole and read from the store again rather than re-parsed
+   * on every poll.
    */
   const remember = (key: string, entry: CachedWave): void => {
     // A replaced key is deleted first, so that the entry answers as the newest.
@@ -509,9 +512,12 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
 
   /**
    * The lanes of one wave, from the cache when its head still describes the wave
-   * the entry was built from, and from the store when it does not. A wave the
-   * store no longer holds is not an answer and is not cached: the head may
-   * describe a push that has not landed yet, so the next read asks again.
+   * the entry was built from, and from the store when it does not. Reading a wave
+   * is a use of it, so an entry that is answered moves to the newest position:
+   * a poll that asks for more waves than the map holds must not evict the wave it
+   * is about to ask for. A wave the store no longer holds is not an answer and is
+   * not cached: the head may describe a push that has not landed yet, so the next
+   * read asks again.
    */
   const cachedWave = async (
     projectId: string,
@@ -524,6 +530,8 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
       hit.receivedAt === head.receivedAt &&
       hit.lanes.length === head.lanes
     ) {
+      cache.delete(key);
+      cache.set(key, hit);
       return hit;
     }
     const snapshot = await store.getSnapshot(projectId, head.wave);
