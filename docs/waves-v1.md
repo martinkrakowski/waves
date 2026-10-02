@@ -256,80 +256,100 @@ A wave goes stale when it has not been received for longer than
 The clock is always the server's, and the instant it uses is always the time the
 server **received** the snapshot — `receivedAt` — never the pusher's
 `generatedAt`. Every formula is fed `Date.parse(receivedAt)` and `now()` from
-the server (`createReadModel`, `packages/server/src/application/read-model.ts:86`,
-`133-153`; `Now`, `…/read-model.ts:14`). `generatedAt` is stored and echoed but
+the server (`createReadModel`, `packages/server/src/application/read-model.ts:119`,
+`123-187`; `Now`, `…/read-model.ts:14`). `generatedAt` is stored and echoed but
 no rule reads it.
 
 In the wave view, a stale wave keeps its lane data but a lane whose
 `derived.alive` is `true` is rendered as `"unknown"`, because the pusher has
 stopped telling the server whether the process is still up
-(`aliveView`, `…/read-model.ts:75-77`).
+(`aliveView`, `…/read-model.ts:99-101`).
 
 ## 5. HTTP API
 
-### 5.1 Read routes, served today
+### 5.1 Read routes
 
-Only `GET` and `HEAD` are answered; anything else is `405` with
-`Allow: GET, HEAD`. The order of checks matters for which status you see: a
-parser refusal (`431`, `408`, `400`) happens before any request handling; then
-the URL length (`414`); then, when a viewer token is configured, authorization
-(`401`); then the method (`405`). So an unauthenticated `POST` to a token-protected
-server answers `401`, not `405` (`READ_METHODS`, `ALLOW_GET_HEAD`,
-`packages/server/src/infrastructure/http-server.ts:39`,
-`packages/server/src/infrastructure/http-security.ts:11`).
+A request is decided in this order, and the order is what picks the status you
+see (`respond`, `packages/server/src/infrastructure/http-server.ts:171-220`):
+
+1. A parser refusal (`431`, `408`, `400`) happens before the request exists.
+2. The URL length (`414`).
+3. A `PUT`, `POST` or `DELETE` leaves for the write pipeline of section 5.4,
+   whatever the path. The viewer token is never consulted for a write.
+4. `/readyz` is answered.
+5. When a viewer token is configured, authorization (`401`), for every path
+   except `/healthz` and `/readyz`.
+6. The method (`405`): anything other than `GET` and `HEAD`, and any method at
+   all on `/api/v1/projects/<id>`, which has no read representation.
+7. The route.
+
+So with a viewer token configured an unauthenticated `OPTIONS` or `PATCH`
+answers `401`, not `405`, while an unauthenticated `POST` goes to the write
+pipeline and is answered by it.
 
 | path                                     | 200 response                                                                                                                               |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `GET /healthz`                           | `{"ok":true}`                                                                                                                              |
-| `GET /api/v1/projects`                   | array of `{ id, name, repo?, registeredAt, waves, lastPush? }`, `waves` a count, `lastPush` the newest `receivedAt` in the project         |
-| `GET /api/v1/projects/<id>/waves`        | array of `{ wave, receivedAt, intervalSeconds, lanes, stale, retained }`, newest receive first                                             |
+| `GET /healthz`                           | `{"ok":true}` — the process is up                                                                                                          |
+| `GET /readyz`                            | `{"ok":true}` — the store can be read; otherwise `503` `{"ok":false}`                                                                      |
+| `GET /api/v1/projects`                   | array of `{ id, name, repo?, registeredAt, waves, lastPush?, stale }`, see below                                                           |
+| `GET /api/v1/projects/<id>/waves`        | array of `{ wave, receivedAt, intervalSeconds, lanes, stale, retained }`, `lanes` a count, newest receive first                            |
 | `GET /api/v1/projects/<id>/waves/<wave>` | `{ envelope, receivedAt, stale, staleAfterMs }`, where `envelope` is the stored envelope with `lanes[].derived.alive` possibly `"unknown"` |
 | `GET /` and `GET /p/<id>`                | the status page (`public/index.html`)                                                                                                      |
 | `GET /<static file>`                     | a file from `public`, allow-listed extensions only                                                                                         |
 
-(`route`, `packages/server/src/infrastructure/http-routes.ts:33`;
-`replyFor`, `packages/server/src/infrastructure/http-server.ts:69`;
+In a project summary `waves` is a count, `lastPush` is the newest `receivedAt`
+in the project, and `stale` is the staleness of the project's **newest** wave
+by the rule of section 4; a project with no waves is not stale. The token digest
+is never part of a response.
+
+(`route`, `packages/server/src/infrastructure/http-routes.ts:93`;
+`replyFor`, `readyReply`, `packages/server/src/infrastructure/http-server.ts:92-137`;
 `ProjectSummary`, `WaveSummary`, `WaveView`,
-`packages/server/src/application/read-model.ts:18-49`;
+`packages/server/src/application/read-model.ts:18-56`;
 `SnapshotHead`, `packages/server/src/application/ports/store.ts:8-13`)
 
-Status codes, in the order the server decides them
-(`packages/server/src/infrastructure/http-server.ts:121-153`):
+Status codes:
 
 - `200` with the shape above.
 - `404` `{"error":"not found"}` — an unknown project, an unknown wave, a path
   that is not a route, or a static file that is not there. A `project` or
   `wave` segment that fails the id pattern is not a route at all, so it is a
   `404` and never reaches the store
-  (`packages/server/src/infrastructure/http-routes.ts:43-52`).
-- `405` `{"error":"method not allowed"}` with `Allow: GET, HEAD`.
+  (`packages/server/src/infrastructure/http-routes.ts:100-121`).
+- `405` `{"error":"method not allowed"}` with the `Allow` of that path:
+  `GET, HEAD, POST` on the project collection, `DELETE` on a single project,
+  `GET, HEAD, PUT, DELETE` on a wave, and `GET, HEAD` everywhere else
+  (`ALLOWED`, `packages/server/src/infrastructure/http-routes.ts:26-36`).
 - `414` `{"error":"uri too long"}` — a request target over 2048 bytes
-  (`MAX_URL_BYTES`, `packages/server/src/infrastructure/http-routes.ts:7`).
+  (`MAX_URL_BYTES`, `packages/server/src/infrastructure/http-routes.ts:8`).
   This is checked before authentication, so an oversized target is a `414`
   even without a token.
 - `431` `Request Header Fields Too Large` — a header block over 16 KiB
-  (`MAX_HEADER_BYTES`, `packages/server/src/infrastructure/http-server.ts:43`).
+  (`MAX_HEADER_BYTES`, `packages/server/src/infrastructure/http-server.ts:55`).
   The request never becomes a request, so the answer is written straight to
   the socket by hand and carries no body; `408` and `400` come from the same
   place for a timed-out or otherwise unparseable request
-  (`parserRefusal`, `packages/server/src/infrastructure/http-security.ts:89-111`;
-  `refuseParsedRequest`, `…/http-security.ts:119-137`).
+  (`parserRefusal`, `refuseParsedRequest`,
+  `packages/server/src/infrastructure/http-security.ts:146-176`).
 - `500` `{"error":"internal"}` — anything that throws while building a reply
-  (`packages/server/src/infrastructure/http-server.ts:168-180`).
+  (`packages/server/src/infrastructure/http-server.ts:233-248`).
 - `401` `{"error":"unauthorized"}` with `WWW-Authenticate: Basic realm="waves",
-charset="UTF-8"` — only when a read token is configured and the request is
-  not `/healthz` (`packages/server/src/infrastructure/http-server.ts:129-138`).
+charset="UTF-8"` — only when a read token is configured and the path is
+  neither `/healthz` nor `/readyz`
+  (`packages/server/src/infrastructure/http-server.ts:196-205`).
 
 ### 5.2 The optional viewer token
 
 `WAVES_READ_TOKEN_FILE` points at a file whose trimmed content is the password
-(`packages/server/src/application/config.ts:13`;
+(`packages/server/src/application/config.ts:19`;
 `readReadToken`, `packages/server/src/infrastructure/read-token.ts:10`). It
-guards everything except `/healthz`, and it is presented as HTTP Basic
-credentials where **any username is accepted** — only the password is compared,
-in constant time over SHA-256 digests
-(`authorised`, `packages/server/src/infrastructure/http-security.ts:74-80`).
-When the variable is absent the server serves the read routes to anyone.
+guards every read except `/healthz` and `/readyz`, and it is presented as HTTP
+Basic credentials where **any username is accepted** — only the password is
+compared, in constant time over SHA-256 digests
+(`authorised`, `packages/server/src/infrastructure/http-security.ts:112-118`).
+When the variable is absent the server serves the read routes to anyone. It
+plays no part in a write: a project that pushes holds its project token and no
+viewer token.
 
 ### 5.3 Headers, and no CORS
 
@@ -338,33 +358,131 @@ Every response carries
 'self'; connect-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none';
 frame-ancestors 'none'`, `X-Content-Type-Options: nosniff` and
 `Referrer-Policy: no-referrer`, plus its own `Content-Type` and `Content-Length`
-(`BASE_HEADERS` and `send`, `packages/server/src/infrastructure/http-security.ts:13`,
-`37-51`). A path under `/api/` also carries `Cache-Control: no-store`
-(`isApiPath`, `NO_STORE`, `packages/server/src/infrastructure/http-routes.ts:23`,
-`packages/server/src/infrastructure/http-server.ts:164`).
+unless it is a `204` (`BASE_HEADERS` and `send`,
+`packages/server/src/infrastructure/http-security.ts:14-18`, `68-89`). A path
+under `/api/`, `/readyz` and every answer of the write pipeline also carry
+`Cache-Control: no-store` (`isApiPath`,
+`packages/server/src/infrastructure/http-routes.ts:83`; `extraFor`,
+`packages/server/src/infrastructure/http-server.ts:148-150`, `186-194`;
+`answer`, `packages/server/src/infrastructure/http-write.ts:255-265`).
 
-There is **no CORS**: no `Access-Control-Allow-Origin` is ever sent, and no
-`OPTIONS` preflight is answered — an `OPTIONS` request is a `405`. A browser
-page on another origin therefore cannot read these routes; fetch them from a
-server, not from a page.
+There is **no CORS**: no `Access-Control-Allow-Origin` is ever sent, no
+`OPTIONS` preflight is answered — an `OPTIONS` request is a `405`, or a `401`
+behind a viewer token — and a write that carries an `Origin` header is refused
+(section 5.4). A browser page on another origin therefore can neither read these
+routes nor write to them; call them from a server, not from a page.
 
-### 5.4 Write and registration routes — planned (not yet served)
+### 5.4 Write and registration routes
 
-Nothing below is implemented; the read-only surface is all that answers
-(`createHttpServer`, `packages/server/src/infrastructure/http-server.ts:100-105`;
-`deploy/README.md:118-124` records that no write path exists yet). The shapes
-are the plan's, given here so a client can be written against them:
+| route                                       | token   | body                             | success                                        |
+| ------------------------------------------- | ------- | -------------------------------- | ---------------------------------------------- |
+| `PUT /api/v1/projects/<id>/waves/<wave>`    | project | the envelope of section 2        | `200` `{ receivedAt }`                         |
+| `DELETE /api/v1/projects/<id>/waves/<wave>` | project | none                             | `204`, or `404` when there was no such wave    |
+| `POST /api/v1/projects`                     | admin   | `{ id, name, repo? }`, see below | `201` `{ id, token }`                          |
+| `DELETE /api/v1/projects/<id>`              | admin   | none                             | `204`, or `404` when there was no such project |
 
-- `PUT /api/v1/projects/<id>/waves/<wave>` with a project bearer token, body
-  the envelope of section 2.
-- `POST /api/v1/projects` and `DELETE /api/v1/projects/<id>` with the admin
-  token.
-- `DELETE /api/v1/projects/<id>/waves/<wave>`.
+(`writeRouteOf`, `packages/server/src/infrastructure/http-routes.ts:59-76`;
+`createWriteHandler`, `packages/server/src/infrastructure/http-write.ts:244`)
 
-Planned status codes: `401` no or bad token, `403` the token is for a
-different project, or the request carries an `Origin` header, `409` the id is
-already taken unless the request is rotating it, `413` a body over 1 MiB, `422`
-the body fails `validateEnvelope`, `429` a rate limit was hit.
+A token is presented as `Authorization: Bearer <token>`: exactly that scheme,
+exactly one space, and 32 to 128 characters of `A-Z`, `a-z`, `0-9`, `_` and `-`
+(`bearerToken`, `TOKEN_PATTERN`,
+`packages/server/src/application/bearer.ts:10-36`). The server keeps only the
+SHA-256 digest of a project token, and compares digests in constant time
+(`digestsEqual`, `packages/server/src/infrastructure/digest.ts:11`).
+
+The admin token is one secret for the whole service, read once at startup from
+the file `WAVES_ADMIN_TOKEN_FILE` names. When that variable is absent the two
+admin routes do not exist: they answer `404`, so a probe cannot tell a disabled
+route from a path that was never there
+(`packages/server/src/infrastructure/http-write.ts:457-466`).
+
+**Registration.** The body is a closed object of `id` (the project id pattern of
+section 2.1), `name` (1 to 80 characters) and an optional `repo` (an `https` URL
+of at most 200 characters); any other key is a `422`. The `201` carries the
+project's token — 32 random bytes as base64url, 43 characters — and that answer
+is the only time the token exists in clear text anywhere. An id that is already
+registered is a `409`, unless the request target is exactly
+`POST /api/v1/projects?rotate=1`, which mints a new token for it, invalidates
+the old one and keeps its `registeredAt`. `rotate=1` on an id that is not
+registered registers it. Deleting a project removes its waves with it.
+(`REGISTRATION_KEYS`, `registerProject`,
+`packages/server/src/application/write-model.ts:16`, `97-128`;
+`packages/contract/src/domain/project.ts:16-21`;
+`mintToken`, `packages/server/src/infrastructure/digest.ts:19`;
+`deleteProject`, `packages/server/src/infrastructure/file-store.ts:116-129`)
+
+**Authentication comes before the body.** Every step below is decided from the
+request line and the headers alone, in this order, and each refusal closes the
+connection without reading the body
+(`packages/server/src/infrastructure/http-write.ts:436-527`):
+
+1. `404` `{"error":"not found"}` — the path is not a route. `405` with that
+   path's `Allow` — it is one, and this method does not write to it.
+2. `404` — an admin route with no admin token configured.
+3. `400` `{"error":"bad query"}` — any query string at all, other than exactly
+   `rotate=1` on a registration.
+4. `403` `{"error":"cross-origin writes refused"}` — the request carries an
+   `Origin` header.
+5. Framing. A `DELETE` that declares a body is `400`
+   `{"error":"a delete carries no body"}`. A `PUT` or `POST` whose
+   `Content-Type` is not `application/json` — a `charset` parameter, if
+   present, must be `utf-8` — is `415` `{"error":"unsupported media type"}`,
+   and one whose `Content-Length` is over the cap is `413`
+   `{"error":"body too large"}`. The cap is 1 MiB = 1 048 576 bytes for a
+   `PUT` and 16 KiB = 16 384 bytes for a `POST` (`PUT_BODY_CAP`,
+   `POST_BODY_CAP`, `packages/server/src/infrastructure/http-write.ts:41-42`).
+6. `429` `{"error":"too many failures"}` — this client address has failed
+   authentication 10 times within 60 seconds. The window starts at the first
+   failure and is not extended by the ones inside it (`FAILURE_LIMIT`,
+   `FAILURE_WINDOW_MS`, `packages/server/src/application/limiters.ts:3-4`).
+7. Authentication. More than one `Authorization` header is `400`
+   `{"error":"more than one authorization"}`. Behind a trusted proxy
+   (`WAVES_TRUST_PROXY=1`), a write whose `X-Forwarded-Proto` is not `https` is
+   `403` `{"error":"https required"}`. No token, a token outside the grammar
+   above, or one that matches nothing is `401` `{"error":"unauthorized"}` with
+   `WWW-Authenticate: Bearer realm="waves"`. A valid token of a **different**
+   project is `403` `{"error":"wrong project"}`; every stored digest is
+   compared, so the time an answer takes says nothing about which projects
+   exist. Each `401` and `403` of this step counts as one failure against the
+   address in step 6
+   (`digestOf`, `authenticateWave`, `denied`,
+   `packages/server/src/infrastructure/http-write.ts:268-344`).
+8. `429` `{"error":"too many writes"}` with `Retry-After: 1` — one write per
+   second per project, counting every authenticated attempt and not only the
+   accepted ones. The two admin routes share one allowance between them
+   (`PROJECT_INTERVAL_MS`, `packages/server/src/application/limiters.ts:5`;
+   `ADMIN_LIMITER_KEY`, `packages/server/src/infrastructure/http-write.ts:43`).
+
+The client address in step 6 is the socket's, or with `WAVES_TRUST_PROXY=1` the
+last entry of `X-Forwarded-For`
+(`clientAddress`, `packages/server/src/infrastructure/client-address.ts:54-63`).
+
+Only then is the body read. A client that sent `Expect: 100-continue` over
+HTTP/1.1 gets its `100 Continue` here and not before, so a client that waits for
+it never sends a body to a refusal; a client that does not wait and is refused
+sees the connection reset mid-body (`continueIfExpected`,
+`packages/server/src/infrastructure/http-write.ts:233-242`; `send`,
+`packages/server/src/infrastructure/http-security.ts:47-66`).
+
+After the body:
+
+- `413` `{"error":"body too large"}` — the bytes that arrived went over the cap
+  whatever the declared length said, chunked transfer included. The read stops
+  at the cap and the connection is closed.
+- `400` `{"error":"not utf-8"}` or `{"error":"bad json"}`.
+- `422` `{"errors":[{ path, message }]}` — the body fails `validateEnvelope`
+  (or, for a registration, the rules above); the issues are those of section 3.
+  An envelope whose `project` or `wave` differs from the path is a `422` with
+  the single issue `/project`, `expected the project and wave the path names`.
+- `409` `{"error":"already registered"}` — a registration only.
+- `200` `{"receivedAt":"…"}` for a push: the server's own clock at the moment it
+  stored the snapshot, which is the instant every rule of section 4 reads. A
+  push replaces the wave's previous snapshot; the server keeps one per wave.
+
+(`readBody`, `register`, `push`,
+`packages/server/src/infrastructure/http-write.ts:281-428`;
+`putWave`, `packages/server/src/application/write-model.ts:71-81`)
 
 ## 6. TLS and trust
 
@@ -373,13 +491,13 @@ store, and nothing in a client disables that check: no `-k`, no
 `--insecure`, no `rejectUnauthorized: false`, no
 `NODE_TLS_REJECT_UNAUTHORIZED=0`. Get the CA out of band — from your cluster,
 from a file you control — and never from the network you are about to trust
-(`deploy/README.md:89-99`).
+(`deploy/README.md:120-130`).
 
 Plain `http://` is for loopback only, when you are talking to the process on the
 same machine. Anything off the loopback interface is `https://`, terminated by
 the proxy or ingress in front of the server; the server itself speaks plain
 HTTP on its port and never asks for a client certificate
-(`deploy/README.md:32-36`).
+(`deploy/README.md:35-39`).
 
 ## 7. Versioning
 
@@ -397,7 +515,9 @@ fields for a future minor revision are `prs` and `backlog`.
 
 ## 8. A curl example
 
-Read routes only, verifying the certificate against a pinned CA. Never `-k`:
+The read routes, verifying the certificate against a pinned CA. Never `-k`. To
+write, use the client in `packages/client`, which keeps the project token in a
+0600 file and off the command line:
 
 ```sh
 curl --fail --silent --show-error \
