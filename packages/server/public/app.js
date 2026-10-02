@@ -1,13 +1,13 @@
 import { drawableAttention } from "./attention.js";
 import { createApi } from "./api.js";
 import { el } from "./dom.js";
+import { drawableProjectLanes } from "./project-lanes.js";
 import { drawableProjects } from "./projects.js";
 import { isProjectId, isWaveId } from "./patterns.js";
-import { formatQuery, parseQuery } from "./query.js";
+import { parseQuery } from "./query.js";
 import { shell } from "./shell.js";
 import { renderFleet } from "./views/fleet.js";
 import { renderProject } from "./views/project.js";
-import { drawableWave, drawableWaves, visibleWaves } from "./wave.js";
 
 export const REFRESH_MS = 10_000;
 
@@ -83,10 +83,8 @@ export function createApp(deps) {
   const root = doc.getElementById(ROOT_ID);
   let route = routeOf(location.pathname);
   let query = parseQuery(location.search);
-  let showAll = query.all;
   let data = undefined;
   let note = "";
-  let selected = route.wave ?? "";
   let generation = 0;
   /**
    * The last project list the API gave us and the rail could show. It has its
@@ -102,13 +100,6 @@ export function createApp(deps) {
    * to forget it.
    */
   let railAttention;
-  /**
-   * Whether the data on screen was kept across a move to another wave of the
-   * same project and the pass for that wave has not answered yet. Until it does,
-   * the lane panel has nothing to show for the selection and must say it is
-   * loading, not that the wave is gone.
-   */
-  let awaitingWave = false;
   let timer = undefined;
   let inFlight = undefined;
   let stopped = false;
@@ -144,10 +135,10 @@ export function createApp(deps) {
   }
 
   /**
-   * One pass, for the route and the selection this call started with. The
-   * snapshot is taken before the first `await` and is the only thing read after
-   * it: `read()` rewrites `route` and `selected` on every navigation, so a pass
-   * that read them afterwards would answer one page with another's request.
+   * One pass, for the route and the query this call started with. The snapshot
+   * is taken before the first `await` and is the only thing read after it:
+   * `read()` rewrites `route` and `query` on every navigation, so a pass that
+   * read them afterwards would answer one page with another's request.
    *
    * After each `await`, a pass that the reader has navigated away from answers
    * `undefined`, which is how `refreshOnce()` learns to pass again for the route
@@ -155,7 +146,7 @@ export function createApp(deps) {
    */
   async function load() {
     const at = route;
-    const want = selected;
+    const asked = query;
     const mine = generation;
     if (at.kind === "unknown") {
       // Not a page of ours, but the rail is: the reader still has to be able to
@@ -181,64 +172,28 @@ export function createApp(deps) {
       return { kind: "projects", projects, attention };
     }
     // Three calls in one Promise.all, in the order the page needs them: the
-    // rail's two, then the waves of the project the route names.
-    const [projects, attention, waves] = await Promise.all([
+    // rail's two, then every lane of every wave of the project the route names.
+    // A project page is one request: the wave strip and the lane table are two
+    // views of the same answer, and a second request would be a second chance
+    // for the two to disagree.
+    const [projects, attention, lanes] = await Promise.all([
       loadProjects(),
       loadAttention(),
-      api.waves(at.id),
+      api.lanes(at.id, asked.all),
     ]);
     if (mine !== generation) {
       return undefined;
     }
-    if (waves === undefined) {
+    if (lanes === undefined) {
       return { kind: "missing", project: at.id, projects, attention };
     }
-    if (!drawableWaves(waves)) {
-      throw new Error("the wave list is not a list of waves");
+    if (!drawableProjectLanes(lanes)) {
+      throw new Error("the project listing is not a project listing");
     }
-    const visible = visibleWaves(waves, showAll);
-    const wanted = visible.find((head) => head.wave === want);
-    const chosen = wanted ?? visible[0];
-    if (chosen === undefined) {
-      return {
-        kind: "project",
-        project: at.id,
-        projects,
-        attention,
-        waves,
-        view: undefined,
-      };
+    if (lanes.project.id !== at.id) {
+      throw new Error("the project listing is another project's");
     }
-    selected = chosen.wave;
-    const view = await api.wave(at.id, chosen.wave);
-    if (mine !== generation || selected !== chosen.wave) {
-      return undefined;
-    }
-    if (view !== undefined) {
-      if (!drawableWave(view)) {
-        throw new Error("the wave is not a wave");
-      }
-      if (view.envelope.wave !== chosen.wave) {
-        throw new Error("the wave is not the one requested");
-      }
-    }
-    return {
-      kind: "project",
-      project: at.id,
-      projects,
-      attention,
-      waves,
-      view,
-    };
-  }
-
-  /** The lanes on screen, and only ever the lanes of the selected wave. */
-  function viewFor(model) {
-    const view = model.view;
-    if (view === undefined || view.envelope.wave !== selected) {
-      return undefined;
-    }
-    return view;
+    return { kind: "project", project: at.id, projects, attention, lanes };
   }
 
   function body() {
@@ -260,30 +215,12 @@ export function createApp(deps) {
       );
     }
     if (data.kind === "project") {
-      const project = data.project;
-      const model = {
-        ...data,
-        showAll,
-        selected,
-        view: viewFor(data),
-        loading: awaitingWave,
-      };
-      return renderProject(model, clock(), {
-        onSelect: (waveId) => {
-          navigate(
-            pathOf({ kind: "project", id: project, wave: waveId }) +
-              formatQuery({ ...query, all: showAll }),
-          );
-        },
-        onToggleAll: () => {
-          showAll = !showAll;
-          const visible = visibleWaves(model.waves, showAll);
-          if (!visible.some((head) => head.wave === selected)) {
-            selected = "";
-          }
-          draw();
-        },
-      });
+      // No handlers: every control this view draws is a link, and the app
+      // follows its own links in place.
+      return renderProject(
+        { lanes: data.lanes, wave: route.wave, query },
+        clock(),
+      );
     }
     return el("p", { attrs: { class: "empty" }, text: "No such project." });
   }
@@ -341,7 +278,7 @@ export function createApp(deps) {
           route,
           projects: railProjects,
           attention: railAttention,
-          all: showAll,
+          all: query.all,
           note,
         },
         body(),
@@ -354,14 +291,13 @@ export function createApp(deps) {
    * Loads, then draws, and never leaves a render failure half-applied: a `draw`
    * that throws on the data it was just handed puts the last data that did draw
    * back, says the page is offline, and draws that instead. A payload the views
-   * cannot render therefore never reaches the document and never reaches
-   * `onToggleAll`, which draws straight from the data kept here.
+   * cannot render therefore never reaches the document.
    *
-   * Answers `false` when the load it did was for a route or a wave the reader has
-   * since moved away from, so the caller can pass again for the one on screen. A
-   * pass that failed after losing its route says nothing: its failure is about a
-   * page nobody is on, and putting that page's data back would draw the route
-   * being left under the route being read.
+   * Answers `false` when the load it did was for a route the reader has since
+   * moved away from, so the caller can pass again for the one on screen. A pass
+   * that failed after losing its route says nothing: its failure is about a page
+   * nobody is on, and putting that page's data back would draw the route being
+   * left under the route being read.
    */
   async function refresh() {
     const mine = generation;
@@ -372,7 +308,6 @@ export function createApp(deps) {
         return false;
       }
       data = next;
-      awaitingWave = false;
       // Every pass that answered carries both of the rail's lists, on every
       // route, so this is where they move and nowhere else: a navigation keeps
       // them and a failed load never reaches this line, so neither can clear
@@ -440,8 +375,6 @@ export function createApp(deps) {
   function read() {
     route = routeOf(location.pathname);
     query = parseQuery(location.search);
-    showAll = query.all;
-    selected = route.wave ?? "";
     generation += 1;
   }
 
@@ -457,18 +390,22 @@ export function createApp(deps) {
    * and the note with it: a note about the page the reader has just left is not
    * a note about this one.
    *
-   * Choosing another wave of the project already on screen changes nothing but
-   * the wave, so that project's wave list stays where it is while the new wave's
-   * lanes load. The rail's list is never cleared at all: it is the same for
-   * every route, and blanking it to "Loading…" on each click, and for ever on a
-   * route that fetches nothing, was a page that had lost the one thing it knew.
+   * Another wave of the project already on screen is the same project, so its
+   * lanes stay where they are while the pass for the new wave runs: the table a
+   * reader is working down does not vanish under them because they followed a
+   * link. The rail's list is never cleared at all: it is the same for every
+   * route, and blanking it to "Loading…" on each click, and for ever on a route
+   * that fetches nothing, was a page that had lost the one thing it knew.
    */
   function reread() {
     const was = route;
+    const wasAll = query.all;
     read();
     note = "";
-    awaitingWave = sameProject(was, route) && data !== undefined;
-    if (!awaitingWave) {
+    // The lanes on screen were asked for under one `all`. Under the other they
+    // are a different list, so they are not kept: a table of retained waves
+    // beside a strip that says every wave is shown would be two answers at once.
+    if (!sameProject(was, route) || wasAll !== query.all) {
       data = undefined;
     }
     draw();

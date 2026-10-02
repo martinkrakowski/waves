@@ -1,7 +1,7 @@
 import type {
   AttentionView,
+  ProjectLanesView,
   ProjectSummary,
-  WaveSummary,
   WaveView,
 } from "../src/application/read-model.js";
 
@@ -29,7 +29,15 @@ export interface Api {
    * the app reads as a failed load: the route is not optional.
    */
   attention(): Promise<AttentionView | undefined>;
-  waves(projectId: string): Promise<readonly WaveSummary[] | undefined>;
+  /**
+   * Every lane of every wave of one project, with the wave heads the page draws
+   * the wave strip from. `all` asks for the waves past the retention as well.
+   */
+  lanes(projectId: string, all: boolean): Promise<ProjectLanesView | undefined>;
+  /**
+   * One wave on its own. Nothing on the page asks for it; lane K6's drawer does,
+   * and its direct test is what keeps this one honest until then.
+   */
   wave(projectId: string, waveId: string): Promise<WaveView | undefined>;
 }
 

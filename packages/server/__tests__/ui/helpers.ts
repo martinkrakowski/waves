@@ -1,10 +1,10 @@
 import { expect } from "vitest";
 
 import type { ApiResponse, FetchLike } from "../../public/api.js";
-import type { WavePanelHandlers, WavePanelModel } from "../../public/wave.js";
-import { wavePanel } from "../../public/wave.js";
+import type { ProjectModel } from "../../public/views/project.js";
+import { renderProject } from "../../public/views/project.js";
 
-import { waveSummary, waveView } from "./fixtures.js";
+import { NOW_MS, projectLanes } from "./fixtures.js";
 
 /** Every tag the page shell or a view in `public/` is allowed to create. */
 export const ALLOWED_TAGS: ReadonlySet<string> = new Set([
@@ -344,47 +344,24 @@ export function browserGlobals(pathname = "/", search = ""): BrowserGlobals {
   };
 }
 
-export interface PanelHarness {
-  readonly host: HTMLElement;
-  readonly picked: string[];
-  readonly toggles: number;
-}
-
-/** Draws a wave panel with the given model, defaulting to one healthy wave. */
-export function renderPanel(
-  model: Partial<WavePanelModel> = {},
-  nowMs: number = Date.parse("2026-04-01T12:00:00.000Z"),
-): PanelHarness {
-  const full: WavePanelModel = {
-    project: "alpha",
-    waves: [waveSummary()],
-    showAll: false,
-    selected: "w-3",
-    view: waveView(),
+/**
+ * Draws one project's page with the given model, defaulting to the whole
+ * project with one wave and one lane, and returns the host it was drawn into.
+ * The markup invariants are asserted on the way out, so every view test that
+ * uses this harness also gets `assertNoInjectedMarkup`.
+ */
+export function renderProjectView(
+  model: Partial<ProjectModel> = {},
+  nowMs: number = NOW_MS,
+): HTMLElement {
+  const full: ProjectModel = {
+    lanes: projectLanes(),
+    wave: undefined,
+    query: { all: false },
     ...model,
   };
-  const picked: string[] = [];
-  let toggles = 0;
-  const handlers: WavePanelHandlers = {
-    onSelect: (waveId) => picked.push(waveId),
-    onToggleAll: () => {
-      toggles += 1;
-    },
-  };
   const host = freshRoot();
-  host.append(wavePanel(full, nowMs, handlers));
+  host.append(renderProject(full, nowMs));
   assertNoInjectedMarkup();
-  return {
-    host,
-    picked,
-    get toggles() {
-      return toggles;
-    },
-  };
-}
-
-/** The text of every cell of one lane row, in column order. */
-export function laneCells(host: HTMLElement, row: number): string[] {
-  const body = host.querySelectorAll("tbody tr");
-  return textsOf(body[row] as HTMLElement, "td");
+  return host;
 }

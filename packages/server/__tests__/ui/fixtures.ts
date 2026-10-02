@@ -2,7 +2,9 @@ import type {
   AttentionLane,
   AttentionView,
   EnvelopeView,
+  LaneRow,
   LaneView,
+  ProjectLanesView,
   WaveSummary,
   WaveView,
 } from "../../src/application/read-model.js";
@@ -33,6 +35,36 @@ export function waveSummary(overrides: Partial<WaveSummary> = {}): WaveSummary {
     lanes: 2,
     stale: false,
     retained: true,
+    ...overrides,
+  };
+}
+
+/**
+ * One row of the project listing: a lane with only what the row type requires,
+ * so a test that wants a lane carrying nothing optional says so by not giving it
+ * anything. The wave is `w-3`, the one `waveSummary()` carries, so the default
+ * row belongs to a wave the default listing holds.
+ */
+export function laneRow(overrides: Partial<LaneRow> = {}): LaneRow {
+  return {
+    wave: "w-3",
+    id: "wv-a",
+    derived: { alive: true },
+    disagreements: 0,
+    reasons: [],
+    ...overrides,
+  };
+}
+
+/** What `/api/v1/projects/alpha/lanes` answers, before anything is wrong. */
+export function projectLanes(
+  overrides: Partial<ProjectLanesView> = {},
+): ProjectLanesView {
+  return {
+    project: { id: "alpha", name: "Alpha" },
+    waves: [waveSummary()],
+    lanes: [laneRow()],
+    truncated: false,
     ...overrides,
   };
 }

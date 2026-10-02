@@ -1,0 +1,132 @@
+/*
+ * The project page's own rules: the wave strip, and the lane table it sits
+ * above. Colours come only from tokens.css, so both schemes read the same
+ * names, and the table takes the whole width the frame has rather than the
+ * reading measure the other views use — it is a table, and a table a reader
+ * has to scroll sideways is a table they cannot read.
+ */
+
+.view.project {
+  max-width: none;
+}
+
+.wave-strip ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 0 0 0.5rem;
+  padding: 0;
+}
+
+.wave-strip li {
+  align-items: baseline;
+  background: var(--bg-sink);
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  padding: 0.35rem 0.6rem;
+}
+
+.wave-strip a {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+
+/* The link after the list is a control, not a wave: it has to look like a link. */
+.wave-strip > a {
+  color: var(--blue);
+  font-family: inherit;
+  text-decoration: underline;
+}
+
+.wave-strip a[aria-current="page"] {
+  color: var(--amber);
+}
+
+.project .lanes {
+  border-collapse: collapse;
+  margin-top: 0.75rem;
+  width: 100%;
+}
+
+.project .lanes th {
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  padding: 0.4rem 0.5rem;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.project .lanes td {
+  border-bottom: 1px solid var(--line);
+  padding: 0.45rem 0.5rem;
+  vertical-align: top;
+}
+
+.project .lanes tr.current td {
+  background: var(--bg-raise);
+}
+
+.project .lanes td > * {
+  margin-right: 0.4rem;
+}
+
+.project .seat {
+  color: var(--muted);
+  display: block;
+  font-size: 0.8rem;
+  max-width: 28rem;
+  overflow-wrap: anywhere;
+}
+
+.project .in-wave {
+  color: var(--muted);
+  display: block;
+  font-size: 0.75rem;
+}
+
+.project .mismatch,
+.project .badge.reason {
+  color: var(--red);
+}
+
+.project .badge {
+  border: 1px solid currentcolor;
+  border-radius: 0.75rem;
+  font-size: 0.75rem;
+  padding: 0 0.45rem;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.project .disagreement {
+  overflow-wrap: anywhere;
+}
+
+.project .repo,
+.project .note-inline {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* The narrow layout in app.css lays every cell out as two columns, one for its
+   data-label and one for its contents. This lane's cells hold up to four
+   children each — a link, a seat, a mismatch, a stamp — which would wrap into
+   the label column, so below the same breakpoint a cell is its own block with
+   the label on its own line above it. */
+@media (max-width: 44rem) {
+  .project .lanes td {
+    display: block;
+  }
+
+  .project .lanes td::before {
+    display: block;
+  }
+}
