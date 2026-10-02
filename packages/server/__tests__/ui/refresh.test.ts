@@ -139,7 +139,7 @@ describe("the project list route", () => {
       "/api/v1/projects",
       "/api/v1/attention",
     ]);
-    expect(textsOf(root(), ".card-name")).toStrictEqual(["Alpha"]);
+    expect(textsOf(root(), ".project-card h3 a")).toStrictEqual(["Alpha"]);
     expect(timers.scheduled.map((entry) => entry.delayMs)).toStrictEqual([
       REFRESH_MS,
     ]);
@@ -152,7 +152,7 @@ describe("the project list route", () => {
     app.start();
     expect(textsOf(root(), ".empty")).toStrictEqual(["Loading…"]);
     await flush();
-    expect(textsOf(root(), ".card-name")).toStrictEqual(["Alpha"]);
+    expect(textsOf(root(), ".project-card h3 a")).toStrictEqual(["Alpha"]);
     app.stop();
   });
 
@@ -245,14 +245,20 @@ describe("the project list route", () => {
 
     app.start();
     await flush();
-    expect(textsOf(root(), ".card-name")).toStrictEqual(["Alpha", "Beta"]);
+    expect(textsOf(root(), ".project-card h3 a")).toStrictEqual([
+      "Alpha",
+      "Beta",
+    ]);
 
     second = true;
     timers.runLast();
     await flush();
 
     expect(timers.scheduled).toHaveLength(1);
-    expect(textsOf(root(), ".card-name")).toStrictEqual(["Alpha", "Beta"]);
+    expect(textsOf(root(), ".project-card h3 a")).toStrictEqual([
+      "Alpha",
+      "Beta",
+    ]);
     expect(textOf(root().querySelector(".note"))).toBe("offline, retrying");
     expect(unhandled).toStrictEqual([]);
     process.off("unhandledRejection", listener);
@@ -385,7 +391,7 @@ describe("the project list route", () => {
     await flush();
     broken = true;
     await app.refresh();
-    expect(textsOf(root(), ".card-name")).toStrictEqual(["Alpha"]);
+    expect(textsOf(root(), ".project-card h3 a")).toStrictEqual(["Alpha"]);
     expect(textOf(root().querySelector(".note"))).toBe("offline, retrying");
     expect(root().querySelector(".note")?.getAttribute("role")).toBe("status");
 
@@ -946,14 +952,14 @@ describe("the project route", () => {
     const { app, timers } = harness({ fetchImpl: flaky });
     app.start();
     await flush();
-    expect(textsOf(root(), ".card-name")).toStrictEqual(["Alpha"]);
+    expect(textsOf(root(), ".project-card h3 a")).toStrictEqual(["Alpha"]);
 
     second = true;
     timers.runLast();
     await flush();
 
     expect(timers.scheduled).toHaveLength(1);
-    expect(textsOf(root(), ".card-name")).toStrictEqual(["Alpha"]);
+    expect(textsOf(root(), ".project-card h3 a")).toStrictEqual(["Alpha"]);
     expect(textOf(root().querySelector(".note"))).toBe("offline, retrying");
     app.stop();
   });

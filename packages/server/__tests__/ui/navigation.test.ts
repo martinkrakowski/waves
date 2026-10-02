@@ -384,7 +384,10 @@ describe("the back button", () => {
 
     expect(browser.pushes).toStrictEqual(["/p/beta"]);
     expect(app.route).toStrictEqual({ kind: "projects" });
-    expect(textsOf(root(), ".card-name")).toStrictEqual(["Alpha", "Beta"]);
+    expect(textsOf(root(), ".project-card h3 a")).toStrictEqual([
+      "Alpha",
+      "Beta",
+    ]);
     app.stop();
   });
 });
