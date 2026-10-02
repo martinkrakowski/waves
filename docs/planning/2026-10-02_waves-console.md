@@ -204,7 +204,7 @@ K1 ──► K2 ──────────┐
 - **Scope.** `/api/v1/projects/<id>/lanes` as 4.3, with its query rule, its
   size test and its cache; the doc.
 - **Files.** As K1's server files. Nothing under `public/` or `__tests__/ui/`.
-- **Must not.** As K1. Send `log.tail`, `reported.detail` or more than the
+- **Must not.** As K1. Send the text of a log tail (the boolean of 4.3 is sent), `reported.detail` or more than the
   first disagreement in the list. Let any other read route start reading the
   query.
 
@@ -247,8 +247,9 @@ K1 ──► K2 ──────────┐
 
 ### K4-fleet-view (high), after K3
 
-- **Scope.** `views/fleet.js` and `fleet.css`: counters (projects, waves, lanes,
-  needing attention, stale projects), a card per project, the attention panel
+- **Scope.** `views/fleet.js` and `fleet.css`: five counters (projects, waves, lanes,
+  needing attention, stale projects; the mock's sixth, the age of the last
+  repository push, is not something the service knows), a card per project, the attention panel
   from `/api/v1/attention` with each row a link to its lane
   (`/p/<project>/w/<wave>?lane=<id>`), the rail's attention counters, and a
   line saying the list was cut when `truncated` is true. One line each for an
