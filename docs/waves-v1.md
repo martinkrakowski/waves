@@ -356,7 +356,7 @@ viewer token.
 
 ### 5.3 Headers, and no CORS
 
-Every response carries
+Every response this service writes carries
 `Content-Security-Policy: default-src 'none'; script-src 'self'; style-src
 'self'; connect-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none';
 frame-ancestors 'none'`, `X-Content-Type-Options: nosniff` and
@@ -420,7 +420,8 @@ registered registers it. Deleting a project removes its waves with it.
 `deleteProject`, `packages/server/src/infrastructure/file-store.ts:116-129`)
 
 **Authentication comes before the body.** Every step below is decided from the
-request line and the headers alone, in this order, and each refusal closes the
+request line, the headers and — for the two `429`s — what the server remembers
+of earlier failures and writes, never from the body. They run in this order, and each refusal closes the
 connection without reading the body
 (`packages/server/src/infrastructure/http-write.ts:436-527`):
 
@@ -471,6 +472,11 @@ it never sends a body to a refusal; a client that does not wait and is refused
 sees the connection reset mid-body (`continueIfExpected`,
 `packages/server/src/infrastructure/http-write.ts:233-242`; `SendOptions`,
 `packages/server/src/infrastructure/http-security.ts:47-66`).
+
+An `Expect` header with any other value never reaches this pipeline: Node
+answers it `417 Expectation Failed` itself, and that one answer carries none of
+the headers of section 5.3. No `checkExpectation` listener is registered
+(`packages/server/src/infrastructure/http-server.ts:260-282`).
 
 After the body:
 
