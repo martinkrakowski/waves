@@ -95,10 +95,14 @@ export default tseslint.config(
       globals: {
         document: "readonly",
         fetch: "readonly",
+        history: "readonly",
         location: "readonly",
+        navigator: "readonly",
         setTimeout: "readonly",
         clearTimeout: "readonly",
         URL: "readonly",
+        URLSearchParams: "readonly",
+        window: "readonly",
       },
     },
     rules: {
