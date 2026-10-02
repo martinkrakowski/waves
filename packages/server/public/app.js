@@ -87,6 +87,13 @@ export function createApp(deps) {
   let note = "";
   let selected = route.wave ?? "";
   let generation = 0;
+  /**
+   * The last project list the API gave us and the rail could show. It has its
+   * own place because the rail is on every route: a navigation is not a reason
+   * to stop knowing which projects exist, and a failed load is not a reason to
+   * forget them. Only a successful load moves it.
+   */
+  let railProjects;
   let timer = undefined;
   let inFlight = undefined;
   let stopped = false;
@@ -225,7 +232,7 @@ export function createApp(deps) {
       return;
     }
     root.replaceChildren(
-      shell({ route, projects: data?.projects, note }, body()),
+      shell({ route, projects: railProjects, note }, body()),
     );
   }
 
@@ -251,6 +258,9 @@ export function createApp(deps) {
         return false;
       }
       data = next;
+      if (next.projects !== undefined) {
+        railProjects = next.projects;
+      }
       note = "";
       draw();
     } catch {
@@ -317,15 +327,31 @@ export function createApp(deps) {
     generation += 1;
   }
 
+  /** Whether a route is another wave of the project already on screen. */
+  function sameProject(was, now) {
+    return (
+      was.kind === "project" && now.kind === "project" && was.id === now.id
+    );
+  }
+
   /**
    * Forgets what belonged to the route being left, so nothing stale is drawn,
    * and the note with it: a note about the page the reader has just left is not
    * a note about this one.
+   *
+   * Choosing another wave of the project already on screen changes nothing but
+   * the wave, so that project's wave list stays where it is while the new wave's
+   * lanes load. The rail's list is never cleared at all: it is the same for
+   * every route, and blanking it to "Loading…" on each click, and for ever on a
+   * route that fetches nothing, was a page that had lost the one thing it knew.
    */
   function reread() {
+    const was = route;
     read();
     note = "";
-    data = undefined;
+    if (!sameProject(was, route)) {
+      data = undefined;
+    }
     draw();
     void refreshOnce().then(schedule, schedule);
   }

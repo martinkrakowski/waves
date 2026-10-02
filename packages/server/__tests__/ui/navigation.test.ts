@@ -557,6 +557,66 @@ describe("choosing a wave", () => {
   });
 });
 
+describe("the rail across a navigation", () => {
+  it("keeps listing the projects while the next route loads", async () => {
+    const gate = holding(perProject, (path) => path.endsWith("/beta/waves"));
+    const { app } = harness({ pathname: "/", fetchImpl: gate });
+    app.start();
+    await flush();
+    expect(textsOf(root(), ".projects a")).toStrictEqual(["Alpha", "Beta"]);
+
+    app.navigate("/p/alpha");
+    // Synchronously: the rail has not gone back to saying it is loading.
+    expect(textsOf(root(), ".projects a")).toStrictEqual(["Alpha", "Beta"]);
+
+    gate.release();
+    await flush();
+    expect(textsOf(root(), ".projects a")).toStrictEqual(["Alpha", "Beta"]);
+    app.stop();
+  });
+
+  it("keeps the last good list on a route that fetches nothing, for ever", async () => {
+    const gate = holding(perProject, () => false);
+    const { app } = harness({ pathname: "/", fetchImpl: gate });
+    app.start();
+    await flush();
+    expect(textsOf(root(), ".projects a")).toStrictEqual(["Alpha", "Beta"]);
+    const before = gate.calls.length;
+
+    app.navigate("/nope");
+    expect(textsOf(root(), ".projects a")).toStrictEqual(["Alpha", "Beta"]);
+    await flush();
+
+    expect(gate.calls).toHaveLength(before);
+    expect(textsOf(root(), ".projects a")).toStrictEqual(["Alpha", "Beta"]);
+    expect(textsOf(root(), ".empty")).toStrictEqual(["No such page."]);
+    app.stop();
+  });
+
+  it("keeps the wave list on screen while the chosen wave's lanes load", async () => {
+    const gate = holding(perProject, (path) => path.endsWith("/waves/a-2"));
+    const { app } = harness({ pathname: "/p/alpha", fetchImpl: gate });
+    app.start();
+    await flush();
+    expect(textsOf(root(), ".wave code")).toStrictEqual(["a-3", "a-2"]);
+    expect(textsOf(root(), "tbody tr")).toHaveLength(2);
+
+    (root().querySelectorAll(".wave")[1] as HTMLElement).click();
+    // Synchronously: the wave list has not gone back to a bare placeholder.
+    expect(textsOf(root(), ".wave code")).toStrictEqual(["a-3", "a-2"]);
+
+    // Let the pass reach the held detail before releasing it.
+    await flush();
+    expect(gate.pending()).toBe(1);
+    gate.release();
+    await flush();
+
+    expect(textsOf(root(), ".wave.current code")).toStrictEqual(["a-2"]);
+    expect(textsOf(root(), "tbody tr")).toHaveLength(2);
+    app.stop();
+  });
+});
+
 describe("stopping", () => {
   it("removes the click listener and the popstate listener", async () => {
     const { app, browser } = harness({ pathname: "/" });
