@@ -138,27 +138,33 @@ the waves inside the window.
 
 - `waves` is the list the existing waves route answers, so the page needs no
   second request for the wave strip.
-- `lanes` covers retained waves only, or every wave with `?all=1`. At most
-  2 000 lanes, newest wave first, in each wave's own order; `truncated` says
-  when more matched.
+- `lanes` covers retained waves only, or every wave with `?all=1`. Newest wave
+  first, in each wave's own order, at most 2 000 lanes and under the other two
+  bounds of **Size** below; `truncated` says when more matched.
 - `derived.alive` is `"unknown"` for a stale wave, as in the wave view.
 - `log.tail` is a boolean: whether a tail was pushed. The text is not sent.
 - **The query string.** The read path strips the query before routing today and
-  every read route ignores it (`pathOf`, `http-routes.ts:78-81`). That stays
+  every read route ignores it (`pathOf`, `http-routes.ts:83-86`). That stays
   true everywhere except here: `respond()` hands this one handler the raw
   query, which must be empty or exactly `all=1`, else `400`
   `{"error":"bad query"}`. The check runs after the viewer-token step, so an
   unauthenticated request is still a `401`; `HEAD` gets the same answer; the
   access log keeps logging the path only.
-- **Size.** Without tails, details and disagreement lists, the largest legal
-  lane is about 1.3 KB, so the cap bounds the response near 2.6 MB. The test
-  builds 2 000 lanes of the largest legal size and asserts the response stays
-  under 3 MiB and carries no tail and no detail.
-- **Cost.** Wave heads, then `getSnapshot` for each retained wave. The read
-  model keeps each wave's computed rows in a map keyed by project, wave and
-  `receivedAt`, at most 256 entries, oldest dropped first, so a poll that finds
-  nothing new parses nothing. The read routes have no rate limit, which is why
-  both of these are stated.
+- **Size.** Three bounds, and a listing stops at whichever it reaches first: at
+  most 2 000 rows, at most about 2 MiB of rows, and at most 200 waves read per
+  request. `truncated` says when any of them left a matching row out, and a wave
+  whose head says it holds no lanes is never read. The byte bound is there because
+  the contract's field caps are in characters, not bytes: a lane at the cap
+  answers in 4.8 MB filled with `"`, 6.5 MB filled with `中` and 11.4 MB filled
+  with a lone surrogate over 2 000 lanes, so the byte bound answers 832, 627 and
+  360 of them instead. The test builds each of those three, asserts the response
+  stays under the byte bound, and asserts that no tail and no detail came with it.
+- **Cost.** Wave heads, then `getSnapshot` for each wave it lists, which is a wave
+  its head says has lanes and is within the per-request wave bound. The read model
+  keeps each wave's computed rows in a map keyed by project and wave, at most 512
+  waves and 10 000 rows, the entry used longest ago dropped first, so a poll that
+  finds nothing new parses nothing while the waves it polls fit in the map. The
+  read routes have no rate limit, which is why both of these are stated.
 - `404` for an unknown project. Guarded by the viewer token, `no-store`, `405`
   with `Allow: GET, HEAD` otherwise.
 

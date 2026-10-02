@@ -256,14 +256,14 @@ A wave goes stale when it has not been received for longer than
 The clock is always the server's, and the instant it uses is always the time the
 server **received** the snapshot — `receivedAt` — never the pusher's
 `generatedAt`. Every formula is fed `Date.parse(receivedAt)` and `now()` from
-the server (`createReadModel`, `packages/server/src/application/read-model.ts:400`,
-`472-662`; `Now`, `…/read-model.ts:25`). `generatedAt` is stored and echoed but
+the server (`createReadModel`, `packages/server/src/application/read-model.ts:480`,
+`564-779`; `Now`, `…/read-model.ts:25`). `generatedAt` is stored and echoed but
 no rule reads it.
 
 In the wave view, a stale wave keeps its lane data but a lane whose
 `derived.alive` is `true` is rendered as `"unknown"`, because the pusher has
 stopped telling the server whether the process is still up
-(`aliveView`, `…/read-model.ts:215-217`).
+(`aliveView`, `…/read-model.ts:243-245`).
 
 ## 5. HTTP API
 
@@ -342,15 +342,18 @@ same millisecond keep the order they were found in, and `truncated` says whether
 that cut anything. `projects` carries one entry per registered project, in the
 order the registry answers it, and `attention` counts that project's lanes
 **before** the cut — a project whose lanes the cap left out still says how many
-it wanted. The route reads the wave heads of every project and then the full
-snapshot of the waves still inside the window, and never `listSnapshots`
-(`listAttention`,
-`packages/server/src/application/read-model.ts:577-639`).
+it wanted. The route reads the wave heads of every project and then the lanes of
+the waves still inside the window, through the same cache the project listing
+uses, and never `listSnapshots`: a fleet of projects is answered from one wave
+each. A wave's staleness here is read from the snapshot it answered with — its
+own receive time and its own interval — so a push that lands between the heads and
+the snapshot is judged by the push (`listAttention`,
+`packages/server/src/application/read-model.ts:693-755`).
 
 (`route`, `packages/server/src/infrastructure/http-routes.ts:109`;
 `replyFor`, `readyReply`, `packages/server/src/infrastructure/http-server.ts:96-143`;
 `ProjectSummary`, `WaveSummary`, `WaveView`,
-`packages/server/src/application/read-model.ts:41-85`;
+`packages/server/src/application/read-model.ts:69-113`;
 `SnapshotHead`, `packages/server/src/application/ports/store.ts:8-13`)
 
 #### 5.1.1 `GET /api/v1/projects/<id>/lanes`
@@ -403,27 +406,55 @@ an unknown project is a `400` rather than a `404`. `HEAD` gets the same status a
 `GET` with no body (`queryOf`, `…/http-routes.ts:93-96`; `ALL_WAVES` and the
 check itself, `packages/server/src/infrastructure/http-server.ts:61`, `219-245`).
 
-**The cap and `truncated`.** At most 2 000 rows are answered, and the read stops
-there: once the cap is spent no further wave is read at all, because a wave head
-already carries how many lanes it holds. `truncated` is `true` when at least one
-matching row was not collected, whether it was left in the wave the cap was spent
-in or in any later wave (`MAX_PROJECT_LANES`,
-`packages/server/src/application/read-model.ts:30`).
+**The bounds and `truncated`.** A listing stops at whichever of three bounds it
+reaches first, and no further wave is read once one of them is spent — the wave
+heads carry the lane counts, so a wave that has lanes is known to hold rows that
+are not listed without reading it:
+
+- at most 2 000 rows (`MAX_PROJECT_LANES`);
+- at most about 2 MiB of rows (`MAX_PROJECT_LANES_BYTES`, 2 097 152 bytes) — a
+  row's cost is the JSON of the row itself plus 256 bytes
+  (`ROW_OVERHEAD_BYTES`) for the wave id, the reasons and the `alive` value the
+  request settles. The first row is always answered, whatever it costs;
+- at most 200 waves read per request (`MAX_WAVES_PER_READ`), which is what
+  `all = true` is bounded by: nothing deletes a wave past the retention, so a
+  project that has pushed one wave every ten minutes for a year holds thousands.
+  A wave whose head says it holds no lanes is never read at all.
+
+`truncated` is `true` when at least one matching row was not collected, whether
+it was left in the wave a bound was spent in or in any later wave the heads say
+has lanes (`MAX_PROJECT_LANES`, `MAX_PROJECT_LANES_BYTES`,
+`ROW_OVERHEAD_BYTES`, `MAX_WAVES_PER_READ`,
+`packages/server/src/application/read-model.ts:30`, `41`, `48`, `57`; `listLanes`,
+`…/read-model.ts:611-684`).
 
 **Cost and size.** The route reads the project's wave heads and then the full
 snapshot of each wave it lists, and never `listSnapshots`. The read model keeps
 each wave's computed rows in a map keyed by project and wave, and an entry is a
 hit while the wave's head still describes the wave it was built from — the same
 `receivedAt` **and** the same number of lanes, so a push inside one millisecond
-is not mistaken for the wave that is already there. The map holds at most 64
-waves and at most 10 000 rows, dropping the oldest-inserted entry while either is
-exceeded, so a ten-second poll that finds nothing new parses nothing. Nothing
-time-dependent is kept, so the staleness of a wave is resolved per request and
-never cached. Without tails, details and disagreement lists the largest lane
-`waves/v1` allows measures about 1.6 KB, so the 2 000 rows of the cap answer in
-about 3.2 MB — 3 190 058 bytes in the size test, which holds the response under
-four mebibytes (`MAX_CACHED_WAVES`, `MAX_CACHED_ROWS`, `listLanes`,
-`packages/server/src/application/read-model.ts:32-39`, `520-568`).
+is not mistaken for the wave that is already there. Reading a wave is a use of
+it, so an entry that is answered moves to the newest position. The map holds at
+most 512 waves and at most 10 000 rows, dropping the entry used longest ago while
+either is exceeded; the row count is what bounds memory. A poll that finds nothing
+new therefore parses nothing while the waves it polls fit in the map, and a poll
+of more than 512 waves reads the ones it did not hold. Nothing time-dependent is
+kept, so the staleness of a wave is resolved per request and never cached.
+
+**Why the bound is in bytes.** The contract's caps on `seat`, `planReview`,
+`risk` and every disagreement are in **characters**, and it refuses only control
+characters, so a lane of non-ASCII text at the cap is several times larger in
+bytes than a lane of ASCII at the same length: a `"` is two bytes once JSON has
+escaped it, a CJK ideograph is three, and a lone surrogate — which is not a
+control character — is six, written as `\udXXX`. Measured on the 2 000-lane cap
+with every string of a lane at its cap, the same lane answers in 4.8 MB filled
+with `"`, 6.5 MB filled with `中` and 11.4 MB filled with a lone surrogate; the
+byte bound answers 832, 627 and 360 rows of the 2 000 instead, in about 2.0 MB
+each. Each row's cost is measured once, when its cache entry is built, by
+`utf8Length` over the row's own JSON (`utf8Length`, `opensPairAt`,
+`packages/server/src/application/read-model.ts:343-383`; the cache bounds,
+`MAX_CACHED_WAVES`, `MAX_CACHED_ROWS`, `remember`, `cachedWave`,
+`…/read-model.ts:66-67`, `511-561`).
 
 `404` `{"error":"not found"}` for an unknown project, as on the other project
 routes, and `405` with `Allow: GET, HEAD` for any other method.
