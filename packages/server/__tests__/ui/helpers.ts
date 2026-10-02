@@ -22,6 +22,7 @@ export const ALLOWED_TAGS: ReadonlySet<string> = new Set([
   "DIV",
   "DL",
   "DT",
+  "FOOTER",
   "H1",
   "H2",
   "H3",

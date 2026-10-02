@@ -279,8 +279,7 @@
   margin-left: auto;
 }
 
-/* One column below the width the shell drops its rail at, so the panels reflow at
-   the same moment the frame does. */
+/* One column below 1080px, where the panels stop fitting side by side. */
 @media (max-width: 1080px) {
   .split {
     grid-template-columns: minmax(0, 1fr);

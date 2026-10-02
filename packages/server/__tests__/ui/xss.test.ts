@@ -84,7 +84,7 @@ function expectVerbatim(
 }
 
 /**
- * Boots the app on the fleet route over the given projects, so the rail and the
+ * Boots the app on the fleet route over the given projects, so the menu and the
  * card draw the same strings and the whole chain is walked, not one view. The
  * attention view is a parameter because a payload in one of its ids has to
  * reach the app as a failed load, not as a page.
@@ -215,7 +215,7 @@ function brokenListing(field: string, payload: string): unknown {
 }
 
 /**
- * Boots the app on a project route over the given listing, so the rail and the
+ * Boots the app on a project route over the given listing, so the menu and the
  * page draw the same strings and the whole chain is walked, not one view. The
  * listing is a parameter because a payload in one of its ids has to reach the
  * app as a failed load, not as a page.
@@ -477,16 +477,16 @@ describe("the project page against stored markup", () => {
 
 /**
  * How many times a payload name reaches the document text on the fleet route:
- * once as the rail link's own text, and once as the card's link text. The card
+ * once as the menu link's own text, and once as the card's link text. The card
  * also shows the id, the wave count and the last push, none of which carry it.
  */
-const RAIL_AND_CARD_OCCURRENCES = 2;
+const MENU_AND_CARD_OCCURRENCES = 2;
 
-/** And with the payload in the id: the rail skips it, the card shows it once. */
+/** And with the payload in the id: the menu skips it, the card shows it once. */
 const CARD_ONLY_OCCURRENCES = 1;
 
-describe("the rail against stored markup", () => {
-  it("renders a project's name as text in the rail and in the card", async () => {
+describe("the menu against stored markup", () => {
+  it("renders a project's name as text in the menu and in the card", async () => {
     for (const payload of TEXT_PAYLOADS) {
       const app = await bootFleet([projectCard({ name: payload })]);
       assertNoInjectedMarkup();
@@ -496,19 +496,19 @@ describe("the rail against stored markup", () => {
       expect(root().querySelector(".projects a")?.getAttribute("href")).toBe(
         "/p/alpha",
       );
-      expectVerbatim(payload, RAIL_AND_CARD_OCCURRENCES, 0);
+      expectVerbatim(payload, MENU_AND_CARD_OCCURRENCES, 0);
       app.stop();
     }
   });
 
-  it("keeps a payload project id out of the rail and out of every attribute", async () => {
+  it("keeps a payload project id out of the menu and out of every attribute", async () => {
     for (const payload of TEXT_PAYLOADS) {
       const app = await bootFleet([
         projectCard({ id: payload, name: "Alpha" }),
       ]);
       assertNoInjectedMarkup();
       expect(root().querySelectorAll(".projects")).toHaveLength(0);
-      expect(textsOf(root(), ".rail-nav p")).toStrictEqual([
+      expect(textsOf(root(), ".menu-list p")).toStrictEqual([
         "No projects registered yet.",
       ]);
       for (const value of attributeValues()) {
@@ -529,6 +529,7 @@ describe("the rail against stored markup", () => {
             projects: [projectCard({ name: payload })],
             attention: undefined,
             all: false,
+            menuOpen: false,
             note: "",
           },
           el("p", { text: "the page" }),

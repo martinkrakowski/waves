@@ -72,6 +72,7 @@ export function createApp(deps) {
   let query = parseQuery(location.search);
   let data = undefined;
   let note = "";
+  let menuOpen = false;
   let generation = 0;
   /**
    * The last project list the API gave us and the rail could show. It has its
@@ -92,8 +93,8 @@ export function createApp(deps) {
   let stopped = false;
 
   /**
-   * The project list, which the rail draws on every route and the fleet page
-   * draws as its body. A response the rail cannot show is a failed load, not an
+   * The project list, which the menu lists on every route and the fleet page
+   * draws as its body. A response the menu cannot show is a failed load, not an
    * empty registry.
    */
   async function loadProjects() {
@@ -105,7 +106,7 @@ export function createApp(deps) {
   }
 
   /**
-   * What every project's lanes are asking for, which the rail counts and the
+   * What every project's lanes are asking for, which the menu counts and the
    * fleet page lists. A 404 is a failed load, not an empty answer: the route is
    * not optional, and a page whose counters silently became zero would be
    * claiming nothing is wrong.
@@ -136,8 +137,8 @@ export function createApp(deps) {
     const asked = query;
     const mine = generation;
     if (at.kind === "unknown") {
-      // Not a page of ours, but the rail is: the reader still has to be able to
-      // get to a project from here, and the rail's two lists are the whole of
+      // Not a page of ours, but the menu is: the reader still has to be able to
+      // get to a project from here, and the menu's two lists are the whole of
       // what the route has to know.
       const [projects, attention] = await Promise.all([
         loadProjects(),
@@ -159,7 +160,7 @@ export function createApp(deps) {
       return { kind: "projects", projects, attention };
     }
     // Three calls in one Promise.all, in the order the page needs them: the
-    // rail's two, then every lane of every wave of the project the route names.
+    // menu's two, then every lane of every wave of the project the route names.
     // A project page is one request: the wave strip and the lane table are two
     // views of the same answer, and a second request would be a second chance
     // for the two to disagree.
@@ -186,7 +187,7 @@ export function createApp(deps) {
   function body() {
     if (route.kind === "unknown") {
       // A path that is not a page is not one whatever the load says, so it is
-      // said at once and stays said while the rail's data loads or fails.
+      // said at once and stays said while the menu's data loads or fails.
       return el("p", { attrs: { class: "empty" }, text: "No such page." });
     }
     if (data === undefined) {
@@ -258,7 +259,7 @@ export function createApp(deps) {
   /**
    * The link the reader's focus is on — its address, and which of the links
    * with that address it is — so a redraw can put them back on the same one.
-   * Several links share an address (the rail and a card both lead to a project),
+   * Several links share an address (the menu and a card both lead to a project),
    * and landing on the first of them would pull a reader out of the list they
    * were working down. `draw()` replaces every node, which on the ten-second
    * refresh would otherwise take the focus with it and drop a keyboard reader
@@ -334,6 +335,7 @@ export function createApp(deps) {
           projects: railProjects,
           attention: railAttention,
           all: query.all,
+          menuOpen,
           note,
         },
         body(),
@@ -363,7 +365,7 @@ export function createApp(deps) {
         return false;
       }
       data = next;
-      // Every pass that answered carries both of the rail's lists, on every
+      // Every pass that answered carries both of the menu's lists, on every
       // route, so this is where they move and nowhere else: a navigation keeps
       // them and a failed load never reaches this line, so neither can clear
       // what the reader can already see.
@@ -454,15 +456,16 @@ export function createApp(deps) {
    * In every other case the route or the listing is not the one on screen, so
    * what belonged to the route being left is forgotten, the note with it — a
    * note about the page the reader has just left is not a note about this one —
-   * and a pass is started. The rail's list is never cleared at all: it is the
-   * same for every route, and blanking it to "Loading…" on each click, and for
-   * ever on a route that fetches nothing, was a page that had lost the one thing
-   * it knew.
+   * and a pass is started. The menu's list is never cleared at all, and the menu
+   * is shut on every navigation: it is the same for every route, and blanking it
+   * to "Loading…" on each click, and for ever on a route that fetches nothing,
+   * was a page that had lost the one thing it knew.
    */
   function reread() {
     const was = route;
     const wasAll = query.all;
     read();
+    menuOpen = false;
     if (data !== undefined && sameProject(was, route) && wasAll === query.all) {
       draw();
       return;
@@ -508,6 +511,11 @@ export function createApp(deps) {
    * A plain primary click on one of the app's own links is this page's
    * navigation; every other click is the browser's. A modified click still
    * opens a tab, and a repository link still leaves the page.
+   *
+   * A click outside the menu closes it, whatever the click was for: a menu left
+   * open under a click elsewhere would go on covering the page the reader is
+   * reaching for. The redraw comes first and the click carries on into the logic
+   * below, so a link outside the menu still navigates.
    */
   function onClick(event) {
     if (event.defaultPrevented || event.button !== 0) {
@@ -519,6 +527,10 @@ export function createApp(deps) {
     const node = event.target;
     if (node === null || node.nodeType !== 1) {
       return;
+    }
+    if (menuOpen && node.closest("details.menu") === null) {
+      menuOpen = false;
+      draw();
     }
     const anchor = node.closest("a");
     if (anchor === null || anchor.getAttribute("data-key") !== "nav") {
@@ -570,15 +582,49 @@ export function createApp(deps) {
     box.focus();
   }
 
+  /**
+   * The reader opened or closed the projects menu themselves, and the state has
+   * to follow them: `draw()` reads nothing from the document, so a redraw on the
+   * ten-second pass would otherwise shut a menu the reader is reading.
+   *
+   * `toggle` does not bubble, so it is taken in the capture phase, and only the
+   * shell's own menu is heard: another `details` on the page is not this menu.
+   * Nothing is drawn here — a native control has already moved itself, and the
+   * next draw says the same thing.
+   */
+  function onToggle(event) {
+    const node = event.target;
+    if (node.tagName === "DETAILS" && node.getAttribute("class") === "menu") {
+      menuOpen = node.open;
+    }
+  }
+
+  /**
+   * Escape closes the projects menu and puts the focus back on its summary: a
+   * menu shut from the keyboard has to leave the reader where they can Tab on
+   * from it, and the summary is where they were when they opened it. It is a
+   * listener of its own because it is about the frame the reader is in, while
+   * `onKey` is about the page under it.
+   */
+  function onMenuKey(event) {
+    if (event.key === "Escape" && menuOpen) {
+      menuOpen = false;
+      draw();
+      controlWith("menu")?.focus();
+    }
+  }
+
   function start() {
     stopped = false;
     read();
     generation += 1;
     doc.addEventListener("visibilitychange", onVisibility);
     doc.addEventListener("keydown", onKey);
+    doc.addEventListener("keydown", onMenuKey);
     win.addEventListener("popstate", onPopState);
     if (root !== null) {
       root.addEventListener("click", onClick);
+      root.addEventListener("toggle", onToggle, true);
     }
     draw();
     void refreshOnce().then(schedule, schedule);
@@ -592,9 +638,11 @@ export function createApp(deps) {
     }
     doc.removeEventListener("visibilitychange", onVisibility);
     doc.removeEventListener("keydown", onKey);
+    doc.removeEventListener("keydown", onMenuKey);
     win.removeEventListener("popstate", onPopState);
     if (root !== null) {
       root.removeEventListener("click", onClick);
+      root.removeEventListener("toggle", onToggle, true);
     }
   }
 

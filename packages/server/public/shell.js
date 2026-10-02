@@ -3,10 +3,11 @@ import { waveCountText } from "./format.js";
 import { isProjectId } from "./patterns.js";
 
 /**
- * The frame around whatever a view drew: a rail of projects, a top bar holding
- * the breadcrumb and the note, and the page itself. Every node here is built by
- * `dom.js`, and every project field has already passed the shape check, so a
- * name a pusher chose reaches the document as text and as nothing else.
+ * The frame around whatever a view drew: a top bar holding the breadcrumb and
+ * the projects menu, the page itself, and a footer bar for what the page has to
+ * say out loud. Every node here is built by `dom.js`, and every project field
+ * has already passed the shape check, so a name a pusher chose reaches the
+ * document as text and as nothing else.
  */
 
 const BRAND = "waves";
@@ -93,9 +94,9 @@ function attentionSuffix(attention, id) {
 }
 
 /**
- * One project in the rail: its name as the link to its page, and its wave count
+ * One project in the menu: its name as the link to its page, and its wave count
  * beneath, with what is asking for attention beside that. An id that is not one
- * the app owns is not linked to at all, because the rail is where every
+ * the app owns is not linked to at all, because the menu is where every
  * registered project is listed and a path there that leads nowhere is a dead end
  * the reader can see and not follow.
  */
@@ -116,11 +117,16 @@ function projectItem(project, current, attention, all) {
   });
 }
 
+/** The projects the app owns a path for, in the order the API gave them. */
+function keptProjects(projects) {
+  return projects.filter((project) => isProjectId(project.id));
+}
+
 function projectList(projects, route, attention, all) {
   if (projects === undefined) {
     return [el("p", { text: LOADING })];
   }
-  const kept = projects.filter((project) => isProjectId(project.id));
+  const kept = keptProjects(projects);
   if (kept.length === 0) {
     return [el("p", { text: NO_PROJECTS })];
   }
@@ -135,35 +141,43 @@ function projectList(projects, route, attention, all) {
   ];
 }
 
-function rail(model) {
-  return el("aside", {
-    attrs: { class: "rail" },
+/** What the summary says: the word alone until the first answer, then a count. */
+function menuLabel(projects) {
+  if (projects === undefined) {
+    return "Projects";
+  }
+  return `Projects (${keptProjects(projects).length})`;
+}
+
+/**
+ * The projects, in the top bar: a native `details`, so Enter and Space open it
+ * with no script at all, and the summary counts what is actually in the list.
+ *
+ * `open` is a property and not an attribute, so it is set here on the element
+ * `el()` returned rather than through `dom.js`'s table — that table is the way
+ * in for a name, and this shell never varies one.
+ */
+function menu(model) {
+  const details = el("details", {
+    attrs: { class: "menu" },
     children: [
-      el("div", {
-        attrs: { class: "brand" },
-        children: [
-          internalLink(BRAND, "/"),
-          el("small", { text: "read-only" }),
-        ],
+      el("summary", {
+        attrs: { "data-key": "menu" },
+        text: menuLabel(model.projects),
       }),
       el("nav", {
-        attrs: { class: "rail-nav", "aria-label": "Projects" },
-        children: [
-          el("h2", { text: "Projects" }),
-          ...projectList(
-            model.projects,
-            model.route,
-            model.attention,
-            model.all,
-          ),
-        ],
-      }),
-      el("div", {
-        attrs: { class: "legend" },
-        children: LEGEND.map((line) => el("p", { text: line })),
+        attrs: { class: "menu-list", "aria-label": "Projects" },
+        children: projectList(
+          model.projects,
+          model.route,
+          model.attention,
+          model.all,
+        ),
       }),
     ],
   });
+  details.open = model.menuOpen;
+  return details;
 }
 
 /**
@@ -183,11 +197,25 @@ function status(note) {
   });
 }
 
+/** The bar below the page: the note, the mode this build runs in, and the words. */
+function footbar(model) {
+  return el("footer", {
+    attrs: { class: "footbar" },
+    children: [
+      status(model.note),
+      el("small", { attrs: { class: "mode" }, text: "read-only" }),
+      el("div", {
+        attrs: { class: "legend" },
+        children: LEGEND.map((line) => el("p", { text: line })),
+      }),
+    ],
+  });
+}
+
 export function shell(model, body) {
   return el("div", {
     attrs: { class: "app" },
     children: [
-      rail(model),
       el("header", {
         attrs: { class: "topbar" },
         children: [
@@ -195,10 +223,11 @@ export function shell(model, body) {
             attrs: { class: "crumbs", "aria-label": "Breadcrumb" },
             children: breadcrumb(model.route, model.all),
           }),
-          status(model.note),
+          menu(model),
         ],
       }),
       el("main", { attrs: { class: "page" }, children: [body] }),
+      footbar(model),
     ],
   });
 }

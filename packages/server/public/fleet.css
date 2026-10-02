@@ -155,8 +155,7 @@
   overflow-wrap: anywhere;
 }
 
-/* One column below the width the shell drops its rail at: the same breakpoint,
-   so the page reflows at the same moment the frame does. */
+/* One column below 1080px, where two columns of cards stop fitting. */
 @media (max-width: 1080px) {
   .fleet-grid {
     grid-template-columns: minmax(0, 1fr);

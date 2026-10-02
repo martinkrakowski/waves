@@ -13,6 +13,8 @@ export interface ShellModel {
    * draws to a project carries it, so leaving the page does not quietly drop it.
    */
   readonly all: boolean;
+  /** Whether the reader has the projects menu open; it is drawn closed otherwise. */
+  readonly menuOpen: boolean;
   /** "" or the offline note. */
   readonly note: string;
 }
