@@ -13,7 +13,6 @@ export const REFRESH_MS = 10_000;
 
 const ROOT_ID = "root";
 const PROJECT_PREFIX = "/p/";
-const WAVE_SEGMENT = "/w/";
 const OFFLINE_NOTE = "offline, retrying";
 const LOADING = "Loading…";
 
@@ -42,21 +41,6 @@ export function routeOf(pathname) {
   }
   const wave = parts[3];
   return isWaveId(wave) ? { kind: "project", id, wave } : { kind: "unknown" };
-}
-
-/**
- * The path a route is drawn at. A valid id needs no encoding, so the
- * `encodeURIComponent` only matters to a hand-built route, and the fleet is the
- * path for anything that is not a project.
- */
-export function pathOf(route) {
-  if (route.kind !== "project") {
-    return "/";
-  }
-  const project = `${PROJECT_PREFIX}${encodeURIComponent(route.id)}`;
-  return route.wave === undefined
-    ? project
-    : `${project}${WAVE_SEGMENT}${encodeURIComponent(route.wave)}`;
 }
 
 /** Only same-origin absolute paths: no scheme, and no protocol-relative form. */
@@ -215,8 +199,6 @@ export function createApp(deps) {
       );
     }
     if (data.kind === "project") {
-      // No handlers: every control this view draws is a link, and the app
-      // follows its own links in place.
       return renderProject(
         { lanes: data.lanes, wave: route.wave, query },
         clock(),
@@ -368,14 +350,14 @@ export function createApp(deps) {
   }
 
   /**
-   * Where the browser is now, and what the view asked for, read from it. Every
-   * read starts a new generation, so a pass already in flight knows at once that
-   * it is answering a page the reader has left.
+   * Where the browser is now, and what the view asked for, read from it.
+   * Reading it starts no generation: only a pass that is about to be asked for
+   * needs one, and a change of what is drawn — a wave, a filter, a lane — asks
+   * for nothing new.
    */
   function read() {
     route = routeOf(location.pathname);
     query = parseQuery(location.search);
-    generation += 1;
   }
 
   /** Whether a route is another wave of the project already on screen. */
@@ -386,21 +368,33 @@ export function createApp(deps) {
   }
 
   /**
-   * Forgets what belonged to the route being left, so nothing stale is drawn,
-   * and the note with it: a note about the page the reader has just left is not
-   * a note about this one.
+   * Reads the address again and draws what it now says.
    *
-   * Another wave of the project already on screen is the same project, so its
-   * lanes stay where they are while the pass for the new wave runs: the table a
-   * reader is working down does not vanish under them because they followed a
-   * link. The rail's list is never cleared at all: it is the same for every
-   * route, and blanking it to "Loading…" on each click, and for ever on a route
-   * that fetches nothing, was a page that had lost the one thing it knew.
+   * What a pass requests depends on the route's kind, its id and `all` — and on
+   * nothing else. So when all three are the same as they were and the answer is
+   * already held, the reader chose another wave, another filter or another lane
+   * of the same listing, and the page is redrawn from the data in hand: no
+   * request, no new generation, and no note cleared. A page that is offline
+   * stays marked offline through a filter, because no pass follows to say
+   * otherwise; the next one will.
+   *
+   * In every other case the route or the listing is not the one on screen, so
+   * what belonged to the route being left is forgotten, the note with it — a
+   * note about the page the reader has just left is not a note about this one —
+   * and a pass is started. The rail's list is never cleared at all: it is the
+   * same for every route, and blanking it to "Loading…" on each click, and for
+   * ever on a route that fetches nothing, was a page that had lost the one thing
+   * it knew.
    */
   function reread() {
     const was = route;
     const wasAll = query.all;
     read();
+    if (data !== undefined && sameProject(was, route) && wasAll === query.all) {
+      draw();
+      return;
+    }
+    generation += 1;
     note = "";
     // The lanes on screen were asked for under one `all`. Under the other they
     // are a different list, so they are not kept: a table of retained waves
@@ -412,7 +406,12 @@ export function createApp(deps) {
     void refreshOnce().then(schedule, schedule);
   }
 
-  function navigate(url) {
+  /**
+   * The page's own navigation, in place: a `push` so the reader can come back,
+   * or a `replace` for an address that changes as it is typed, which would
+   * otherwise put one entry per keystroke in front of the reader's back button.
+   */
+  function navigate(url, options = {}) {
     const path = ownPath(url);
     if (path === undefined) {
       return;
@@ -420,7 +419,11 @@ export function createApp(deps) {
     if (path === `${location.pathname}${location.search}`) {
       return;
     }
-    history.pushState(null, "", path);
+    if (options.replace === true) {
+      history.replaceState(null, "", path);
+    } else {
+      history.pushState(null, "", path);
+    }
     reread();
   }
 
@@ -469,6 +472,7 @@ export function createApp(deps) {
   function start() {
     stopped = false;
     read();
+    generation += 1;
     doc.addEventListener("visibilitychange", onVisibility);
     win.addEventListener("popstate", onPopState);
     if (root !== null) {

@@ -90,23 +90,6 @@ function lanesAskedFor(calls: readonly string[]): string[] {
   return calls.filter((path) => /\/lanes/.test(path));
 }
 
-/**
- * A fetch that holds the SECOND listing request and answers every other one, so
- * a test can start on a page that has drawn, move, and be holding the pass for
- * the route it moved to.
- */
-function holdingSecondListing(handler: (path: string) => Answer): GatedFetch {
-  let seen = 0;
-  return gatedFetch((path) => {
-    const answer = handler(path);
-    if (!/\/lanes/.test(path)) {
-      return { ...answer, hold: false };
-    }
-    seen += 1;
-    return { ...answer, hold: seen === 2 };
-  });
-}
-
 /** The rail's list, and one project's lanes, whichever route the test is on. */
 function answering(...projects: unknown[]): (path: string) => Answer {
   const waves = ["w-3", "w-2", "w-1"];
@@ -148,6 +131,7 @@ function harness(options: {
 }): {
   readonly app: ReturnType<typeof createApp>;
   readonly browser: ReturnType<typeof browserGlobals>;
+  readonly timers: ReturnType<typeof timerStub>;
 } {
   freshRoot();
   const timers = timerStub();
@@ -162,7 +146,7 @@ function harness(options: {
     clearTimer: timers.clearTimer,
     clock: () => Date.parse("2026-04-01T12:00:00.000Z"),
   } satisfies AppGlobals);
-  return { app, browser };
+  return { app, browser, timers };
 }
 
 /**
@@ -378,6 +362,23 @@ describe("navigate", () => {
 
     expect(browser.pushes).toStrictEqual(["/p/beta?all=1"]);
     expect(app.route).toStrictEqual({ kind: "project", id: "beta" });
+    app.stop();
+  });
+
+  it("writes the address over itself when it is told to replace it", async () => {
+    const { app, browser } = harness({ pathname: "/p/alpha" });
+    app.start();
+    await flush();
+
+    app.navigate("/p/alpha?q=s1", { replace: true });
+    await flush();
+
+    // One entry per keystroke would be one entry per letter of every word a
+    // reader ever searched for, between the page they came from and the page
+    // they are on.
+    expect(browser.replaces).toStrictEqual(["/p/alpha?q=s1"]);
+    expect(browser.pushes).toStrictEqual([]);
+    expect(browser.location.search).toBe("?q=s1");
     app.stop();
   });
 });
@@ -697,6 +698,43 @@ describe("choosing a wave", () => {
   });
 });
 
+describe("what a change of the address asks for", () => {
+  it("asks again for the waves past retention, which are other lanes", async () => {
+    const fetchImpl = fetchStub(answering(projectCard()));
+    const { app, browser } = harness({ pathname: "/p/alpha", fetchImpl });
+    app.start();
+    await flush();
+    fetchImpl.calls.length = 0;
+
+    (root().querySelector(".wave-strip > a") as HTMLElement).click();
+    expect(browser.pushes).toStrictEqual(["/p/alpha?all=1"]);
+
+    await flush();
+    expect(lanesAskedFor(fetchImpl.calls)).toStrictEqual([
+      "/api/v1/projects/alpha/lanes?all=1",
+    ]);
+    app.stop();
+  });
+
+  it("asks again for another project, which is another listing", async () => {
+    const fetchImpl = fetchStub(perProject);
+    const { app } = harness({ pathname: "/p/alpha", fetchImpl });
+    app.start();
+    await flush();
+    fetchImpl.calls.length = 0;
+
+    app.navigate("/p/beta");
+    expect(textsOf(root(), ".empty")).toStrictEqual(["Loading…"]);
+
+    await flush();
+    expect(lanesAskedFor(fetchImpl.calls)).toStrictEqual([
+      "/api/v1/projects/beta/lanes",
+    ]);
+    expect(textsOf(root(), "tbody tr")).toHaveLength(2);
+    app.stop();
+  });
+});
+
 describe("the rail across a navigation", () => {
   it("keeps listing the projects while the next route loads", async () => {
     const gate = holding(perProject, (path) => path.endsWith("/alpha/lanes"));
@@ -738,9 +776,9 @@ describe("the rail across a navigation", () => {
     app.stop();
   });
 
-  it("keeps the table on screen while the next wave's pass runs", async () => {
-    const gate = holdingSecondListing(perProject);
-    const { app, browser } = harness({ pathname: "/p/alpha", fetchImpl: gate });
+  it("narrows to the wave the reader picks, and asks for nothing", async () => {
+    const fetchImpl = fetchStub(perProject);
+    const { app, browser } = harness({ pathname: "/p/alpha", fetchImpl });
     app.start();
     await flush();
     expect(textsOf(root(), ".wave-strip li a")).toStrictEqual([
@@ -749,44 +787,24 @@ describe("the rail across a navigation", () => {
       "a-2",
     ]);
     expect(textsOf(root(), "tbody tr")).toHaveLength(2);
-    // Exactly one listing request so far: the project's own page.
-    expect(lanesAskedFor(gate.calls)).toStrictEqual([
-      "/api/v1/projects/alpha/lanes",
-    ]);
+    fetchImpl.calls.length = 0;
 
-    // The second listing request is held, so the pass for the wave the reader
-    // picks has started and has not answered.
     (root().querySelectorAll(".wave-strip li a")[2] as HTMLElement).click();
-    // Synchronously: another wave of the same project changes nothing about the
-    // project's lanes, so the table is still there — narrowed to the wave being
-    // read, because the same answer holds it — and never a bare "Loading…".
-    expect(textsOf(root(), ".wave-strip li a")).toStrictEqual([
-      "all lanes",
-      "a-3",
-      "a-2",
-    ]);
+    // Synchronously: what a pass requests depends on the project and on `all`,
+    // and a wave is neither — so the table is narrowed from the answer already
+    // held, and never replaced by a bare "Loading…".
+    expect(browser.pushes).toStrictEqual(["/p/alpha/w/a-2"]);
+    expect(fetchImpl.calls).toStrictEqual([]);
     expect(textsOf(root(), '.wave-strip a[aria-current="page"]')).toStrictEqual(
       ["a-2"],
     );
     expect(textsOf(root(), "tbody tr")).toHaveLength(1);
     expect(root().querySelectorAll(".note")).toHaveLength(0);
-    expect(browser.pushes).toStrictEqual(["/p/alpha/w/a-2"]);
 
-    // Let the pass reach the held listing before releasing it.
+    // And no pass is started behind it either: there is nothing to ask for.
     await flush();
-    expect(gate.pending()).toBe(1);
-    gate.release();
-    await flush();
-
-    expect(textsOf(root(), '.wave-strip a[aria-current="page"]')).toStrictEqual(
-      ["a-2"],
-    );
+    expect(fetchImpl.calls).toStrictEqual([]);
     expect(textsOf(root(), "tbody tr")).toHaveLength(1);
-    // One new pass, and one request for it.
-    expect(lanesAskedFor(gate.calls)).toStrictEqual([
-      "/api/v1/projects/alpha/lanes",
-      "/api/v1/projects/alpha/lanes",
-    ]);
     app.stop();
   });
 });

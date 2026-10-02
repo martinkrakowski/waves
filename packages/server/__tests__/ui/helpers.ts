@@ -286,6 +286,7 @@ export interface BrowserGlobals {
   readonly location: { pathname: string; search: string };
   readonly history: {
     pushState(data: unknown, unused: string, url: string): void;
+    replaceState(data: unknown, unused: string, url: string): void;
   };
   readonly win: {
     addEventListener(type: "popstate", listener: () => void): void;
@@ -293,6 +294,8 @@ export interface BrowserGlobals {
   };
   /** Every URL a `pushState` was given, in order. */
   readonly pushes: string[];
+  /** Every URL a `replaceState` was given, in order. */
+  readonly replaces: string[];
   /** How many `popstate` listeners the app has attached. */
   readonly popstates: number;
   popstate(): void;
@@ -306,13 +309,21 @@ export interface BrowserGlobals {
 export function browserGlobals(pathname = "/", search = ""): BrowserGlobals {
   const location = { pathname, search };
   const pushes: string[] = [];
+  const replaces: string[] = [];
   const listeners: (() => void)[] = [];
+  const move = (url: string): void => {
+    const target = new URL(url, "http://test");
+    location.pathname = target.pathname;
+    location.search = target.search;
+  };
   const history = {
     pushState: (_data: unknown, _unused: string, url: string): void => {
       pushes.push(url);
-      const target = new URL(url, "http://test");
-      location.pathname = target.pathname;
-      location.search = target.search;
+      move(url);
+    },
+    replaceState: (_data: unknown, _unused: string, url: string): void => {
+      replaces.push(url);
+      move(url);
     },
   };
   const win = {
@@ -333,6 +344,7 @@ export function browserGlobals(pathname = "/", search = ""): BrowserGlobals {
     history,
     win,
     pushes,
+    replaces,
     get popstates() {
       return listeners.length;
     },

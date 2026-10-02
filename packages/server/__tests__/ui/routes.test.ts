@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { pathOf, routeOf } from "../../public/app.js";
+import { routeOf } from "../../public/app.js";
+import { pathFor } from "../../public/views/project.js";
 
 describe("routeOf", () => {
   it("routes the root at the project list", () => {
@@ -55,21 +56,15 @@ describe("routeOf", () => {
   });
 });
 
-describe("pathOf", () => {
+describe("pathFor", () => {
   it("writes the path a route is drawn at", () => {
-    expect(pathOf({ kind: "projects" })).toBe("/");
-    expect(pathOf({ kind: "unknown" })).toBe("/");
-    expect(pathOf({ kind: "project", id: "alpha" })).toBe("/p/alpha");
-    expect(pathOf({ kind: "project", id: "alpha", wave: "wv1" })).toBe(
-      "/p/alpha/w/wv1",
-    );
+    expect(pathFor("alpha", undefined)).toBe("/p/alpha");
+    expect(pathFor("alpha", "wv1")).toBe("/p/alpha/w/wv1");
   });
 
   it("encodes a segment it would not otherwise leave alone", () => {
-    expect(pathOf({ kind: "project", id: "a b" })).toBe("/p/a%20b");
-    expect(pathOf({ kind: "project", id: "alpha", wave: "w/1" })).toBe(
-      "/p/alpha/w/w%2F1",
-    );
+    expect(pathFor("a b", undefined)).toBe("/p/a%20b");
+    expect(pathFor("alpha", "w/1")).toBe("/p/alpha/w/w%2F1");
   });
 
   it("round-trips with routeOf on every path the page serves", () => {
@@ -80,9 +75,10 @@ describe("pathOf", () => {
       "/p/alpha/w/wv1",
       "/p/alpha/w/w_v-1",
     ]) {
-      expect(routeOf(pathOf(routeOf(pathname)))).toStrictEqual(
-        routeOf(pathname),
-      );
+      const route = routeOf(pathname);
+      const path =
+        route.kind === "project" ? pathFor(route.id, route.wave) : "/";
+      expect(routeOf(path)).toStrictEqual(route);
     }
   });
 });

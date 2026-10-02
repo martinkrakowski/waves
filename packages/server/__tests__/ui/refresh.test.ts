@@ -743,7 +743,7 @@ describe("the project route", () => {
     app.stop();
   });
 
-  it("loads the wave the reader picks, and asks that project's lanes again", async () => {
+  it("loads the wave the reader picks, without asking that project's lanes again", async () => {
     const fetchImpl = fetchStub(projectListing);
     const { app, browser } = harness({ pathname: "/p/alpha", fetchImpl });
     app.start();
@@ -754,15 +754,14 @@ describe("the project route", () => {
     await flush();
 
     expect(browser.pushes).toStrictEqual(["/p/alpha/w/w-2"]);
-    expect(fetchImpl.calls).toStrictEqual([
-      "/api/v1/projects",
-      "/api/v1/attention",
-      "/api/v1/projects/alpha/lanes",
-    ]);
+    // What a pass requests depends on the project and on `all`, and a wave is
+    // neither: the rows on screen were already the answer to this question.
+    expect(fetchImpl.calls).toStrictEqual([]);
     expect(textsOf(root(), '.wave-strip a[aria-current="page"]')).toStrictEqual(
       ["w-2"],
     );
     expect(textsOf(root(), "tbody tr")).toHaveLength(1);
+    expect(root().querySelectorAll(".note")).toHaveLength(0);
     app.stop();
   });
 
@@ -833,6 +832,47 @@ describe("the project route", () => {
       "all lanes",
       "w-3",
       "w-2",
+    ]);
+    expect(root().querySelectorAll("table")).toHaveLength(0);
+    expect(root().querySelectorAll(".note")).toHaveLength(0);
+    app.stop();
+  });
+
+  it("says so when a later pass finds the wave it is reading has gone", async () => {
+    // The address still names the wave; the answer stopped carrying it. The page
+    // says so rather than drawing a table of nothing under a heading that claims
+    // a wave is there.
+    let second = false;
+    const flaky = fetchStub((path) => {
+      const rail = railAnswer(path);
+      if (rail !== undefined) {
+        return rail;
+      }
+      return second
+        ? {
+            status: 200,
+            body: projectLanes({
+              waves: [waveSummary({ wave: "w-3" })],
+              lanes: [laneRow()],
+            }),
+          }
+        : projectListing(path);
+    });
+    const { app, timers } = harness({
+      pathname: "/p/alpha/w/w-2",
+      fetchImpl: flaky,
+    });
+    app.start();
+    await flush();
+    expect(textsOf(root(), "tbody tr")).toHaveLength(1);
+
+    second = true;
+    timers.runLast();
+    await flush();
+
+    expect(textsOf(root(), "h1 code")).toStrictEqual(["w-2"]);
+    expect(textsOf(root(), ".empty")).toStrictEqual([
+      "No such wave in this project.",
     ]);
     expect(root().querySelectorAll("table")).toHaveLength(0);
     expect(root().querySelectorAll(".note")).toHaveLength(0);
@@ -946,7 +986,11 @@ describe("the project route", () => {
         ? {
             status: 200,
             body: projectLanes({
+              // One wave to ask about, none of it retained and no lanes listed:
+              // the store is meant to be holding none of its lanes, so a row for
+              // it is a state the server cannot produce.
               waves: [waveSummary({ wave: "w-3", retained: false })],
+              lanes: [],
             }),
           }
         : { status: 404 };
@@ -959,13 +1003,46 @@ describe("the project route", () => {
       "/api/v1/attention",
       "/api/v1/projects/alpha/lanes",
     ]);
-    // One wave to ask about and none of them retained: the strip shows the way
-    // back to all of them, and the table still holds the project's lanes.
+    // Nothing is shown and nothing is in scope, so the strip shows the way back
+    // to all of them and the table says what is not there.
     expect(textsOf(root(), ".wave-strip li a")).toStrictEqual(["all lanes"]);
+    expect(textsOf(root(), ".wave-strip .meta")).toStrictEqual(["0 lanes"]);
     expect(textsOf(root(), ".wave-strip > a")).toStrictEqual([
       "show waves past retention",
     ]);
-    expect(textsOf(root(), "tbody tr")).toHaveLength(1);
+    expect(textsOf(root(), "tbody tr")).toHaveLength(0);
+    expect(textsOf(root(), ".empty")).toStrictEqual([
+      "No lanes in this scope.",
+    ]);
+    app.stop();
+  });
+
+  it("asks again for a project whose listing never arrived", async () => {
+    const fetchImpl = fetchStub((path) => {
+      const rail = railAnswer(path);
+      if (rail !== undefined) {
+        return rail;
+      }
+      // A failure and not a 404: a project that is not registered is an answer,
+      // and this is about a listing that never arrived at all.
+      return { status: 500 };
+    });
+    const { app } = harness({ pathname: "/p/alpha", fetchImpl });
+    app.start();
+    await flush();
+    expect(textsOf(root(), ".empty")).toStrictEqual(["Loading…"]);
+    expect(textOf(root().querySelector(".note"))).toBe("offline, retrying");
+
+    app.navigate("/p/alpha?reason=gate");
+    // Nothing was ever loaded for this project, so a filter on it is not a
+    // redraw out of data in hand: it is a pass, and the note about the failure
+    // behind it goes with the page it was about.
+    expect(textsOf(root(), ".empty")).toStrictEqual(["Loading…"]);
+    expect(root().querySelectorAll(".note")).toHaveLength(0);
+
+    await flush();
+    expect(fetchImpl.calls).toHaveLength(6);
+    expect(textOf(root().querySelector(".note"))).toBe("offline, retrying");
     app.stop();
   });
 
