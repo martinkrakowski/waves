@@ -274,7 +274,7 @@ see (`respond`, `packages/server/src/infrastructure/http-server.ts:171-220`):
 
 1. A parser refusal (`431`, `408`, `400`) happens before the request exists.
 2. An HTTP/1.1 `Expect` with any value other than `100-continue` is a `417`
-   `{"error":"expectation failed"}`, answered before the URL is even looked at
+   `{"error":"expectation failed"}`, answered before the URL length is looked at
    (section 5.4).
 3. The URL length (`414`).
 4. A `PUT`, `POST` or `DELETE` leaves for the write pipeline of section 5.4,
@@ -373,7 +373,8 @@ write pipeline also carry
 `packages/server/src/infrastructure/http-routes.ts:83`; `extraFor`,
 `packages/server/src/infrastructure/http-server.ts:148-150`, `186-194`;
 `answer`, `packages/server/src/infrastructure/http-write.ts:255-265`). The `405`
-on `/readyz` carries no `Cache-Control`.
+that an `OPTIONS` or `PATCH` gets on `/readyz` carries no `Cache-Control`; a
+`PUT`, `POST` or `DELETE` on it is the write pipeline's `405` and does.
 
 There is **no CORS**: no `Access-Control-Allow-Origin` is ever sent, no
 `OPTIONS` preflight is answered — an `OPTIONS` request is a `405`, or a `401`
@@ -481,7 +482,8 @@ sees the connection reset mid-body (`continueIfExpected`,
 `packages/server/src/infrastructure/http-write.ts:233-242`; `SendOptions`,
 `packages/server/src/infrastructure/http-security.ts:47-66`).
 
-An `Expect` header with any other value never reaches this pipeline: the service
+Over HTTP/1.1, an `Expect` header with any other value never reaches this
+pipeline: the service
 answers it itself, before any route, any authorization and even before the URL
 length is looked at, with `417` `{"error":"expectation failed"}`, the headers of
 section 5.3 and — on a path under `/api/` — `Cache-Control: no-store`. The
