@@ -1,10 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   countersOf,
+  filterRows,
   hrefFor,
+  matches,
   pathFor,
+  reasonCounts,
   scopeOf,
+  searchText,
   seatsOf,
   sortRows,
   staleWavesOf,
@@ -12,6 +16,7 @@ import {
 } from "../../public/views/project.js";
 
 import type { LaneRow, WaveSummary } from "../../src/application/read-model.js";
+import type { ViewQuery } from "../../public/query.js";
 import {
   laneRow,
   NOW_ISO,
@@ -533,6 +538,25 @@ function seats(count: number): LaneRow[] {
   );
 }
 
+/**
+ * One lane carrying everything the haystack is built from: its id, its wave, its
+ * seat, what it reported — with a reported pull request of its own, beside the
+ * derived one — and its first disagreement.
+ */
+const FULL_ROW: LaneRow = laneRow({
+  id: "wv-a",
+  wave: "w-3",
+  seat: "s1",
+  reported: { stage: "review", event: "settled", ts: NOW_ISO, pr: 9 },
+  derived: {
+    alive: true,
+    pr: { number: 42, state: "open", checks: "pass" },
+  },
+  disagreements: 1,
+  disagreement: "the seat says pass, the gate says fail",
+  reasons: ["failed", "gate"],
+});
+
 describe("the counters", () => {
   it("leads with the six numbers the rows in scope answer to", () => {
     const host = renderProjectView({
@@ -919,6 +943,290 @@ describe("the stage rail", () => {
   });
 });
 
+describe("the toolbar", () => {
+  const LISTING = projectLanes({
+    waves: [waveSummary({ wave: "w-3" })],
+    lanes: [
+      laneRow({
+        id: "wv-a",
+        seat: "s2",
+        reported: reported("review"),
+        reasons: ["failed", "gate"],
+        derived: {
+          alive: true,
+          pr: { number: 7, state: "open", checks: "pass" },
+        },
+      }),
+      laneRow({
+        id: "wv-b",
+        seat: "s1",
+        reported: reported("build"),
+        reasons: ["failed"],
+      }),
+      laneRow({ id: "wv-c" }),
+    ],
+  });
+
+  /** The page drawn over `LISTING`, with the calls the controls made. */
+  function drawn(query: Partial<ViewQuery> = {}): {
+    readonly host: HTMLElement;
+    readonly onFilter: ReturnType<typeof vi.fn>;
+    readonly onSearch: ReturnType<typeof vi.fn>;
+  } {
+    const onFilter = vi.fn();
+    const onSearch = vi.fn();
+    const host = renderProjectView(
+      { lanes: LISTING, query: { all: false, ...query } },
+      NOW_MS,
+      { onFilter, onSearch },
+    );
+    return { host, onFilter, onSearch };
+  }
+
+  it("counts a chip for every reason that asks for something, and none else", () => {
+    expect(textsOf(drawn().host, ".chips a")).toStrictEqual([
+      "all",
+      "failed · 2",
+      "gate · 1",
+    ]);
+  });
+
+  it("marks the all chip current while no reason is chosen", () => {
+    expect(
+      textsOf(drawn().host, '.chips a[aria-current="true"]'),
+    ).toStrictEqual(["all"]);
+    expect(
+      drawn({ reason: "failed" }).host.querySelectorAll(
+        '.chips a[aria-current="true"]',
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("marks the chosen reason current, and nothing else", () => {
+    const { host } = drawn({ reason: "gate" });
+    expect(textsOf(host, '.chips a[aria-current="true"]')).toStrictEqual([
+      "gate · 1",
+    ]);
+  });
+
+  it("keeps a chip nothing carries, because it is the chosen one", () => {
+    // A chip that vanished under the reader's cursor is a chip that cannot be
+    // turned off.
+    const { host } = drawn({ reason: "silent" });
+    expect(textsOf(host, ".chips a")).toStrictEqual([
+      "all",
+      "failed · 2",
+      "gate · 1",
+      "silent · 0",
+    ]);
+  });
+
+  it("links each chip to this page with that reason, and carries the reader's query", () => {
+    const { host } = drawn({ all: true, lane: "wv-b" });
+    expect(
+      Array.from(host.querySelectorAll(".chips a"), (anchor) =>
+        anchor.getAttribute("href"),
+      ),
+    ).toStrictEqual([
+      "/p/alpha?all=1",
+      "/p/alpha?reason=failed&all=1",
+      "/p/alpha?reason=gate&all=1",
+    ]);
+  });
+
+  it("links the chosen chip back to the page with no reason at all", () => {
+    const { host } = drawn({ reason: "gate" });
+    expect(
+      Array.from(host.querySelectorAll(".chips a"), (anchor) =>
+        anchor.getAttribute("href"),
+      ),
+    ).toStrictEqual(["/p/alpha", "/p/alpha?reason=failed", "/p/alpha"]);
+  });
+
+  it("lists the seats and the stages in scope, ascending, under their labels", () => {
+    const { host } = drawn();
+    expect(textsOf(host, ".toolbar label")).toStrictEqual([
+      "Seat",
+      "Stage",
+      "Search",
+    ]);
+    expect(textsOf(host, "#filter-seat option")).toStrictEqual([
+      "all seats",
+      "s1",
+      "s2",
+    ]);
+    expect(textsOf(host, "#filter-stage option")).toStrictEqual([
+      "all stages",
+      "build",
+      "review",
+    ]);
+  });
+
+  it("shows the seat and the stage the address chose, when they are in scope", () => {
+    const { host } = drawn({ seat: "s1", stage: "build" });
+    expect(
+      (host.querySelector("#filter-seat") as HTMLSelectElement).value,
+    ).toBe("s1");
+    expect(
+      (host.querySelector("#filter-stage") as HTMLSelectElement).value,
+    ).toBe("build");
+  });
+
+  it("shows neither chosen when the address names one this scope does not have", () => {
+    const { host } = drawn({ seat: "s9", stage: "ship" });
+    expect(
+      (host.querySelector("#filter-seat") as HTMLSelectElement).value,
+    ).toBe("");
+    expect(
+      (host.querySelector("#filter-stage") as HTMLSelectElement).value,
+    ).toBe("");
+    expect(textsOf(host, "#filter-seat option")).toStrictEqual([
+      "all seats",
+      "s1",
+      "s2",
+    ]);
+  });
+
+  it("asks for the seat a reader picks, and for none when they pick them all", () => {
+    const { host, onFilter } = drawn();
+    const select = host.querySelector("#filter-seat") as HTMLSelectElement;
+    select.value = "s1";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(onFilter).toHaveBeenLastCalledWith({ seat: "s1" });
+
+    select.value = "";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(onFilter).toHaveBeenLastCalledWith({ seat: undefined });
+  });
+
+  it("asks for the stage a reader picks, and for none when they pick them all", () => {
+    const { host, onFilter } = drawn();
+    const select = host.querySelector("#filter-stage") as HTMLSelectElement;
+    select.value = "review";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(onFilter).toHaveBeenLastCalledWith({ stage: "review" });
+
+    select.value = "";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(onFilter).toHaveBeenLastCalledWith({ stage: undefined });
+  });
+
+  it("shows the reader's own search, and asks for it as it is typed", () => {
+    const { host, onSearch } = drawn({ q: "wv-a" });
+    const input = host.querySelector("#filter-q") as HTMLInputElement;
+    expect(input.value).toBe("wv-a");
+    expect(input.getAttribute("type")).toBe("search");
+    expect(input.getAttribute("placeholder")).toBe("lane, seat, PR…");
+    expect(input.getAttribute("data-key")).toBe("q");
+
+    input.value = "wv-b";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(onSearch).toHaveBeenLastCalledWith("wv-b");
+  });
+
+  it("asks for no search at all when the box is emptied", () => {
+    const { host, onSearch } = drawn({ q: "wv-a" });
+    const input = host.querySelector("#filter-q") as HTMLInputElement;
+    input.value = "";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(onSearch).toHaveBeenLastCalledWith("");
+  });
+
+  it("asks for a search no longer than the address will carry", () => {
+    const { host, onSearch } = drawn();
+    const input = host.querySelector("#filter-q") as HTMLInputElement;
+    input.value = "a".repeat(100);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(onSearch).toHaveBeenLastCalledWith("a".repeat(80));
+  });
+
+  it("says how much of the scope is left, and is a status region", () => {
+    const { host } = drawn({ seat: "s1" });
+    const shown = oneOf(host, ".toolbar .shown");
+    expect(shown?.textContent).toBe("1 of 3 shown");
+    expect(shown?.getAttribute("role")).toBe("status");
+
+    expect(textsOf(drawn().host, ".toolbar .shown")).toStrictEqual([
+      "3 of 3 shown",
+    ]);
+  });
+
+  it("draws the table the filter leaves, and the chips the filter does not move", () => {
+    const { host } = drawn({ reason: "failed" });
+    expect(textsOf(host, "tbody tr")).toHaveLength(2);
+    expect(textsOf(host, ".chips a")).toStrictEqual([
+      "all",
+      "failed · 2",
+      "gate · 1",
+    ]);
+  });
+
+  it("says nothing matches when the filter leaves no row", () => {
+    const { host } = drawn({ seat: "s9" });
+    expect(host.querySelectorAll("table")).toHaveLength(0);
+    expect(textsOf(host, ".empty")).toStrictEqual(["No lanes match."]);
+  });
+
+  it("does not move the counters, the panels or the rail when a filter changes", () => {
+    const whole = drawn().host;
+    const filtered = drawn({ reason: "failed" }).host;
+    expect(textsOf(filtered, ".kpis dd")).toStrictEqual(
+      textsOf(whole, ".kpis dd"),
+    );
+    expect(textsOf(filtered, ".panel.seats li")).toStrictEqual(
+      textsOf(whole, ".panel.seats li"),
+    );
+    expect(textsOf(filtered, ".stages li")).toStrictEqual(
+      textsOf(whole, ".stages li"),
+    );
+    expect(
+      textsOf(filtered, ".panel.disagreements .panel-empty"),
+    ).toStrictEqual(textsOf(whole, ".panel.disagreements .panel-empty"));
+  });
+
+  it("is not drawn at all when the scope has no lanes", () => {
+    const host = renderProjectView({
+      lanes: projectLanes({ lanes: [laneRow({ wave: "w-2" })] }),
+      wave: "w-3",
+    });
+    expect(host.querySelectorAll(".toolbar")).toHaveLength(0);
+    expect(textsOf(host, ".empty")).toStrictEqual(["No lanes in this scope."]);
+  });
+
+  it("marks the lane the address names current, and no other row", () => {
+    const { host } = drawn({ lane: "wv-b" });
+    expect(
+      textsOf(host, 'tbody tr[aria-current="true"] td[data-label="Lane"] a'),
+    ).toStrictEqual(["wv-b"]);
+    expect(host.querySelectorAll("tbody tr[aria-current]")).toHaveLength(1);
+    expect(
+      drawn().host.querySelectorAll("tbody tr[aria-current]"),
+    ).toHaveLength(0);
+  });
+
+  it("names its controls with literals of its own, never with an API string", () => {
+    const hostile = projectLanes({
+      waves: [waveSummary({ wave: "w-3" })],
+      lanes: [laneRow({ seat: "seat", reported: reported("build") })],
+    });
+    const host = renderProjectView({ lanes: hostile });
+    expect(host.querySelector("select")?.getAttribute("id")).toBe(
+      "filter-seat",
+    );
+    expect(host.querySelector("select")?.getAttribute("name")).toBe("seat");
+    expect(host.querySelector("select")?.getAttribute("data-key")).toBe("seat");
+    expect(
+      Array.from(host.querySelectorAll("select"), (select) => [
+        select.getAttribute("id"),
+        select.getAttribute("data-key"),
+      ]),
+    ).toStrictEqual([
+      ["filter-seat", "seat"],
+      ["filter-stage", "stage"],
+    ]);
+  });
+});
+
 describe("a wave the project does not have", () => {
   it("draws none of the counters, the banner, the panels or the rail", () => {
     const host = renderProjectView({
@@ -1136,6 +1444,154 @@ describe("staleWavesOf", () => {
     expect(
       staleWavesOf(projectLanes({ waves: [] }), undefined, false),
     ).toStrictEqual([]);
+  });
+});
+
+describe("matches", () => {
+  const asked = (query: Partial<ViewQuery>): boolean =>
+    matches(FULL_ROW, { all: false, ...query });
+
+  it("keeps a row when the address asks for nothing", () => {
+    expect(asked({})).toBe(true);
+  });
+
+  it("keeps a row only when it carries the reason the address names", () => {
+    expect(asked({ reason: "failed" })).toBe(true);
+    expect(asked({ reason: "exit" })).toBe(false);
+  });
+
+  it("keeps a row only when it reported the stage the address names", () => {
+    expect(asked({ stage: "review" })).toBe(true);
+    expect(asked({ stage: "build" })).toBe(false);
+  });
+
+  it("matches no row that reported nothing at all against a stage", () => {
+    expect(matches(laneRow(), { all: false, stage: "review" })).toBe(false);
+  });
+
+  it("keeps a row only when it is on the seat the address names", () => {
+    expect(asked({ seat: "s1" })).toBe(true);
+    expect(asked({ seat: "s2" })).toBe(false);
+  });
+
+  it("matches no row with no seat against a seat", () => {
+    expect(matches(laneRow(), { all: false, seat: "s1" })).toBe(false);
+  });
+
+  it.each([
+    ["the lane id", "wv-a"],
+    ["the wave id", "w-3"],
+    ["the seat", "s1"],
+    ["the reported stage", "review"],
+    ["the reported event", "settled"],
+    ["the derived pull request", "#42"],
+    ["the reported pull request", "#9"],
+    ["the disagreement", "the seat says pass"],
+  ])("finds a row by %s", (_label, needle) => {
+    expect(asked({ q: needle })).toBe(true);
+  });
+
+  it("finds a row whatever case it is asked in", () => {
+    expect(asked({ q: "WV-A" })).toBe(true);
+    expect(asked({ q: "Review" })).toBe(true);
+    expect(asked({ q: "SEAT SAYS PASS" })).toBe(true);
+    expect(asked({ q: "wv-z" })).toBe(false);
+  });
+
+  it("finds nothing in a row that carries nothing to find", () => {
+    const bare = laneRow({ id: "wv-b" });
+    expect(matches(bare, { all: false, q: "wv-b" })).toBe(true);
+    expect(matches(bare, { all: false, q: "review" })).toBe(false);
+    expect(matches(bare, { all: false, q: "#42" })).toBe(false);
+    expect(matches(bare, { all: false, q: "s1" })).toBe(false);
+  });
+});
+
+describe("filterRows", () => {
+  const rows = [
+    laneRow({ id: "wv-a", seat: "s1", reasons: ["failed"] }),
+    laneRow({ id: "wv-b", seat: "s2", reported: reported("build") }),
+    laneRow({ id: "wv-c", seat: "s1", reported: reported("build") }),
+  ];
+
+  const left = (query: Partial<ViewQuery>): string[] =>
+    filterRows(rows, { all: false, ...query }).map((row) => row.id);
+
+  it("keeps every row when the address asks for nothing", () => {
+    expect(left({})).toStrictEqual(["wv-a", "wv-b", "wv-c"]);
+  });
+
+  it("keeps the rows one filter leaves, in the order they were given", () => {
+    expect(left({ seat: "s1" })).toStrictEqual(["wv-a", "wv-c"]);
+    expect(left({ reason: "failed" })).toStrictEqual(["wv-a"]);
+    expect(left({ stage: "build" })).toStrictEqual(["wv-b", "wv-c"]);
+    expect(left({ q: "wv-c" })).toStrictEqual(["wv-c"]);
+  });
+
+  it("keeps nothing when two filters cannot both hold", () => {
+    expect(left({ seat: "s1", stage: "build" })).toStrictEqual(["wv-c"]);
+    expect(left({ seat: "s1", reason: "gate" })).toStrictEqual([]);
+  });
+
+  it("is empty for an empty scope", () => {
+    expect(filterRows([], { all: false, seat: "s1" })).toStrictEqual([]);
+  });
+});
+
+describe("reasonCounts", () => {
+  it("answers every reason in the order the six are written in", () => {
+    expect([
+      ...reasonCounts([
+        laneRow({ id: "wv-a", reasons: ["silent"] }),
+        laneRow({ id: "wv-b", reasons: ["failed", "checks"] }),
+        laneRow({ id: "wv-c", reasons: ["failed"] }),
+      ]),
+    ]).toStrictEqual([
+      ["failed", 2],
+      ["disagreement", 0],
+      ["checks", 1],
+      ["gate", 0],
+      ["exit", 0],
+      ["silent", 1],
+    ]);
+  });
+
+  it("counts one reason once on a row, however it was carried", () => {
+    expect(
+      reasonCounts([laneRow({ reasons: ["failed", "failed"] })]).get("failed"),
+    ).toBe(2);
+  });
+
+  it("counts every reason zero for an empty scope", () => {
+    expect([...reasonCounts([])]).toStrictEqual([
+      ["failed", 0],
+      ["disagreement", 0],
+      ["checks", 0],
+      ["gate", 0],
+      ["exit", 0],
+      ["silent", 0],
+    ]);
+  });
+});
+
+describe("searchText", () => {
+  it("leaves ordinary text exactly as it was typed", () => {
+    expect(searchText("wv-a")).toBe("wv-a");
+    expect(searchText("")).toBe("");
+    expect(searchText("PR #42 · seat s1")).toBe("PR #42 · seat s1");
+  });
+
+  it("keeps the first 80 characters of a longer search", () => {
+    expect(searchText("a".repeat(81))).toBe("a".repeat(80));
+    expect(searchText("a".repeat(80))).toBe("a".repeat(80));
+  });
+
+  it("takes out the control characters a reader pasted in", () => {
+    // `parseQuery` refuses a control character and a value over 80 characters, so
+    // a box that wrote one of these into the address would empty itself.
+    expect(searchText("a\tbc")).toBe("abc");
+    expect(searchText("a\nb")).toBe("ab");
+    expect(searchText("")).toBe("");
   });
 });
 

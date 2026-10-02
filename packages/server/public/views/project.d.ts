@@ -70,6 +70,39 @@ export declare function staleWavesOf(
   all: boolean,
 ): readonly WaveSummary[];
 
+/** Whether a row is one the reader's own filter is looking for. */
+export declare function matches(row: LaneRow, query: ViewQuery): boolean;
+
+/** The rows a reader's filter leaves, in the order they were given. */
+export declare function filterRows(
+  rows: readonly LaneRow[],
+  query: ViewQuery,
+): readonly LaneRow[];
+
+/**
+ * How many rows carry each of the six reasons, in the order `attention.js`
+ * writes them. Every reason is answered, including the ones no row carries.
+ */
+export declare function reasonCounts(
+  rows: readonly LaneRow[],
+): ReadonlyMap<string, number>;
+
+/**
+ * What a search box may put in the address: the first 80 characters, with every
+ * control character taken out.
+ */
+export declare function searchText(value: string): string;
+
+export interface ProjectHandlers {
+  /** A filter was chosen from a select. `undefined` clears that filter. */
+  onFilter(patch: {
+    readonly seat?: string | undefined;
+    readonly stage?: string | undefined;
+  }): void;
+  /** The search text changed. `""` clears it. */
+  onSearch(text: string): void;
+}
+
 /** Reasons first, then the newest wave, then the lane id. */
 export declare function sortRows(
   rows: readonly LaneRow[],
@@ -79,4 +112,5 @@ export declare function sortRows(
 export declare function renderProject(
   model: ProjectModel,
   nowMs: number,
+  handlers: ProjectHandlers,
 ): HTMLElement;

@@ -661,6 +661,82 @@ describe("the focus across a redraw", () => {
     expect(root().querySelector("button")).toBeNull();
     app.stop();
   });
+
+  it("keeps the search box and the caret in it across the redraw", async () => {
+    // Ten seconds between refreshes and a reader who is halfway through a word:
+    // the box is still the box they were typing in, with the caret where they
+    // left it. A selection equal to the value's length would look the same
+    // whether it was put back or never taken, so this one is in the middle.
+    const { app } = harness({
+      pathname: "/p/alpha",
+      search: "?q=wv-a",
+      fetchImpl: fetchStub(projectListing),
+    });
+    app.start();
+    await flush();
+    const box = root().querySelector("#filter-q") as HTMLInputElement;
+    expect(box.value).toBe("wv-a");
+    box.focus();
+    box.setSelectionRange(1, 2);
+    expect(document.activeElement).toBe(box);
+
+    await app.refresh();
+
+    const after = root().querySelector("#filter-q") as HTMLInputElement;
+    expect(after).not.toBe(box);
+    expect(document.activeElement).toBe(after);
+    expect(after.value).toBe("wv-a");
+    expect(after.selectionStart).toBe(1);
+    expect(after.selectionEnd).toBe(2);
+    app.stop();
+  });
+
+  it("keeps the focus in the select the reader was choosing from", async () => {
+    const { app } = harness({
+      pathname: "/p/alpha",
+      fetchImpl: fetchStub(projectListing),
+    });
+    app.start();
+    await flush();
+    const select = root().querySelector("#filter-seat") as HTMLSelectElement;
+    select.focus();
+    expect(document.activeElement).toBe(select);
+
+    await app.refresh();
+
+    const after = root().querySelector("#filter-seat") as HTMLSelectElement;
+    expect(after).not.toBe(select);
+    expect(document.activeElement).toBe(after);
+    app.stop();
+  });
+
+  it("focuses nothing when the scope emptied and took the toolbar with it", async () => {
+    let second = false;
+    const flaky = fetchStub((path) => {
+      const rail = railAnswer(path);
+      if (rail !== undefined) {
+        return rail;
+      }
+      return second
+        ? { status: 200, body: projectLanes({ lanes: [] }) }
+        : projectListing(path);
+    });
+    const { app } = harness({ pathname: "/p/alpha", fetchImpl: flaky });
+    app.start();
+    await flush();
+    (root().querySelector("#filter-q") as HTMLInputElement).focus();
+    expect(document.activeElement).not.toBe(document.body);
+
+    second = true;
+    await app.refresh();
+
+    expect(root().querySelector("#filter-q")).toBeNull();
+    expect(document.activeElement).toBe(document.body);
+    expect(textsOf(root(), ".empty")).toStrictEqual([
+      "No lanes in this scope.",
+    ]);
+    app.stop();
+  });
 });
 
 describe("pausing while the page is hidden", () => {

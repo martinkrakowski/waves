@@ -6,6 +6,7 @@ import type { ProjectCard } from "../../public/api.js";
 import { el } from "../../public/dom.js";
 import { shell } from "../../public/shell.js";
 import { renderFleet } from "../../public/views/fleet.js";
+import type { ProjectHandlers } from "../../public/views/project.js";
 import { renderProject } from "../../public/views/project.js";
 
 import type { ProjectLanesView } from "../../src/application/read-model.js";
@@ -124,6 +125,41 @@ function attributeValues(): string[] {
     element.getAttributeNames().map((name) => element.getAttribute(name) ?? ""),
   );
 }
+
+/**
+ * Where an element sits in the page, by the nearest `id` above it: the option
+ * that carries a seat is named by the select it is in, and an input is named by
+ * itself.
+ */
+function where(element: Element): string {
+  const owner = element.id === "" ? element.closest("[id]") : element;
+  return owner === null || owner.id === ""
+    ? element.tagName.toLowerCase()
+    : `${element.tagName.toLowerCase()}#${owner.id}`;
+}
+
+/**
+ * Every attribute value that holds the payload verbatim, as the element that
+ * carries it and the attribute's name. This counts where a payload is allowed to
+ * reach an attribute rather than forbidding it: an option's `value` and a search
+ * box's are text a control carries, never markup, so the tests below say
+ * exactly how many and which — an attribute value nobody can account for is the
+ * one that matters.
+ */
+function attributeHolders(payload: string): string[] {
+  return Array.from(document.querySelectorAll("*")).flatMap((element) =>
+    element
+      .getAttributeNames()
+      .filter((name) => (element.getAttribute(name) ?? "").includes(payload))
+      .map((name) => `${where(element)}[${name}]`),
+  );
+}
+
+/**
+ * No handler does anything: this file is about what reaches the document, and a
+ * handler would navigate the page out from under the assertion.
+ */
+const NO_HANDLERS: ProjectHandlers = { onFilter() {}, onSearch() {} };
 
 /** Every field that reaches the DOM, each carrying the payload it was given. */
 function projectWith(payload: string): ProjectCard {
@@ -305,13 +341,17 @@ describe("the fleet page against stored markup", () => {
  * How many times one payload appears in the rendered text of the project page:
  * the project's name in the heading, its repository as a line of text, the lane's
  * seat, the stage the lane reported, the first disagreement, the plan review and
- * the risk. The seat, the stage and the disagreement are each drawn a second
- * time — in the seats panel, in the stage rail and in the disagreements panel —
- * so the count of ten is ten places a reader could see it, all of them text. The
- * two timestamps reach the document as `title` attributes rather than as text,
- * and this case holds both of them to NOW_ISO.
+ * the risk. The seat, the stage and the disagreement are each drawn twice — once
+ * in the table, once in the seats panel, the stage rail or the disagreements
+ * panel — and the seat and the stage are drawn a third time as the text of the
+ * option that chooses them, so the count of twelve is twelve places a reader
+ * could see it, all of them text. An attribute value is not one of them: an
+ * option's `value` and a title carry the payload without carrying it as markup,
+ * and `attributeHolders` counts those separately. The two timestamps reach the
+ * document as `title` attributes rather than as text, and this case holds both of
+ * them to NOW_ISO.
  */
-const PROJECT_OCCURRENCES = 10;
+const PROJECT_OCCURRENCES = 12;
 
 describe("the project page against stored markup", () => {
   it("renders every field of a row as text", () => {
@@ -326,6 +366,7 @@ describe("the project page against stored markup", () => {
             query: { all: false },
           },
           NOW_MS,
+          NO_HANDLERS,
         ),
       );
       assertNoInjectedMarkup();
@@ -349,11 +390,21 @@ describe("the project page against stored markup", () => {
       expect(textsOf(host, ".panel.disagreements .disagreement")).toStrictEqual(
         [payload],
       );
+      // And the seat and the stage once more, as the option a reader picks them
+      // with.
+      expect(textsOf(host, "#filter-seat option")).toStrictEqual([
+        "all seats",
+        payload,
+      ]);
+      expect(textsOf(host, "#filter-stage option")).toStrictEqual([
+        "all stages",
+        payload,
+      ]);
       expectVerbatim(payload, PROJECT_OCCURRENCES, 0);
     }
   });
 
-  it("keeps a payload out of every link and every attribute", () => {
+  it("puts a payload in an attribute value only where a control carries it", () => {
     for (const payload of TEXT_PAYLOADS) {
       freshRoot();
       const host = document.getElementById("root") as HTMLElement;
@@ -365,14 +416,18 @@ describe("the project page against stored markup", () => {
             query: { all: false },
           },
           NOW_MS,
+          NO_HANDLERS,
         ),
       );
       assertNoInjectedMarkup();
       expect(host.querySelectorAll("a[href^='javascript:']")).toHaveLength(0);
       expect(host.querySelectorAll("a[href*='@']")).toHaveLength(0);
-      for (const value of attributeValues()) {
-        expect(value).not.toContain(payload);
-      }
+      // An option's value is a control's own text, never markup: exactly the two
+      // that choose a seat and a stage, and nothing else in the document.
+      expect(attributeHolders(payload)).toStrictEqual([
+        "option#filter-seat[value]",
+        "option#filter-stage[value]",
+      ]);
     }
   });
 
@@ -384,6 +439,7 @@ describe("the project page against stored markup", () => {
         renderProject(
           { lanes: listingWith(payload), wave: "w-3", query: { all: false } },
           NOW_MS,
+          NO_HANDLERS,
         ),
       );
       assertNoInjectedMarkup();
@@ -545,7 +601,10 @@ describe("the query string against stored markup", () => {
    * The project page is the one that reads the whole query and writes it back
    * out on every link it draws, so a payload in a parameter has to come back as
    * a percent-encoded address rather than as text, a `title` or an attribute
-   * value of its own.
+   * value of its own — with the one exception the page cannot refuse: the text a
+   * reader typed into the search box is displayed, in the box they typed it in,
+   * as a property rather than as markup. A `q` `parseQuery` refuses is dropped,
+   * and the box is empty.
    */
   it.each(["seat", "q"] as const)(
     "keeps a payload in the project's %s out of the document",
@@ -559,11 +618,20 @@ describe("the query string against stored markup", () => {
         assertNoInjectedMarkup();
         expect(root().querySelectorAll("img")).toHaveLength(0);
         expect(root().querySelectorAll("script")).toHaveLength(0);
-        expect(root().querySelectorAll("table")).toHaveLength(1);
         expect(documentText()).not.toContain(payload);
-        for (const value of attributeValues()) {
-          expect(value).not.toContain(payload);
-        }
+        // A filter nobody in this scope holds matches no row, so the page says
+        // so rather than showing a table a reader would read as the answer.
+        expect(root().querySelectorAll("table")).toHaveLength(0);
+        expect(textsOf(root(), ".empty")).toStrictEqual(["No lanes match."]);
+        // The search box holds the reader's own text and nothing of anybody
+        // else's: a seat is never an option, and an `option`'s value is the only
+        // place a seat of this scope reaches an attribute.
+        expect(attributeHolders(payload)).toStrictEqual(
+          key === "q" ? ["input#filter-q[value]"] : [],
+        );
+        expect(
+          (root().querySelector("#filter-q") as HTMLInputElement).value,
+        ).toBe(key === "q" ? payload : "");
         // The hrefs carry the query, and only in its encoded form.
         expect(
           Array.from(root().querySelectorAll(".wave-strip a")).every((anchor) =>
@@ -571,6 +639,51 @@ describe("the query string against stored markup", () => {
           ),
         ).toBe(true);
         app.stop();
+      }
+    },
+  );
+
+  /**
+   * The two timestamps this page draws are drawn through `stamp`, so a payload
+   * in one lands in that `title` and in the word "unknown" the unreadable date
+   * becomes — never in the text a reader reads.
+   */
+  it.each(["a lane's reported time", "a wave's received time"] as const)(
+    "keeps a payload in %s in the title alone",
+    (field) => {
+      for (const payload of TEXT_PAYLOADS) {
+        freshRoot();
+        const host = document.getElementById("root") as HTMLElement;
+        host.append(
+          renderProject(
+            {
+              lanes: projectLanes({
+                waves: [
+                  waveSummary({
+                    receivedAt:
+                      field === "a wave's received time" ? payload : NOW_ISO,
+                  }),
+                ],
+                lanes: [
+                  laneRow({
+                    reported: {
+                      stage: "review",
+                      event: "settled",
+                      ts:
+                        field === "a lane's reported time" ? payload : NOW_ISO,
+                    },
+                  }),
+                ],
+              }),
+              wave: undefined,
+              query: { all: false },
+            },
+            NOW_MS,
+            NO_HANDLERS,
+          ),
+        );
+        assertNoInjectedMarkup();
+        expectVerbatim(payload, 0, 1);
       }
     },
   );

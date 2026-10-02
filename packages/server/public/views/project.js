@@ -1,3 +1,4 @@
+import { REASONS } from "../attention.js";
 import { el, internalLink, repoLink, stamp, text } from "../dom.js";
 import {
   aliveView,
@@ -27,9 +28,13 @@ const COLUMNS = ["Lane", "Reported", "Alive", "PR", "Gate", "Reasons", "Notes"];
 const NO_SUCH_WAVE = "No such wave in this project.";
 const NO_WAVES = "This project has no waves yet.";
 const NOTHING_IN_SCOPE = "No lanes in this scope.";
+const NOTHING_MATCHES = "No lanes match.";
 const NO_REASONS = "—";
 const TRUNCATED =
   "This list was cut: the project has more lanes than one page carries.";
+
+/** How many characters of search text the query string will carry. */
+const Q_MAX = 80;
 
 /** The lede under a wave's heading, once the name is in it. */
 const LEDE_WAVE =
@@ -163,6 +168,98 @@ export function staleWavesOf(view, wave, all) {
     return head?.stale === true ? [head] : [];
   }
   return visibleWaves(view.waves, all).filter((head) => head.stale);
+}
+
+/**
+ * Everything one lane can be searched for, one field to a line, and the ones the
+ * lane does not carry left out rather than written down as nothing: a pull
+ * request is found by its number with a `#` as it is written everywhere else on
+ * the page, and the reported number beside the derived one is a second thing to
+ * find under the same needle.
+ */
+function haystack(row) {
+  const parts = [
+    row.id,
+    row.wave,
+    row.seat,
+    row.reported?.stage,
+    row.reported?.event,
+    row.derived.pr === undefined ? undefined : `#${row.derived.pr.number}`,
+    row.reported?.pr === undefined ? undefined : `#${row.reported.pr}`,
+    row.disagreement,
+  ];
+  return parts.filter((part) => part !== undefined).join("\n");
+}
+
+/**
+ * Whether a row is one the reader's own filter is looking for. Every condition
+ * is about the row's own answer, so a parameter the page cannot use — a seat
+ * nobody in this scope is on — matches nothing rather than quietly matching
+ * everything, and a reader who pasted one is told their table is empty instead
+ * of being shown the wrong half of it.
+ */
+export function matches(row, query) {
+  if (query.reason !== undefined && !row.reasons.includes(query.reason)) {
+    return false;
+  }
+  if (query.stage !== undefined && query.stage !== row.reported?.stage) {
+    return false;
+  }
+  if (query.seat !== undefined && query.seat !== row.seat) {
+    return false;
+  }
+  if (query.q !== undefined) {
+    return haystack(row).toLowerCase().includes(query.q.toLowerCase());
+  }
+  return true;
+}
+
+/** The rows the reader's filter leaves, in the order they were given. */
+export function filterRows(rows, query) {
+  return rows.filter((row) => matches(row, query));
+}
+
+/**
+ * How many rows carry each of the six reasons, in the order `attention.js`
+ * writes them. Every reason is answered, including the ones no row carries: a
+ * chip that is not drawn still has a count to be found by, and the six are the
+ * same six the server derives its rows' reasons from.
+ */
+export function reasonCounts(rows) {
+  const carried = new Map();
+  for (const row of rows) {
+    for (const reason of row.reasons) {
+      carried.set(reason, (carried.get(reason) ?? 0) + 1);
+    }
+  }
+  return new Map(REASONS.map((reason) => [reason, carried.get(reason) ?? 0]));
+}
+
+/** The distinct values a field of the rows in scope holds, ascending. */
+function distinctOf(rows, keyOf) {
+  return [...countedBy(rows, keyOf).keys()]
+    .filter((value) => value !== undefined)
+    .sort((left, right) => (left < right ? -1 : 1));
+}
+
+/**
+ * What a search box is allowed to put in the address: the first 80 characters,
+ * with every control character taken out. `parseQuery` refuses a longer value or
+ * one carrying a control character, so without this a pasted TAB writes an
+ * address the page then empties the box for, under the reader's hands. A loop
+ * over characters and not a pattern over control characters, which is the one
+ * regular expression this repository refuses to hold.
+ */
+export function searchText(value) {
+  let kept = "";
+  for (let at = 0; at < Q_MAX && at < value.length; at += 1) {
+    const code = value.charCodeAt(at);
+    if (code < 0x20 || code === 0x7f) {
+      continue;
+    }
+    kept += value[at];
+  }
+  return kept;
 }
 
 /**
@@ -540,6 +637,145 @@ function stageRail(scope) {
   });
 }
 
+/**
+ * The six reasons as chips, each with the number of rows in scope that carry it.
+ * The chips are links and not buttons, so a filter is a place a reader can be
+ * sent, read aloud, copied or opened in a new tab, and the address is where the
+ * filter lives. A reason no row carries is left out; the one the reader has
+ * chosen is always there, because a chip that vanished under the reader's cursor
+ * is a chip that cannot be turned off.
+ */
+function reasonChips(model, scope) {
+  const active = model.query.reason;
+  const children = [
+    internalLink(
+      "all",
+      hrefFor(projectId(model), model.wave, {
+        ...model.query,
+        reason: undefined,
+        lane: undefined,
+      }),
+      active === undefined ? { "aria-current": "true" } : {},
+    ),
+  ];
+  for (const [reason, count] of reasonCounts(scope)) {
+    if (count === 0 && reason !== active) {
+      continue;
+    }
+    const current = reason === active;
+    children.push(
+      internalLink(
+        `${reason} · ${count}`,
+        hrefFor(projectId(model), model.wave, {
+          ...model.query,
+          reason: current ? undefined : reason,
+          lane: undefined,
+        }),
+        current ? { "aria-current": "true" } : {},
+      ),
+    );
+  }
+  return el("nav", {
+    attrs: { "aria-label": "Reasons", class: "chips" },
+    children,
+  });
+}
+
+/**
+ * One of the two filters a reader chooses from a list: the seats in scope, or the
+ * stages their lanes reported. The filter's own key is the control's `name` and
+ * its `data-key`, which is what makes a chosen filter something the address can
+ * carry and this page can find again. Every value in the list is a pusher's own
+ * string, and it is carried in the option's `value` attribute rather than left to
+ * the implicit one, which collapses runs of whitespace and would hand the address
+ * a seat nobody wrote. The `id` is this page's literal: a pusher chooses seats
+ * and stages, never the name of a control.
+ */
+function selectFilter({ id, key, label, all, options, chosen, handlers }) {
+  const select = el("select", {
+    attrs: { id, name: key, "data-key": key },
+    children: [
+      el("option", { attrs: { value: "" }, text: all }),
+      ...options.map((option) =>
+        el("option", { attrs: { value: option }, text: option }),
+      ),
+    ],
+  });
+  // A select reads its own value off the option that matches, and a filter
+  // nobody in this scope holds is not one of them: it is shown as off, and the
+  // table below it is empty, which is what such a filter really means.
+  select.value = chosen !== undefined && options.includes(chosen) ? chosen : "";
+  select.addEventListener("change", () => {
+    handlers.onFilter({
+      [key]: select.value === "" ? undefined : select.value,
+    });
+  });
+  return [el("label", { attrs: { for: id }, text: label }), select];
+}
+
+/**
+ * The search box. Its value is the reader's own query, written through the
+ * attribute table like every other value on this page, and what it hands back is
+ * cut and cleaned by `searchText` so that what the address can carry and what
+ * the box holds are the same thing.
+ */
+function searchFilter(chosen, handlers) {
+  const input = el("input", {
+    attrs: {
+      type: "search",
+      id: "filter-q",
+      name: "q",
+      "data-key": "q",
+      placeholder: "lane, seat, PR…",
+      value: chosen ?? "",
+    },
+  });
+  input.addEventListener("input", () => {
+    handlers.onSearch(searchText(input.value));
+  });
+  return [el("label", { attrs: { for: "filter-q" }, text: "Search" }), input];
+}
+
+/**
+ * The filters, over the rows in scope and not over the rows the filter leaves:
+ * a chip's count is what it is about to show, so it cannot be the count of what
+ * is on screen already. The count at the end is the one number the filter does
+ * move, and it is a status region so that narrowing the table is something a
+ * reader is told rather than something they have to notice.
+ */
+function toolbar(model, scope, handlers) {
+  const shown = filterRows(scope, model.query).length;
+  return el("div", {
+    attrs: { class: "toolbar" },
+    children: [
+      reasonChips(model, scope),
+      ...selectFilter({
+        id: "filter-seat",
+        key: "seat",
+        label: "Seat",
+        all: "all seats",
+        options: distinctOf(scope, (row) => row.seat),
+        chosen: model.query.seat,
+        handlers,
+      }),
+      ...selectFilter({
+        id: "filter-stage",
+        key: "stage",
+        label: "Stage",
+        all: "all stages",
+        options: distinctOf(scope, (row) => row.reported?.stage),
+        chosen: model.query.stage,
+        handlers,
+      }),
+      ...searchFilter(model.query.q, handlers),
+      el("span", {
+        attrs: { class: "shown", role: "status" },
+        text: `${shown} of ${scope.length} shown`,
+      }),
+    ],
+  });
+}
+
 /** The lane itself, and on the project's own page which wave it is in. */
 function laneCell(model, row) {
   const parts = [
@@ -668,8 +904,13 @@ function isCurrent(model, row) {
 }
 
 function laneRow(model, row, nowMs) {
+  // The background colour says which row the reader chose; this says it to a
+  // screen reader and to a reader who cannot see a background at all.
+  const current = isCurrent(model, row);
   return el("tr", {
-    attrs: { class: isCurrent(model, row) ? "lane current" : "lane" },
+    attrs: current
+      ? { class: "lane current", "aria-current": "true" }
+      : { class: "lane" },
     children: [
       laneCell(model, row),
       reportedCell(row, nowMs),
@@ -730,7 +971,7 @@ function emptyMessage(model) {
   return el("p", { attrs: { class: "empty" }, text });
 }
 
-export function renderProject(model, nowMs) {
+export function renderProject(model, nowMs, handlers) {
   const view = model.lanes;
   const children = [heading(model), lede(view, model.wave)];
   const repo = repoLine(view);
@@ -767,12 +1008,20 @@ export function renderProject(model, nowMs) {
   );
   if (scope.length > 0) {
     children.push(stageRail(scope));
-  }
-  const rows = sortRows(scope, view.waves);
-  if (rows.length === 0) {
-    children.push(emptyMessage(model));
+    children.push(toolbar(model, scope, handlers));
+    // The filter narrows the table and nothing else: the counters, the banner,
+    // the panels and the rail above are about the scope, and a reader who
+    // filtered to one seat is still looking at one project's whole wave.
+    const shown = sortRows(filterRows(scope, model.query), view.waves);
+    if (shown.length === 0) {
+      children.push(
+        el("p", { attrs: { class: "empty" }, text: NOTHING_MATCHES }),
+      );
+    } else {
+      children.push(laneTable(model, shown, nowMs));
+    }
   } else {
-    children.push(laneTable(model, rows, nowMs));
+    children.push(emptyMessage(model));
   }
   if (view.truncated) {
     children.push(

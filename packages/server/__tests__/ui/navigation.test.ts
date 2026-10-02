@@ -699,6 +699,114 @@ describe("choosing a wave", () => {
 });
 
 describe("what a change of the address asks for", () => {
+  /** One project's whole answer, with a seat and a stage to filter on. */
+  function seated(path: string): Answer {
+    if (path === "/api/v1/projects") {
+      return { status: 200, body: PROJECTS };
+    }
+    if (path === "/api/v1/attention") {
+      return { status: 200, body: attentionView() };
+    }
+    return {
+      status: 200,
+      body: projectLanes({
+        waves: [waveSummary({ wave: "w-3" })],
+        lanes: [
+          laneRow({ id: "wv-a", seat: "s1" }),
+          laneRow({ id: "wv-b", seat: "s2" }),
+        ],
+      }),
+    };
+  }
+
+  it("narrows to the seat a reader picks, and asks for nothing", async () => {
+    const fetchImpl = fetchStub(seated);
+    const { app, browser } = harness({ pathname: "/p/alpha", fetchImpl });
+    app.start();
+    await flush();
+    fetchImpl.calls.length = 0;
+
+    const select = root().querySelector("#filter-seat") as HTMLSelectElement;
+    select.value = "s2";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    // Synchronously: a filter is a question the answer in hand can answer.
+    expect(browser.pushes).toStrictEqual(["/p/alpha?seat=s2"]);
+    expect(fetchImpl.calls).toStrictEqual([]);
+    expect(textsOf(root(), "tbody tr")).toHaveLength(1);
+    expect(textsOf(root(), "td[data-label='Lane'] a")).toStrictEqual(["wv-b"]);
+
+    await flush();
+    expect(fetchImpl.calls).toStrictEqual([]);
+    app.stop();
+  });
+
+  it("replaces the address as the reader types, and never pushes", async () => {
+    const fetchImpl = fetchStub(seated);
+    const { app, browser } = harness({ pathname: "/p/alpha", fetchImpl });
+    app.start();
+    await flush();
+    fetchImpl.calls.length = 0;
+
+    const input = root().querySelector("#filter-q") as HTMLInputElement;
+    for (const text of ["s", "s1", "s2"]) {
+      input.value = text;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    // One entry per keystroke would be one entry per letter of every word a
+    // reader ever searched for, between the page they came from and the page
+    // they are on — so the address is written over, not pushed onto.
+    expect(browser.replaces).toStrictEqual([
+      "/p/alpha?q=s",
+      "/p/alpha?q=s1",
+      "/p/alpha?q=s2",
+    ]);
+    expect(browser.pushes).toStrictEqual([]);
+    expect(fetchImpl.calls).toStrictEqual([]);
+    expect(textsOf(root(), "tbody tr")).toHaveLength(1);
+    app.stop();
+  });
+
+  it("clears the search out of the address when the box is emptied", async () => {
+    const fetchImpl = fetchStub(seated);
+    const { app, browser } = harness({
+      pathname: "/p/alpha",
+      search: "?q=s1",
+      fetchImpl,
+    });
+    app.start();
+    await flush();
+    fetchImpl.calls.length = 0;
+    expect((root().querySelector("#filter-q") as HTMLInputElement).value).toBe(
+      "s1",
+    );
+
+    const input = root().querySelector("#filter-q") as HTMLInputElement;
+    input.value = "";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+
+    expect(browser.replaces).toStrictEqual(["/p/alpha"]);
+    expect(fetchImpl.calls).toStrictEqual([]);
+    expect(textsOf(root(), "tbody tr")).toHaveLength(2);
+    app.stop();
+  });
+
+  it("puts the search text back in the box it was typed in", async () => {
+    const fetchImpl = fetchStub(seated);
+    const { app } = harness({ pathname: "/p/alpha", fetchImpl });
+    app.start();
+    await flush();
+
+    const input = root().querySelector("#filter-q") as HTMLInputElement;
+    input.value = "s1";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await flush();
+
+    const after = root().querySelector("#filter-q") as HTMLInputElement;
+    expect(after).not.toBe(input);
+    expect(after.value).toBe("s1");
+    app.stop();
+  });
+
   it("asks again for the waves past retention, which are other lanes", async () => {
     const fetchImpl = fetchStub(answering(projectCard()));
     const { app, browser } = harness({ pathname: "/p/alpha", fetchImpl });
@@ -731,6 +839,177 @@ describe("what a change of the address asks for", () => {
       "/api/v1/projects/beta/lanes",
     ]);
     expect(textsOf(root(), "tbody tr")).toHaveLength(2);
+    app.stop();
+  });
+
+  it("draws a pass that was already in flight when the filter changed", async () => {
+    // The pass answers the same project under the same `all`, so a filter change
+    // in the middle of it does not supersede it: the rows it brings are drawn,
+    // filtered by what the reader has asked for since.
+    let lanes = 0;
+    let later = false;
+    const gate = gatedFetch((path) => {
+      const answer = seated(path);
+      if (
+        answer.status !== 200 ||
+        path === "/api/v1/projects" ||
+        path === "/api/v1/attention"
+      ) {
+        return { ...answer, hold: false };
+      }
+      lanes += 1;
+      return {
+        ...answer,
+        body: projectLanes({
+          waves: [waveSummary({ wave: "w-3" })],
+          lanes: [
+            laneRow({ id: later ? "wv-c" : "wv-a", seat: later ? "s3" : "s1" }),
+          ],
+        }),
+        hold: lanes === 2,
+      };
+    });
+    const { app, timers } = harness({ pathname: "/p/alpha", fetchImpl: gate });
+    app.start();
+    await flush();
+    expect(textsOf(root(), "tbody tr")).toHaveLength(1);
+
+    later = true;
+    timers.runLast();
+    await flush();
+    expect(gate.pending()).toBe(1);
+
+    const input = root().querySelector("#filter-q") as HTMLInputElement;
+    input.value = "s3";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    // The rows on screen are still the old ones, and the filter is on top of
+    // them: nothing matched, and nothing was asked for.
+    expect(textsOf(root(), ".empty")).toStrictEqual(["No lanes match."]);
+
+    gate.release();
+    await flush();
+
+    expect(textsOf(root(), "tbody tr")).toHaveLength(1);
+    expect(textsOf(root(), "td[data-label='Lane'] a")).toStrictEqual(["wv-c"]);
+    expect(textsOf(root(), ".toolbar .shown")).toStrictEqual(["1 of 1 shown"]);
+    app.stop();
+  });
+
+  it("keeps the reader's own query on the link that chose a filter", async () => {
+    const fetchImpl = fetchStub(seated);
+    const { app, browser } = harness({
+      pathname: "/p/alpha",
+      search: "?all=1&lane=wv-a",
+      fetchImpl,
+    });
+    app.start();
+    await flush();
+
+    const select = root().querySelector("#filter-seat") as HTMLSelectElement;
+    select.value = "s2";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+
+    // The lane is not carried: a lane id names a lane of one wave, and a filter
+    // that changed the scope cannot mean it still.
+    expect(browser.pushes).toStrictEqual(["/p/alpha?seat=s2&all=1"]);
+    app.stop();
+  });
+});
+
+describe("the / key", () => {
+  /** A keydown on the document, the way a reader's own would arrive. */
+  function press(key: string, init: KeyboardEventInit = {}): KeyboardEvent {
+    const event = new KeyboardEvent("keydown", {
+      key,
+      bubbles: true,
+      cancelable: true,
+      ...init,
+    });
+    document.dispatchEvent(event);
+    return event;
+  }
+
+  const onProject = async (): Promise<ReturnType<typeof harness>> => {
+    const started = harness({ pathname: "/p/alpha" });
+    started.app.start();
+    await flush();
+    return started;
+  };
+
+  it("goes to the search box, and keeps the slash out of the address", async () => {
+    const { app } = await onProject();
+    expect(document.activeElement).toBe(document.body);
+
+    const event = press("/");
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(root().querySelector("#filter-q"));
+    app.stop();
+  });
+
+  it.each(["metaKey", "ctrlKey", "shiftKey", "altKey"] as const)(
+    "leaves a %s slash to the browser",
+    async (modifier) => {
+      const { app } = await onProject();
+      const event = press("/", { [modifier]: true });
+      expect(event.defaultPrevented).toBe(false);
+      expect(document.activeElement).toBe(document.body);
+      app.stop();
+    },
+  );
+
+  it("leaves a slash alone in the box it is being typed into", async () => {
+    const { app } = await onProject();
+    const input = root().querySelector("#filter-q") as HTMLInputElement;
+    input.focus();
+
+    const event = press("/");
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(document.activeElement).toBe(input);
+    app.stop();
+  });
+
+  it("leaves a slash alone in a select the reader is choosing from", async () => {
+    const { app } = await onProject();
+    const select = root().querySelector("#filter-seat") as HTMLSelectElement;
+    select.focus();
+
+    const event = press("/");
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(document.activeElement).toBe(select);
+    app.stop();
+  });
+
+  it("does nothing on a page with no search box", async () => {
+    const { app } = harness({ pathname: "/" });
+    app.start();
+    await flush();
+
+    const event = press("/");
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(document.activeElement).toBe(document.body);
+    app.stop();
+  });
+
+  it("does nothing for any other key", async () => {
+    const { app } = await onProject();
+    const event = press("s");
+    expect(event.defaultPrevented).toBe(false);
+    expect(document.activeElement).toBe(document.body);
+    app.stop();
+  });
+
+  it("is gone once the app is stopped", async () => {
+    const { app } = await onProject();
+    app.stop();
+
+    const event = press("/");
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(document.activeElement).toBe(document.body);
     app.stop();
   });
 });

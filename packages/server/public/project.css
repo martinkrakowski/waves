@@ -221,6 +221,61 @@
   font-size: 0.8rem;
 }
 
+.toolbar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  margin: 0.75rem 0 0.25rem;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.chips a {
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  padding: 0.1rem 0.55rem;
+  text-decoration: none;
+}
+
+.chips a[aria-current="true"] {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
+.toolbar label {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.toolbar select,
+.toolbar input {
+  background: var(--bg-sink);
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  color: var(--text);
+  font: inherit;
+  padding: 0.25rem 0.45rem;
+}
+
+.toolbar select:focus-visible,
+.toolbar input:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.toolbar .shown {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin-left: auto;
+}
+
 /* One column below the width the shell drops its rail at, so the panels reflow at
    the same moment the frame does. */
 @media (max-width: 1080px) {

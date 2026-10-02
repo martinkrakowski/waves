@@ -7,7 +7,7 @@ import { isProjectId, isWaveId } from "./patterns.js";
 import { parseQuery } from "./query.js";
 import { shell } from "./shell.js";
 import { renderFleet } from "./views/fleet.js";
-import { renderProject } from "./views/project.js";
+import { hrefFor, renderProject } from "./views/project.js";
 
 export const REFRESH_MS = 10_000;
 
@@ -18,6 +18,9 @@ const LOADING = "Loading…";
 
 /** `/p/<id>` or `/p/<id>/w/<wave>`: the server serves the page on both. */
 const PROJECT_PATH = /^\/p\/([^/]+)(\/w\/([^/]+))?$/;
+
+/** The tags a reader is already typing into, where a `/` is a `/`. */
+const TYPING = ["INPUT", "SELECT", "TEXTAREA"];
 
 export function routeOf(pathname) {
   if (pathname === "/" || pathname === "") {
@@ -202,9 +205,54 @@ export function createApp(deps) {
       return renderProject(
         { lanes: data.lanes, wave: route.wave, query },
         clock(),
+        projectHandlers(),
       );
     }
     return el("p", { attrs: { class: "empty" }, text: "No such project." });
+  }
+
+  /**
+   * The two things a filter on a project's page can ask for. Both are
+   * navigations, so a filter is a place a reader can be sent, read aloud, copied
+   * or opened in a new tab, and the address is where the filter lives rather than
+   * inside a control that a reload forgets. Typing replaces the address rather
+   * than pushing onto it: a reader typing one word must not fill the history
+   * with one entry per keystroke.
+   */
+  function projectHandlers() {
+    return {
+      onFilter: (patch) => {
+        navigate(
+          hrefFor(route.id, route.wave, {
+            ...query,
+            ...patch,
+            lane: undefined,
+          }),
+        );
+      },
+      onSearch: (text) => {
+        navigate(
+          hrefFor(route.id, route.wave, {
+            ...query,
+            q: text === "" ? undefined : text,
+            lane: undefined,
+          }),
+          { replace: true },
+        );
+      },
+    };
+  }
+
+  /**
+   * The control inside the page the view gave this key, compared by value and
+   * never by a selector built from it: a key is one this page's own markup
+   * carries, and a selector is the one place an API string would end up in a
+   * query.
+   */
+  function controlWith(key) {
+    return [...root.querySelectorAll("[data-key]")].find(
+      (element) => element.getAttribute("data-key") === key,
+    );
   }
 
   /**
@@ -216,11 +264,23 @@ export function createApp(deps) {
    * refresh would otherwise take the focus with it and drop a keyboard reader
    * at the top of the page. Compared by value, never by selector: an `href` is
    * an API string and does not belong in a query.
+   *
+   * A control is remembered by the key it was drawn with, and with its caret: a
+   * reader typing in the search box would otherwise be dropped out of it on
+   * every character. It is asked about first, because a `select` and an `input`
+   * carry no address at all.
    */
   function focusedLink() {
     const active = doc.activeElement;
     if (active === null || !root.contains(active)) {
       return undefined;
+    }
+    const key = active.getAttribute("data-key");
+    if (key !== null && key !== "nav") {
+      const start = active.selectionStart;
+      return typeof start === "number"
+        ? { key, start, end: active.selectionEnd }
+        : { key };
     }
     const href = active.getAttribute("href");
     if (href === null) {
@@ -234,18 +294,31 @@ export function createApp(deps) {
   }
 
   /**
-   * Puts the focus on the link of the new document that stands where the old
-   * one stood among the links with its address, without scrolling to it: a
-   * reader who scrolled away is not dragged back every ten seconds.
+   * Puts the focus back where it was: a control by its key, a link by its
+   * address and its place among the links with that address, without scrolling
+   * to it — a reader who scrolled away is not dragged back every ten seconds. A
+   * control the redraw did not draw is left alone, which is what happens when
+   * the scope emptied and the toolbar went with it.
    */
-  function refocus(link) {
-    if (link === undefined) {
+  function refocus(focused) {
+    if (focused === undefined) {
+      return;
+    }
+    if (focused.key !== undefined) {
+      const control = controlWith(focused.key);
+      if (control === undefined) {
+        return;
+      }
+      control.focus({ preventScroll: true });
+      if (focused.start !== undefined) {
+        control.setSelectionRange(focused.start, focused.end);
+      }
       return;
     }
     const same = [...root.querySelectorAll("a")].filter(
-      (anchor) => anchor.getAttribute("href") === link.href,
+      (anchor) => anchor.getAttribute("href") === focused.href,
     );
-    same[link.nth]?.focus({ preventScroll: true });
+    same[focused.nth]?.focus({ preventScroll: true });
   }
 
   function draw() {
@@ -469,11 +542,38 @@ export function createApp(deps) {
     void refreshOnce().then(schedule, schedule);
   }
 
+  /**
+   * `/` goes to the search box, the way it does everywhere else a reader expects
+   * it to — and only when the reader is not already in a control, so a slash in
+   * the search box, or a `#` and a slash a reader is typing into a seat, is a
+   * slash and not a command. A page with no search box is left alone, and a
+   * modified `/` is left to the browser, which has its own meaning for it.
+   */
+  function onKey(event) {
+    if (root === null || event.key !== "/") {
+      return;
+    }
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+      return;
+    }
+    const active = doc.activeElement;
+    if (active !== null && TYPING.includes(active.tagName)) {
+      return;
+    }
+    const box = controlWith("q");
+    if (box === undefined) {
+      return;
+    }
+    event.preventDefault();
+    box.focus();
+  }
+
   function start() {
     stopped = false;
     read();
     generation += 1;
     doc.addEventListener("visibilitychange", onVisibility);
+    doc.addEventListener("keydown", onKey);
     win.addEventListener("popstate", onPopState);
     if (root !== null) {
       root.addEventListener("click", onClick);
@@ -489,6 +589,7 @@ export function createApp(deps) {
       timer = undefined;
     }
     doc.removeEventListener("visibilitychange", onVisibility);
+    doc.removeEventListener("keydown", onKey);
     win.removeEventListener("popstate", onPopState);
     if (root !== null) {
       root.removeEventListener("click", onClick);
