@@ -38,6 +38,27 @@ describe("drawableWave", () => {
     expect(drawableWave(withLanes())).toBe(true);
   });
 
+  it("takes the least a lane on the wire can be", () => {
+    // No seat, no report, nothing derived but the one required field: a lane the
+    // contract accepts must never read as a broken endpoint.
+    const bare = { id: "wv-a", derived: { alive: false }, disagreements: [] };
+    const stale = {
+      id: "wv-b",
+      derived: { alive: "unknown" },
+      disagreements: [],
+    };
+    expect(
+      drawableWave(
+        waveView({
+          envelope: envelope({
+            intervalSeconds: null,
+            lanes: [bare, stale] as unknown as LaneView[],
+          }),
+        }),
+      ),
+    ).toBe(true);
+  });
+
   it.each([
     ["null", null],
     ["a wave id rather than a wave view", "w-3"],
@@ -97,6 +118,14 @@ describe("drawableWave", () => {
     [
       "a lane whose disagreements are not a list",
       withLanes(lane({ disagreements: "none" as unknown as string[] })),
+    ],
+    [
+      "a lane with nothing derived",
+      withLanes({ id: "wv-a", derived: {}, disagreements: [] }),
+    ],
+    [
+      "a lane whose alive is neither a boolean nor unknown",
+      withLanes({ id: "wv-a", derived: { alive: "yes" }, disagreements: [] }),
     ],
   ])("rejects %s", (_label, body) => {
     expect(drawableWave(body)).toBe(false);

@@ -27,6 +27,8 @@ function drawableLane(lane) {
     typeof lane.id === "string" &&
     lane.derived !== null &&
     typeof lane.derived === "object" &&
+    (typeof lane.derived.alive === "boolean" ||
+      lane.derived.alive === "unknown") &&
     Array.isArray(lane.disagreements)
   );
 }
