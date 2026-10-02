@@ -37,7 +37,7 @@ exactly `ENVELOPE_KEYS`
 | `lanes`           | array             | yes      | at most 200 entries, see 2.3                                               |
 
 `project` and `wave` patterns are `PROJECT_ID_PATTERN` and `WAVE_ID_PATTERN` in
-`packages/contract/src/domain/ids.ts:7`; `lane.id` uses the wave pattern.
+`packages/contract/src/domain/ids.ts:7`, `9`; `lane.id` uses the wave pattern.
 `intervalSeconds` is required as a key but `null` is a legal value
 (`readIntervalSeconds`, `packages/contract/src/domain/envelope.ts:135`).
 
@@ -276,15 +276,17 @@ see (`respond`, `packages/server/src/infrastructure/http-server.ts:171-220`):
 2. The URL length (`414`).
 3. A `PUT`, `POST` or `DELETE` leaves for the write pipeline of section 5.4,
    whatever the path. The viewer token is never consulted for a write.
-4. `/readyz` is answered.
+4. `/readyz` is answered, for any method that reached this step: it is a
+   probe, and an `OPTIONS` or `PATCH` on it gets the same `200` or `503`.
 5. When a viewer token is configured, authorization (`401`), for every path
    except `/healthz` and `/readyz`.
-6. The method (`405`): anything other than `GET` and `HEAD`, and any method at
-   all on `/api/v1/projects/<id>`, which has no read representation.
+6. The method (`405`): anything other than `GET` and `HEAD`, and any read method
+   on `/api/v1/projects/<id>`, which has no read representation.
 7. The route.
 
 So with a viewer token configured an unauthenticated `OPTIONS` or `PATCH`
-answers `401`, not `405`, while an unauthenticated `POST` goes to the write
+answers `401`, not `405` — except on `/healthz`, which the token does not
+guard and where it is a `405` — while an unauthenticated `POST` goes to the write
 pipeline and is answered by it.
 
 | path                                     | 200 response                                                                                                                               |
@@ -345,7 +347,8 @@ charset="UTF-8"` — only when a read token is configured and the path is
 `readReadToken`, `packages/server/src/infrastructure/read-token.ts:10`). It
 guards every read except `/healthz` and `/readyz`, and it is presented as HTTP
 Basic credentials where **any username is accepted** — only the password is
-compared, in constant time over SHA-256 digests
+compared, in constant time over SHA-256 digests. The scheme is exactly `Basic`
+and the credentials are padded standard base64; anything else is a `401`
 (`authorised`, `packages/server/src/infrastructure/http-security.ts:112-118`).
 When the variable is absent the server serves the read routes to anyone. It
 plays no part in a write: a project that pushes holds its project token and no
@@ -368,7 +371,7 @@ under `/api/`, `/readyz` and every answer of the write pipeline also carry
 
 There is **no CORS**: no `Access-Control-Allow-Origin` is ever sent, no
 `OPTIONS` preflight is answered — an `OPTIONS` request is a `405`, or a `401`
-behind a viewer token — and a write that carries an `Origin` header is refused
+behind a viewer token, with the two probe exceptions of section 5.1 — and a write that carries an `Origin` header is refused
 (section 5.4). A browser page on another origin therefore can neither read these
 routes nor write to them; call them from a server, not from a page.
 
@@ -392,10 +395,13 @@ SHA-256 digest of a project token, and compares digests in constant time
 (`digestsEqual`, `packages/server/src/infrastructure/digest.ts:11`).
 
 The admin token is one secret for the whole service, read once at startup from
-the file `WAVES_ADMIN_TOKEN_FILE` names. When that variable is absent the two
-admin routes do not exist: they answer `404`, so a probe cannot tell a disabled
-route from a path that was never there
-(`packages/server/src/infrastructure/http-write.ts:457-466`).
+the file `WAVES_ADMIN_TOKEN_FILE` names. When that variable is absent, or
+names a file that does not exist, the two admin routes do not exist: they answer
+`404`, so a probe cannot tell a disabled route from a path that was never there.
+A file that does exist must hold a token in the grammar above once trimmed, or
+the server refuses to start
+(`readAdminToken`, `packages/server/src/infrastructure/admin-token.ts:21-40`;
+`packages/server/src/infrastructure/http-write.ts:457-466`).
 
 **Registration.** The body is a closed object of `id` (the project id pattern of
 section 2.1), `name` (1 to 80 characters) and an optional `repo` (an `https` URL
@@ -404,7 +410,8 @@ project's token — 32 random bytes as base64url, 43 characters — and that ans
 is the only time the token exists in clear text anywhere. An id that is already
 registered is a `409`, unless the request target is exactly
 `POST /api/v1/projects?rotate=1`, which mints a new token for it, invalidates
-the old one and keeps its `registeredAt`. `rotate=1` on an id that is not
+the old one and keeps its `registeredAt`. A rotation body is a full
+registration body: its `name` and `repo` replace the stored ones. `rotate=1` on an id that is not
 registered registers it. Deleting a project removes its waves with it.
 (`REGISTRATION_KEYS`, `registerProject`,
 `packages/server/src/application/write-model.ts:16`, `97-128`;
@@ -420,8 +427,8 @@ connection without reading the body
 1. `404` `{"error":"not found"}` — the path is not a route. `405` with that
    path's `Allow` — it is one, and this method does not write to it.
 2. `404` — an admin route with no admin token configured.
-3. `400` `{"error":"bad query"}` — any query string at all, other than exactly
-   `rotate=1` on a registration.
+3. `400` `{"error":"bad query"}` — any non-empty query string, other than
+   exactly `rotate=1` on a registration.
 4. `403` `{"error":"cross-origin writes refused"}` — the request carries an
    `Origin` header.
 5. Framing. A `DELETE` that declares a body is `400`
@@ -462,7 +469,7 @@ Only then is the body read. A client that sent `Expect: 100-continue` over
 HTTP/1.1 gets its `100 Continue` here and not before, so a client that waits for
 it never sends a body to a refusal; a client that does not wait and is refused
 sees the connection reset mid-body (`continueIfExpected`,
-`packages/server/src/infrastructure/http-write.ts:233-242`; `send`,
+`packages/server/src/infrastructure/http-write.ts:233-242`; `SendOptions`,
 `packages/server/src/infrastructure/http-security.ts:47-66`).
 
 After the body:
@@ -535,7 +542,7 @@ curl --fail --silent --show-error \
   --user "viewer:$WAVES_VIEWER_TOKEN" \
   https://waves.example.com/api/v1/projects/apollo/waves/wv6
 
-# Health is the one route the viewer token does not guard.
+# Health and readiness are the two routes the viewer token does not guard.
 curl --fail --silent --show-error \
   --cacert ~/.config/waves/ca.crt \
   https://waves.example.com/healthz
@@ -546,4 +553,4 @@ Read the token from a file rather than an environment variable when you can;
 environment is readable from `/proc/<pid>/environ` by anything that passes the
 kernel's ptrace access check on the process (the same user, or root), and it is
 inherited by every child process
-(`packages/server/src/infrastructure/read-token.ts:3-9`).
+(`packages/server/src/infrastructure/read-token.ts:5-9`).
