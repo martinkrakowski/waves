@@ -31,6 +31,7 @@ import {
   isApiPath,
   MAX_URL_BYTES,
   pathOf,
+  queryOf,
   READY_PATH,
   type Route,
   route,
@@ -55,6 +56,9 @@ const REQUEST_TIMEOUT_MS = 30_000;
 const MAX_HEADER_BYTES = 16_384;
 
 const NOT_FOUND: Reply = jsonReply(404, { error: "not found" });
+
+/** The one query the project lanes route reads: every wave, not just retained. */
+const ALL_WAVES = "all=1";
 
 export interface HttpServerDeps {
   readonly store: StorePort<Project, StoredSnapshot>;
@@ -139,12 +143,13 @@ async function replyFor(
 }
 
 /**
- * Health, readiness, the three listings — every project, one project's waves and
- * the attention across the fleet — the wave views and the page, plus the whole
- * write path. The read token guards only what it did before — the GET and HEAD
- * routes, and neither probe — because a project pushing a wave holds a project
- * token and has no read token; a write is answered with a bearer token or with
- * nothing at all, and every response carries the same security headers.
+ * Health, readiness, the four listings — every project, one project's waves, one
+ * project's lanes and the attention across the fleet — the wave views and the
+ * page, plus the whole write path. The read token guards only what it did before
+ * — the GET and HEAD routes, and neither probe — because a project pushing a
+ * wave holds a project token and has no read token; a write is answered with a
+ * bearer token or with nothing at all, and every response carries the same
+ * security headers.
  */
 /** Anything under the API prefix is never cached; the page and its assets may be. */
 function extraFor(pathname: string): Headers {
@@ -210,6 +215,33 @@ export function createHttpServer(deps: HttpServerDeps): Server {
         method,
         extra: { ...extra, Allow: allowOf(matched) },
       });
+    }
+    // The only route that reads its query string: it answers every lane of a
+    // project, and `all=1` widens the scope past the waves the store is meant to
+    // be holding. A query that is not one of those two is refused here, after
+    // the method and the token have been answered and before the project is
+    // read, so an unknown project with a bad query is a 400 and not a 404 that
+    // says the parameter was understood.
+    if (matched.kind === "lanes") {
+      const query = queryOf(target);
+      if (query !== "" && query !== ALL_WAVES) {
+        return send(res, jsonReply(400, { error: "bad query" }), {
+          method,
+          extra,
+        });
+      }
+      const lanes = await readModel.listLanes(
+        matched.project,
+        query === ALL_WAVES,
+      );
+      return send(
+        res,
+        lanes === undefined ? NOT_FOUND : jsonReply(200, lanes),
+        {
+          method,
+          extra,
+        },
+      );
     }
     const reply = await replyFor(
       matched,
