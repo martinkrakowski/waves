@@ -1022,6 +1022,253 @@ describe("the / key", () => {
   });
 });
 
+describe("the projects menu", () => {
+  /** The shell's own `details`, which is the only one the menu draws. */
+  function menu(): HTMLDetailsElement {
+    return root().querySelector("details.menu") as HTMLDetailsElement;
+  }
+
+  function summary(): HTMLElement {
+    return root().querySelector("details.menu > summary") as HTMLElement;
+  }
+
+  /** A keydown on the document, the way a reader's own would arrive. */
+  function press(key: string): KeyboardEvent {
+    const event = new KeyboardEvent("keydown", {
+      key,
+      bubbles: true,
+      cancelable: true,
+    });
+    document.dispatchEvent(event);
+    return event;
+  }
+
+  /** Booted on the fleet page with two projects, and settled. */
+  async function onFleet(): Promise<ReturnType<typeof harness>> {
+    const started = harness({
+      pathname: "/",
+      fetchImpl: fetchStub(
+        answering(projectCard(), projectCard({ id: "beta", name: "Beta" })),
+      ),
+    });
+    started.app.start();
+    await flush();
+    return started;
+  }
+
+  it("is shut until the reader opens it", async () => {
+    const { app } = await onFleet();
+    expect(menu().open).toBe(false);
+    app.stop();
+  });
+
+  it("stays open across a refresh pass, the way the reader left it", async () => {
+    const { app } = await onFleet();
+    menu().open = true;
+
+    await app.refresh();
+
+    expect(menu().open).toBe(true);
+    app.stop();
+  });
+
+  it("stays shut across a refresh pass once the reader has shut it", async () => {
+    const { app } = await onFleet();
+    menu().open = true;
+    menu().open = false;
+
+    await app.refresh();
+
+    expect(menu().open).toBe(false);
+    app.stop();
+  });
+
+  it("ignores a toggle from another details element on the page", async () => {
+    const { app } = await onFleet();
+    const stray = document.createElement("details");
+    stray.setAttribute("class", "elsewhere");
+    root().append(stray);
+
+    stray.open = true;
+
+    expect(menu().open).toBe(false);
+    await app.refresh();
+    expect(menu().open).toBe(false);
+    app.stop();
+  });
+
+  it("ignores a toggle from something that is not a details element", async () => {
+    const { app } = await onFleet();
+    root()
+      .querySelector(".menu-list")
+      ?.dispatchEvent(new Event("toggle", { bubbles: true }));
+
+    await app.refresh();
+
+    expect(menu().open).toBe(false);
+    app.stop();
+  });
+
+  it("closes on the project the reader picked from it, in one push", async () => {
+    const { app, browser } = await onFleet();
+    menu().open = true;
+
+    (
+      root().querySelectorAll(".menu-list .projects a")[1] as HTMLElement
+    ).click();
+    await flush();
+
+    expect(browser.pushes).toStrictEqual(["/p/beta"]);
+    expect(app.route).toStrictEqual({ kind: "project", id: "beta" });
+    expect(menu().open).toBe(false);
+    app.stop();
+  });
+
+  it("closes on Back, which no click inside or outside it explains", async () => {
+    const { app, browser } = harness({ pathname: "/p/alpha" });
+    app.start();
+    await flush();
+    menu().open = true;
+
+    browser.location.search = "?reason=gate";
+    browser.popstate();
+
+    expect(menu().open).toBe(false);
+    app.stop();
+  });
+
+  it("leaves an Escape that something else already took", async () => {
+    const { app } = await onFleet();
+    menu().open = true;
+    const takeIt = (event: Event): void => {
+      event.preventDefault();
+    };
+    document.addEventListener("keydown", takeIt, true);
+
+    press("Escape");
+
+    document.removeEventListener("keydown", takeIt, true);
+    expect(menu().open).toBe(true);
+    expect(document.activeElement).toBe(document.body);
+    app.stop();
+  });
+
+  it("leaves the focus on the new summary after a refresh pass", async () => {
+    const { app } = await onFleet();
+    summary().focus();
+
+    await app.refresh();
+
+    expect(document.activeElement).toBe(summary());
+    app.stop();
+  });
+
+  it("closes on Escape, and hands the focus back to the summary", async () => {
+    const { app, browser } = await onFleet();
+    menu().open = true;
+    expect(document.activeElement).toBe(document.body);
+
+    press("Escape");
+
+    expect(menu().open).toBe(false);
+    expect(document.activeElement).toBe(summary());
+    expect(browser.pushes).toStrictEqual([]);
+    app.stop();
+  });
+
+  it("leaves Escape alone with the menu shut, and the slash to the search box", async () => {
+    const { app } = harness({ pathname: "/p/alpha" });
+    app.start();
+    await flush();
+    expect(menu().open).toBe(false);
+
+    press("Escape");
+
+    expect(document.activeElement).toBe(document.body);
+    expect(menu().open).toBe(false);
+
+    press("/");
+
+    expect(document.activeElement).toBe(root().querySelector("#filter-q"));
+    app.stop();
+  });
+
+  it("closes on a click outside it", async () => {
+    const { app } = await onFleet();
+    menu().open = true;
+    const heading = root().querySelector("h1") as HTMLElement;
+
+    heading.click();
+
+    expect(menu().open).toBe(false);
+    // Shut in place: the page the click landed on is still the page on screen.
+    expect(heading.isConnected).toBe(true);
+    await app.refresh();
+    expect(menu().open).toBe(false);
+    app.stop();
+  });
+
+  it("shuts when the reader picks the page already on screen", async () => {
+    const { app, browser } = harness({ pathname: "/p/alpha" });
+    app.start();
+    await flush();
+    menu().open = true;
+    const here = Array.from(root().querySelectorAll(".menu-list a")).find(
+      (anchor) => anchor.getAttribute("href") === "/p/alpha",
+    ) as HTMLElement;
+
+    here.click();
+
+    expect(menu().open).toBe(false);
+    expect(browser.pushes).toStrictEqual([]);
+    await app.refresh();
+    expect(menu().open).toBe(false);
+    app.stop();
+  });
+
+  it("stays open for a click inside it that is not a link", async () => {
+    const { app } = await onFleet();
+    menu().open = true;
+
+    (root().querySelector(".menu-list .projects small") as HTMLElement).click();
+
+    expect(menu().open).toBe(true);
+    app.stop();
+  });
+
+  it("closes on a click on a link outside it, and follows that link", async () => {
+    const { app, browser } = await onFleet();
+    menu().open = true;
+
+    (root().querySelector(".project-card h3 a") as HTMLElement).click();
+    await flush();
+
+    expect(menu().open).toBe(false);
+    expect(browser.pushes).toStrictEqual(["/p/alpha"]);
+    app.stop();
+  });
+
+  it("hears nothing once the app is stopped", async () => {
+    const { app } = await onFleet();
+    app.stop();
+
+    menu().open = true;
+    await app.refresh();
+
+    expect(menu().open).toBe(false);
+  });
+
+  it("does not close on Escape once the app is stopped", async () => {
+    const { app } = await onFleet();
+    menu().open = true;
+    app.stop();
+
+    press("Escape");
+
+    expect(document.activeElement).toBe(document.body);
+  });
+});
+
 describe("the rail across a navigation", () => {
   it("keeps listing the projects while the next route loads", async () => {
     const gate = holding(perProject, (path) => path.endsWith("/alpha/lanes"));

@@ -1,7 +1,8 @@
 /*
- * The frame and nothing else: a rail on the left, a top bar, and the page area
- * the views draw into. Colours come only from tokens.css, so both schemes and
- * every later stylesheet read the same names.
+ * The frame and nothing else: a top bar, the page area the views draw into, and
+ * a footer bar for what the page has to say out loud. One column at every width.
+ * Colours come only from tokens.css, so both schemes and every later
+ * stylesheet read the same names.
  */
 
 * {
@@ -16,104 +17,42 @@ body {
   margin: 0;
 }
 
-/* Three children in two columns: the rail takes the whole first column, and the
-   top bar and the page share the second. Each is placed by name, because left to
-   auto-placement the page wraps into a second row under the rail. */
+/* Three children, three rows: the bars are as tall as they need to be and the
+   page takes the rest, so scrolling happens inside the page, not beside it. */
 .app {
   display: grid;
-  grid-template-columns: var(--rail) minmax(0, 1fr);
-  grid-template-rows: auto 1fr;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto 1fr auto;
   min-height: 100vh;
 }
 
-/* The rail holds its place while the page scrolls under it. */
-.rail {
-  grid-column: 1;
-  grid-row: 1 / span 2;
-  border-right: 1px solid var(--line);
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-  height: 100vh;
-  overflow-y: auto;
-  padding: 1rem 0.9rem;
-  position: sticky;
-  top: 0;
-}
-
-.brand {
-  align-items: baseline;
-  display: flex;
-  gap: 0.5rem;
-  justify-content: space-between;
-}
-
-.brand a {
-  color: var(--text);
-  font-size: 1.15rem;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.rail h2 {
-  color: var(--muted);
-  font-size: 0.75rem;
-  letter-spacing: 0.08em;
-  margin: 0 0 0.5rem;
-  text-transform: uppercase;
-}
-
-.projects {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.projects li {
-  margin-bottom: 0.75rem;
-}
-
-.projects a {
-  color: var(--text);
-  text-decoration: none;
-}
-
-.projects a[aria-current="page"] {
-  color: var(--blue);
-}
-
-.projects small {
-  color: var(--muted);
-  display: block;
-  font-size: 0.75rem;
-}
-
-.legend {
-  border-top: 1px solid var(--line);
-  margin-top: auto;
-  padding-top: 0.9rem;
-}
-
-.legend p {
-  color: var(--muted);
-  font-size: 0.75rem;
-  margin: 0 0 0.4rem;
-}
-
+/* The bar that holds its place while the page scrolls under it. */
 .topbar {
-  grid-column: 2;
-  grid-row: 1;
-  align-items: baseline;
+  align-items: center;
   background: var(--bg);
   border-bottom: 1px solid var(--line);
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
-  justify-content: space-between;
+  gap: 1rem;
+  justify-content: flex-start;
   padding: 0.75rem 1.25rem;
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 2;
+}
+
+/* The mark sits beside the word, so it needs less room than the bar's own gap. */
+.logo {
+  color: var(--blue);
+  fill: none;
+  flex: none;
+  height: 1rem;
+  margin-right: -0.5rem;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  width: 1rem;
 }
 
 .crumbs {
@@ -137,9 +76,112 @@ body {
   color: var(--text);
 }
 
-/* The note in the top bar is one line of text, not the boxed banner the old
+/* The projects, in a native disclosure: the summary is a control of its own and
+   `details` does the opening, so nothing here has to. */
+/* At the end of the bar, and the list opens from its right edge: a list that
+   opened rightwards from after a long breadcrumb would run off the screen. */
+.menu {
+  margin-left: auto;
+  position: relative;
+}
+
+.menu summary {
+  background: var(--bg-sink);
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 0.2rem 0.6rem;
+}
+
+/* The list is out of the flow so the page does not move when it opens; on a
+   phone, where there is no room beside it, it is put back into the flow. */
+.menu-list {
+  background: var(--bg-raise);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+  max-height: min(70vh, 28rem);
+  max-width: min(24rem, calc(100vw - 2.5rem));
+  min-width: 16rem;
+  overflow-y: auto;
+  padding: 0.6rem 0.75rem;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.35rem);
+  z-index: 3;
+}
+
+.projects {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.projects li {
+  margin-bottom: 0.75rem;
+}
+
+.projects a {
+  color: var(--text);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.projects a[aria-current="page"] {
+  color: var(--blue);
+}
+
+.projects small {
+  color: var(--muted);
+  display: block;
+  font-size: 0.75rem;
+}
+
+.page {
+  min-width: 0;
+  padding: 1.25rem;
+}
+
+a:focus-visible,
+button:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+/* The bar that carries the words, the mode and the note. It holds its place at
+   the bottom, above the page, on the same terms as the bar at the top. */
+.footbar {
+  align-items: baseline;
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+  bottom: 0;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.75rem;
+  gap: 0.25rem 1.25rem;
+  padding: 0.4rem 1.25rem;
+  position: sticky;
+  z-index: 1;
+}
+
+.footbar .legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.25rem;
+  margin-left: auto;
+}
+
+.footbar .legend p {
+  margin: 0;
+}
+
+/* The note in the footbar is one line of text, not the boxed banner the old
    views still use. */
-.topbar .note {
+.footbar .note {
   background: none;
   border: none;
   color: var(--amber);
@@ -148,43 +190,27 @@ body {
   padding: 0;
 }
 
-.page {
-  grid-column: 2;
-  grid-row: 2;
-  min-width: 0;
-  padding: 1.25rem;
-}
-
-a:focus-visible,
-button:focus-visible {
-  outline: 2px solid var(--blue);
-  outline-offset: 2px;
-}
-
-/* One column, rail first: the rail is the navigation on a narrow screen too. */
-@media (max-width: 1080px) {
-  .app {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: none;
-  }
-
-  .rail {
-    border-bottom: 1px solid var(--line);
-    border-right: none;
-    grid-column: 1;
-    grid-row: auto;
-    height: auto;
-    position: static;
-  }
-
+/* On a phone neither bar sticks: two sticky bars would take a fifth of the
+   screen off the page, and the list opens in the flow instead of over it. */
+@media (max-width: 44rem) {
   .topbar {
-    grid-column: 1;
-    grid-row: auto;
     position: static;
   }
 
-  .page {
-    grid-column: 1;
-    grid-row: auto;
+  .footbar {
+    position: static;
+  }
+
+  .menu-list {
+    box-shadow: none;
+    margin-top: 0.35rem;
+    max-width: none;
+    position: static;
+  }
+
+  /* The open list is in the flow here, so the menu takes a line of its own:
+     sharing one with the mark and the breadcrumb would centre them against it. */
+  .menu {
+    flex-basis: 100%;
   }
 }

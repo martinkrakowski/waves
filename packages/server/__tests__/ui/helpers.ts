@@ -22,6 +22,7 @@ export const ALLOWED_TAGS: ReadonlySet<string> = new Set([
   "DIV",
   "DL",
   "DT",
+  "FOOTER",
   "H1",
   "H2",
   "H3",
@@ -47,6 +48,9 @@ export const ALLOWED_TAGS: ReadonlySet<string> = new Set([
   "THEAD",
   "TR",
   "UL",
+  /** An SVG element's `tagName` is lower case, so the mark's tags are too. */
+  "path",
+  "svg",
 ]);
 
 /** Attributes no data value may ever reach, whatever the tag. */

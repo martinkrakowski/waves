@@ -589,7 +589,7 @@ describe("the focus across a redraw", () => {
     app.stop();
   });
 
-  it("keeps the reader on the card's link, not the rail's link to the same page", async () => {
+  it("keeps the reader on the card's link, not the menu's link to the same page", async () => {
     const { app } = harness({ fetchImpl: fetchStub(listing(projectCard())) });
     app.start();
     await flush();
@@ -604,7 +604,7 @@ describe("the focus across a redraw", () => {
     const active = document.activeElement as HTMLElement;
     expect(active.getAttribute("href")).toBe("/p/alpha");
     expect(active.closest(".project-card")).not.toBeNull();
-    expect(active.closest(".rail")).toBeNull();
+    expect(active.closest(".menu")).toBeNull();
     app.stop();
   });
 
