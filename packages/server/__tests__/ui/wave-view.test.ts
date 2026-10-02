@@ -72,6 +72,10 @@ describe("drawableWave", () => {
       waveView({ stale: "no" as unknown as boolean }),
     ],
     [
+      "a view with no staleAfterMs",
+      waveView({ staleAfterMs: undefined as unknown as number }),
+    ],
+    [
       "a view with no envelope",
       waveView({ envelope: undefined as unknown as EnvelopeView }),
     ],

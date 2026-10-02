@@ -45,6 +45,7 @@ export function drawableWave(view) {
     typeof view === "object" &&
     typeof view.receivedAt === "string" &&
     typeof view.stale === "boolean" &&
+    typeof view.staleAfterMs === "number" &&
     view.envelope !== null &&
     typeof view.envelope === "object" &&
     typeof view.envelope.wave === "string" &&
