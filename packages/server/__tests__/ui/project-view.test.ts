@@ -798,7 +798,9 @@ describe("the disagreements panel", () => {
     expect(textsOf(host, ".panel.disagreements li")[1]).toBe("wv-cw-3c");
   });
 
-  it("links each lane to its own wave with the lane chosen, and keeps the query", () => {
+  it("links each lane to its own wave with the lane chosen, and without the filter", () => {
+    // The panel lists lanes the filter may hide: a link that kept the filter
+    // would open a wave page whose table leaves out the lane it names.
     const host = renderProjectView({
       lanes: LISTING,
       query: { all: true, reason: "gate" },
@@ -808,9 +810,9 @@ describe("the disagreements panel", () => {
         anchor.getAttribute("href"),
       ),
     ).toStrictEqual([
-      "/p/alpha/w/w-3?reason=gate&lane=wv-b&all=1",
-      "/p/alpha/w/w-3?reason=gate&lane=wv-c&all=1",
-      "/p/alpha/w/w-2?reason=gate&lane=wv-a&all=1",
+      "/p/alpha/w/w-3?lane=wv-b&all=1",
+      "/p/alpha/w/w-3?lane=wv-c&all=1",
+      "/p/alpha/w/w-2?lane=wv-a&all=1",
     ]);
   });
 
@@ -1122,6 +1124,21 @@ describe("the toolbar", () => {
     input.value = "wv-b";
     input.dispatchEvent(new Event("input", { bubbles: true }));
     expect(onSearch).toHaveBeenLastCalledWith("wv-b");
+  });
+
+  it("waits for a composed character to be finished before it asks", () => {
+    const { host, onSearch } = drawn();
+    const input = host.querySelector("#filter-q") as HTMLInputElement;
+    input.value = "k";
+    input.dispatchEvent(
+      new InputEvent("input", { bubbles: true, isComposing: true }),
+    );
+    expect(onSearch).not.toHaveBeenCalled();
+
+    input.value = "か";
+    input.dispatchEvent(new Event("compositionend", { bubbles: true }));
+    expect(onSearch).toHaveBeenCalledTimes(1);
+    expect(onSearch).toHaveBeenLastCalledWith("か");
   });
 
   it("asks for no search at all when the box is emptied", () => {
@@ -1591,6 +1608,7 @@ describe("searchText", () => {
     // a box that wrote one of these into the address would empty itself.
     expect(searchText("a\tbc")).toBe("abc");
     expect(searchText("a\nb")).toBe("ab");
+    expect(searchText("a\u007fb")).toBe("ab");
     expect(searchText("")).toBe("");
   });
 });

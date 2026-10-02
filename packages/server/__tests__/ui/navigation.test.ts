@@ -947,7 +947,15 @@ describe("the / key", () => {
     app.stop();
   });
 
-  it.each(["metaKey", "ctrlKey", "shiftKey", "altKey"] as const)(
+  it("takes a slash typed with Shift, as some keyboard layouts type it", async () => {
+    const { app } = await onProject();
+    const event = press("/", { shiftKey: true });
+    expect(event.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(root().querySelector("#filter-q"));
+    app.stop();
+  });
+
+  it.each(["metaKey", "ctrlKey", "altKey"] as const)(
     "leaves a %s slash to the browser",
     async (modifier) => {
       const { app } = await onProject();

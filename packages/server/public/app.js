@@ -547,13 +547,15 @@ export function createApp(deps) {
    * it to — and only when the reader is not already in a control, so a slash in
    * the search box, or a `#` and a slash a reader is typing into a seat, is a
    * slash and not a command. A page with no search box is left alone, and a
-   * modified `/` is left to the browser, which has its own meaning for it.
+   * `/` with Command, Control or Alt is left to the browser, which has its own
+   * meaning for it. Shift is not refused: on several keyboard layouts it is how
+   * a slash is typed.
    */
   function onKey(event) {
     if (root === null || event.key !== "/") {
       return;
     }
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+    if (event.metaKey || event.ctrlKey || event.altKey) {
       return;
     }
     const active = doc.activeElement;

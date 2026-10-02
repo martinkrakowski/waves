@@ -17,9 +17,10 @@ import { visibleWaves } from "../wave.js";
  * `drawableProjectLanes`, and this view reads nothing else, so every value it
  * draws is one the page can link to.
  *
- * Every control here is a link. The app follows its own links in place, and a
- * link is the one control a reader can open in a new tab, copy or read aloud,
- * which a button on a status page is none of.
+ * Everything that leads somewhere is a link. The app follows its own links in
+ * place, and a link is the one control a reader can open in a new tab, copy or
+ * read aloud, which a button on a status page is none of. The two selects and
+ * the search box are the only controls that are not links.
  */
 
 /** The seven facts the table has, in the order it shows them. */
@@ -516,12 +517,19 @@ const NOTHING_DISAGREES =
  * One lane that disagrees: the link to it, the wave it is in, what the two facts
  * said, and how many further disagreements are behind it. The count is only said
  * where there is a disagreement to count.
+ *
+ * The link carries no filter. The panel lists the scope and the table lists
+ * what the filter leaves, so a link that kept the filter could lead to a wave's
+ * page where the lane it names is filtered out of its own table.
  */
 function disagreementItem(model, row) {
   const children = [
     internalLink(
       row.id,
-      hrefFor(projectId(model), row.wave, { ...model.query, lane: row.id }),
+      hrefFor(projectId(model), row.wave, {
+        all: model.query.all,
+        lane: row.id,
+      }),
     ),
     el("code", { text: row.wave }),
     el("span", { attrs: { class: "disagreement" }, text: row.disagreement }),
@@ -718,6 +726,11 @@ function selectFilter({ id, key, label, all, options, chosen, handlers }) {
  * attribute table like every other value on this page, and what it hands back is
  * cut and cleaned by `searchText` so that what the address can carry and what
  * the box holds are the same thing.
+ *
+ * A character still being composed is not asked for: asking redraws the page,
+ * and replacing the box under an input method ends the composition, so a reader
+ * composing a character could never finish one. The search runs when the
+ * composition ends.
  */
 function searchFilter(chosen, handlers) {
   const input = el("input", {
@@ -730,7 +743,13 @@ function searchFilter(chosen, handlers) {
       value: chosen ?? "",
     },
   });
-  input.addEventListener("input", () => {
+  input.addEventListener("input", (event) => {
+    if (event.isComposing === true) {
+      return;
+    }
+    handlers.onSearch(searchText(input.value));
+  });
+  input.addEventListener("compositionend", () => {
     handlers.onSearch(searchText(input.value));
   });
   return [el("label", { attrs: { for: "filter-q" }, text: "Search" }), input];

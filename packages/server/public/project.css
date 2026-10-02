@@ -261,6 +261,9 @@
   border-radius: 0.4rem;
   color: var(--text);
   font: inherit;
+  /* A select is as wide as its widest option, and a seat may be 128 characters. */
+  max-width: min(100%, 18rem);
+  min-width: 0;
   padding: 0.25rem 0.45rem;
 }
 
