@@ -322,9 +322,10 @@ interface CachedLane {
   readonly staleReasons: readonly AttentionReason[];
 }
 
-/** One wave's lanes, kept against the `receivedAt` they were read at. */
+/** One wave's lanes, kept against the wave the store handed over. */
 interface CachedWave {
   readonly receivedAt: string;
+  readonly intervalSeconds: number | null;
   readonly lanes: readonly CachedLane[];
 }
 
@@ -549,6 +550,10 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
     }
     const entry: CachedWave = {
       receivedAt: snapshot.receivedAt,
+      // The staleness of a wave is its own receive time and its own interval, so
+      // both are read from the snapshot: a push that lands between the heads and
+      // the snapshot must not be judged by the head it replaced.
+      intervalSeconds: snapshot.envelope.intervalSeconds,
       lanes: snapshot.envelope.lanes.map(cachedLane),
     };
     remember(key, entry);
@@ -707,7 +712,7 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
           }
           const stale = isStale(
             Date.parse(entry.receivedAt),
-            head.intervalSeconds,
+            entry.intervalSeconds,
             nowMs,
           );
           for (const lane of entry.lanes) {

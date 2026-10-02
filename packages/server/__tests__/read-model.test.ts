@@ -232,6 +232,30 @@ class WaryStore extends MemoryStore {
   }
 }
 
+/**
+ * A store whose waves are replaced between the heads a request read and the
+ * snapshot it then asks for: what comes back was received later, and says an
+ * interval of its own. It is the one answer a store can give and `MemoryStore`
+ * cannot, and a reader that mixes the head's interval with the snapshot's
+ * receive time gets the wrong answer from it.
+ */
+class ReplacedStore extends WaryStore {
+  override async getSnapshot(
+    of: string,
+    wave: string,
+  ): Promise<StoredSnapshot | undefined> {
+    const stored = await super.getSnapshot(of, wave);
+    if (stored === undefined) {
+      return undefined;
+    }
+    return {
+      ...stored,
+      receivedAt: new Date(Date.parse(stored.receivedAt) + 2_000).toISOString(),
+      envelope: { ...stored.envelope, intervalSeconds: 300 },
+    };
+  }
+}
+
 function model(store: MemoryStore, nowMs: number = NOW_MS) {
   return createReadModel({
     store,
@@ -1327,6 +1351,30 @@ describe("the attention view", () => {
     expect(fresh.projects).toEqual([{ id: "alpha", attention: 0 }]);
     expect(stale.lanes[0]?.reasons).toEqual(["silent"]);
     expect(stale.lanes[0]?.stale).toBe(true);
+  });
+
+  it("judges a wave by the interval of the snapshot it read", async () => {
+    const store = new ReplacedStore("wv-absent");
+    await store.putProject(project("alpha"));
+    await store.putSnapshot(
+      pushed("alpha", "wv1", RECEIVED_AT, [
+        // A lane that wants a reader whether or not the wave is stale, and one
+        // that only wants one when the wave is: the difference is the interval.
+        laneOf("wv1-a"),
+        laneOf("wv1-b", { derived: { alive: true } }),
+      ]),
+    );
+
+    // A hundred seconds after the head says it received the wave, which its own
+    // ten-second interval makes long overdue. The snapshot that comes back was
+    // received two seconds later and says five minutes, which it is not.
+    const view = await model(store, RECEIVED_AT_MS + 100_000).listAttention();
+
+    expect(view.lanes.map((entry) => entry.lane)).toEqual(["wv1-a"]);
+    expect(view.lanes[0]?.stale).toBe(false);
+    expect(view.lanes[0]?.receivedAt).toBe("2026-10-01T12:00:03.000Z");
+    expect(view.lanes[0]?.reasons).toEqual(["exit"]);
+    expect(view.projects).toEqual([{ id: "alpha", attention: 1 }]);
   });
 
   it("leaves a lane with no reason of its own out of the list", async () => {
