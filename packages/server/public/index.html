@@ -4,11 +4,15 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>waves</title>
+    <link rel="stylesheet" href="/tokens.css" />
+    <link rel="stylesheet" href="/shell.css" />
     <link rel="stylesheet" href="/app.css" />
   </head>
   <body>
-    <!-- Every element inside #root is created by public/dom.js, never by this file. -->
-    <main id="root"></main>
+    <!-- Every element inside #root is created by public/dom.js, never by this file;
+         the rail, the top bar and the <main> the page is drawn in come from
+         public/shell.js. -->
+    <div id="root"></div>
     <script type="module" src="/main.js"></script>
   </body>
 </html>
