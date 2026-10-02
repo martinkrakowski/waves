@@ -4,6 +4,28 @@ import { drawableLanes, laneTable } from "./lanes.js";
 
 const PAST_RETENTION = "past retention";
 
+/** The required fields of one wave head, as the wave list endpoint sends it. */
+function waveHead(head) {
+  return (
+    head !== null &&
+    typeof head === "object" &&
+    typeof head.wave === "string" &&
+    typeof head.receivedAt === "string" &&
+    typeof head.lanes === "number" &&
+    typeof head.stale === "boolean" &&
+    typeof head.retained === "boolean"
+  );
+}
+
+/**
+ * Whether a response is a list this view can show at all. A list holding an
+ * entry it cannot show is a broken endpoint, and the app treats it as a failed
+ * load rather than replacing a wave list that was right with a shorter one.
+ */
+export function drawableWaves(waves) {
+  return Array.isArray(waves) && waves.every(waveHead);
+}
+
 /** The waves the list can show: the ones the API could actually describe. */
 function presentWaves(waves) {
   return waves.filter((head) => head !== null && head !== undefined);
@@ -94,15 +116,24 @@ function waveHeading(view, nowMs) {
   });
 }
 
+/** Why there are no lanes: nothing pushed, nothing chosen, or nothing stored. */
+function lanePanelMessage(model) {
+  if (model.waves.length === 0) {
+    return "This project has no waves yet.";
+  }
+  const visible = visibleWaves(model.waves, model.showAll);
+  if (model.selected === "" && visible.length > 0) {
+    return "No wave selected.";
+  }
+  return "That wave is no longer stored.";
+}
+
 function lanePanel(model, nowMs) {
   const view = model.view;
   if (view === undefined) {
     return el("p", {
       attrs: { class: "empty" },
-      text:
-        model.waves.length === 0
-          ? "This project has no waves yet."
-          : "That wave is no longer stored.",
+      text: lanePanelMessage(model),
     });
   }
   const children = [waveHeading(view, nowMs)];

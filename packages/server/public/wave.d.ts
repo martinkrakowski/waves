@@ -13,6 +13,10 @@ export interface WavePanelHandlers {
   onToggleAll(): void;
 }
 
+export declare function drawableWaves(
+  waves: unknown,
+): waves is readonly WaveSummary[];
+
 export declare function visibleWaves(
   waves: readonly WaveSummary[],
   showAll: boolean,

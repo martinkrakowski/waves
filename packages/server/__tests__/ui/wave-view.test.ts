@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { visibleWaves } from "../../public/wave.js";
+import { drawableWaves, visibleWaves } from "../../public/wave.js";
 
 import type { WaveSummary } from "../../src/application/read-model.js";
 import { waveSummary, waveView } from "./fixtures.js";
@@ -21,6 +21,20 @@ describe("visibleWaves", () => {
 });
 
 describe("the wave panel", () => {
+  it("knows which wave lists it can show", () => {
+    expect(drawableWaves([waveSummary()])).toBe(true);
+    expect(drawableWaves([])).toBe(true);
+    expect(drawableWaves([{}])).toBe(false);
+    expect(drawableWaves([waveSummary(), null])).toBe(false);
+    expect(drawableWaves([{ ...waveSummary(), lanes: "2" }])).toBe(false);
+    expect(drawableWaves([{ ...waveSummary(), retained: undefined }])).toBe(
+      false,
+    );
+    expect(drawableWaves([{ ...waveSummary(), stale: "yes" }])).toBe(false);
+    expect(drawableWaves(undefined)).toBe(false);
+    expect(drawableWaves({})).toBe(false);
+  });
+
   it("names the project and links back to the list", () => {
     const { host } = renderPanel({ project: "alpha" });
     expect(textsOf(host, "h1 a")).toStrictEqual(["waves"]);

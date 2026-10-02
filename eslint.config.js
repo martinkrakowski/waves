@@ -16,6 +16,12 @@ const OTHER_PACKAGE_PATTERN = `^(?!${KERNEL}(/|$))[^./]`;
 const PORT_MESSAGE =
   "Domain and application code takes dependencies through ports, never dynamic imports or require.";
 
+/**
+ * These rules are the guard rail for the UI, not its guarantee: they catch the
+ * sinks a reviewer can read, and no static rule catches a name assembled at
+ * runtime (`node["inner" + "HTML"]`). The guarantee is `xss.test.ts`, which
+ * asserts on the rendered DOM after feeding every payload through every field.
+ */
 const HTML_MESSAGE =
   "The UI builds elements through public/dom.js and textContent, never HTML strings. An HTML string here is a stored cross-site scripting hole.";
 

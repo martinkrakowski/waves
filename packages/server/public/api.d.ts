@@ -5,13 +5,10 @@ import type {
 } from "../src/application/read-model.js";
 
 /**
- * A project summary as the list endpoint answers it. `Omit` keeps this
- * compiling whether or not `stale` has reached `ProjectSummary` yet; when it
- * has, the two agree and this alias can go.
+ * A project summary as the project list endpoint answers it. The read model is
+ * the only authority on that shape, so this is an alias and nothing else.
  */
-export type ProjectCard = Omit<ProjectSummary, "stale"> & {
-  readonly stale?: boolean;
-};
+export type ProjectCard = ProjectSummary;
 
 export interface ApiResponse {
   readonly ok: boolean;

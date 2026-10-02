@@ -19,20 +19,30 @@ function fact(term, value) {
   });
 }
 
+/**
+ * The required fields of one card. Anything else is not a project the API can
+ * have meant, and `projectList` is better off skipping it than rendering half a
+ * card from whatever arrived.
+ */
 function present(project) {
-  return project !== null && project !== undefined;
+  return (
+    project !== null &&
+    typeof project === "object" &&
+    typeof project.id === "string" &&
+    typeof project.name === "string" &&
+    typeof project.waves === "number" &&
+    typeof project.stale === "boolean"
+  );
 }
 
 /**
- * Whether a response is a list this view can draw at all. A list holding a hole
- * is not a list of projects: it is a broken endpoint, and the app says so
- * rather than replacing a page that was right with one that claims the
- * registry is empty.
+ * Whether a response is a list this view can draw at all. A list holding an
+ * entry it cannot draw is not a list of projects: it is a broken endpoint, and
+ * the app treats it as a failed load rather than replacing a page that was
+ * right with one that claims the registry is empty.
  */
 export function drawableProjects(projects) {
-  return (
-    Array.isArray(projects) && projects.every((project) => present(project))
-  );
+  return Array.isArray(projects) && projects.every(present);
 }
 
 function card(project, nowMs) {

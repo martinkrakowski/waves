@@ -1,7 +1,7 @@
 import { createApi } from "./api.js";
 import { el } from "./dom.js";
 import { drawableProjects, projectList } from "./projects.js";
-import { visibleWaves, wavePanel } from "./wave.js";
+import { drawableWaves, visibleWaves, wavePanel } from "./wave.js";
 
 export const REFRESH_MS = 10_000;
 
@@ -65,6 +65,9 @@ export function createApp(deps) {
       if (waves === undefined) {
         return { kind: "missing" };
       }
+      if (!drawableWaves(waves)) {
+        throw new Error("the wave list is not a list of waves");
+      }
       const visible = visibleWaves(waves, showAll);
       const wanted = visible.find((head) => head.wave === selected);
       const chosen = wanted ?? visible[0];
@@ -72,14 +75,22 @@ export function createApp(deps) {
         return { kind: "project", project: route.id, waves, view: undefined };
       }
       selected = chosen.wave;
-      return {
-        kind: "project",
-        project: route.id,
-        waves,
-        view: await api.wave(route.id, chosen.wave),
-      };
+      const view = await api.wave(route.id, chosen.wave);
+      if (selected !== chosen.wave) {
+        return undefined;
+      }
+      return { kind: "project", project: route.id, waves, view };
     }
     return { kind: "unknown" };
+  }
+
+  /** The lanes on screen, and only ever the lanes of the selected wave. */
+  function viewFor(model) {
+    const view = model.view;
+    if (view === undefined || view.envelope.wave !== selected) {
+      return undefined;
+    }
+    return view;
   }
 
   function body() {
@@ -93,13 +104,18 @@ export function createApp(deps) {
       return projectList(data.projects, clock());
     }
     if (data.kind === "project") {
-      return wavePanel({ ...data, showAll, selected }, clock(), {
+      const model = { ...data, showAll, selected, view: viewFor(data) };
+      return wavePanel(model, clock(), {
         onSelect: (waveId) => {
           selected = waveId;
-          void refresh();
+          void refreshOnce().then(schedule, schedule);
         },
         onToggleAll: () => {
           showAll = !showAll;
+          const visible = visibleWaves(model.waves, showAll);
+          if (!visible.some((head) => head.wave === selected)) {
+            selected = "";
+          }
           draw();
         },
       });
@@ -134,11 +150,18 @@ export function createApp(deps) {
    * back, says the page is offline, and draws that instead. A payload the views
    * cannot render therefore never reaches the document and never reaches
    * `onToggleAll`, which draws straight from the data kept here.
+   *
+   * Answers `false` when the load it did was for a wave the user has since
+   * moved away from, so the caller can pass again for the current selection.
    */
   async function refresh() {
     const previous = data;
     try {
-      data = await load();
+      const next = await load();
+      if (next === undefined) {
+        return false;
+      }
+      data = next;
       note = "";
       draw();
     } catch {
@@ -146,18 +169,28 @@ export function createApp(deps) {
       note = OFFLINE_NOTE;
       draw();
     }
+    return true;
   }
 
   /**
-   * One refresh at a time. A caller that arrives while one is in flight waits
-   * for that one rather than starting a second, which is what keeps the timer
-   * callback and a visibility change from chaining two loops.
+   * One refresh pass at a time. A caller that arrives while one is in flight
+   * waits for that one rather than starting a second, which is what keeps the
+   * timer callback, a visibility change and a click from chaining loops. A pass
+   * that loses its wave to a click passes again, so the wave the user chose last
+   * is the wave that ends up on screen, and the pass it superseded is dropped
+   * rather than drawn.
    */
   async function refreshOnce() {
     if (inFlight !== undefined) {
       return inFlight;
     }
-    inFlight = refresh();
+    inFlight = (async () => {
+      let drawn = await refresh();
+      while (drawn === false) {
+        drawn = await refresh();
+      }
+      return drawn;
+    })();
     try {
       return await inFlight;
     } finally {

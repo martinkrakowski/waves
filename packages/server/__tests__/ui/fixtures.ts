@@ -17,6 +17,7 @@ export function projectCard(overrides: Partial<ProjectCard> = {}): ProjectCard {
     registeredAt: "2026-04-01T08:00:00.000Z",
     waves: 3,
     lastPush: "2026-04-01T11:58:00.000Z",
+    stale: false,
     ...overrides,
   };
 }

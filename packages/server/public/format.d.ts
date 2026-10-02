@@ -1,9 +1,11 @@
 import type {
   Gate,
-  LaneDerivedView,
+  LaneDerived,
   LaneReported,
   PullRequest,
 } from "@hexagen-monaco/waves-contract";
+
+import type { LaneDerivedView } from "../src/application/read-model.js";
 
 export interface AliveView {
   readonly label: string;
@@ -15,6 +17,7 @@ export declare function relativeTime(
   nowMs: number,
 ): string;
 
+/** The three liveness views the read model sends: running, stopped, unknown. */
 export declare function aliveView(alive: LaneDerivedView["alive"]): AliveView;
 
 export declare function gateText(gate: Gate | undefined): string;

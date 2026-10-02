@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "sourceMap": false,
+    "skipLibCheck": false,
+    "types": [],
+    "lib": ["ES2023", "DOM"],
+    "paths": {
+      "@hexagen-monaco/waves-contract": ["../contract/src/index.ts"]
+    }
+  },
+  "include": ["public/**/*.d.ts"]
+}

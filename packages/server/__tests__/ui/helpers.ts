@@ -127,6 +127,8 @@ export function assertNoInjectedMarkup(): void {
 export interface Answer {
   readonly status: number;
   readonly body?: unknown;
+  /** `gatedFetch` only holds a response back when this is left unset. */
+  readonly hold?: boolean;
 }
 
 export type FetchHandler = (path: string) => Answer;
@@ -173,6 +175,12 @@ export interface GatedFetch extends FetchStub {
 export function gatedFetch(handler: FetchHandler): GatedFetch {
   const calls: string[] = [];
   const waiting = new Set<() => void>();
+  const held = (answer: Answer): Promise<unknown> =>
+    new Promise((resolve) => {
+      waiting.add(() => {
+        resolve(answer.body);
+      });
+    });
   const release = (): void => {
     for (const answer of [...waiting]) {
       answer();
@@ -183,15 +191,12 @@ export function gatedFetch(handler: FetchHandler): GatedFetch {
     (path: string): Promise<ApiResponse> => {
       calls.push(path);
       const answer = handler(path);
+      const body =
+        answer.hold === false ? Promise.resolve(answer.body) : held(answer);
       return Promise.resolve({
         ok: answer.status >= 200 && answer.status < 300,
         status: answer.status,
-        json: () =>
-          new Promise((resolve) => {
-            waiting.add(() => {
-              resolve(answer.body);
-            });
-          }),
+        json: () => body,
       });
     },
     { calls, release, pending: () => waiting.size },
