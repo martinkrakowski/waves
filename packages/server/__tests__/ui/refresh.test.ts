@@ -511,7 +511,7 @@ describe("the attention view", () => {
     app.start();
     await flush();
     expect(gate.pending()).toBe(1);
-    expect(textsOf(root(), ".empty")).toStrictEqual(["Loading…"]);
+    expect(textsOf(root(), ".empty")).toStrictEqual(["No such page."]);
 
     app.navigate("/p/alpha");
     gate.release();
@@ -542,6 +542,37 @@ describe("the focus across a redraw", () => {
     app.stop();
   });
 
+  it("says a path is not a page at once, and still says so when the load fails", async () => {
+    const { app } = harness({ pathname: "/nope", fetchImpl: throwingFetch() });
+    app.start();
+    // Before anything has answered: the path is not a page whatever loads.
+    expect(textsOf(root(), ".empty")).toStrictEqual(["No such page."]);
+    await flush();
+
+    expect(textsOf(root(), ".empty")).toStrictEqual(["No such page."]);
+    expect(textsOf(root(), ".note")).toStrictEqual(["offline, retrying"]);
+    app.stop();
+  });
+
+  it("keeps the reader on the card's link, not the rail's link to the same page", async () => {
+    const { app } = harness({ fetchImpl: fetchStub(listing(projectCard())) });
+    app.start();
+    await flush();
+    const link = root().querySelector(".project-card h3 a") as HTMLElement;
+    expect(link.getAttribute("href")).toBe(
+      (root().querySelector(".projects a") as HTMLElement).getAttribute("href"),
+    );
+    link.focus();
+
+    await app.refresh();
+
+    const active = document.activeElement as HTMLElement;
+    expect(active.getAttribute("href")).toBe("/p/alpha");
+    expect(active.closest(".project-card")).not.toBeNull();
+    expect(active.closest(".rail")).toBeNull();
+    app.stop();
+  });
+
   it("leaves the focus alone when that link is not there to replace it", async () => {
     const { app } = harness({ fetchImpl: fetchStub(listing(projectCard())) });
     app.start();
@@ -555,7 +586,7 @@ describe("the focus across a redraw", () => {
 
     await expect(app.refresh()).resolves.toBe(true);
 
-    expect(document.activeElement).not.toBe(stray);
+    expect(document.activeElement).toBe(document.body);
     app.stop();
   });
 

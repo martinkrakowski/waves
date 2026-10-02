@@ -242,6 +242,11 @@ export function createApp(deps) {
   }
 
   function body() {
+    if (route.kind === "unknown") {
+      // A path that is not a page is not one whatever the load says, so it is
+      // said at once and stays said while the rail's data loads or fails.
+      return el("p", { attrs: { class: "empty" }, text: "No such page." });
+    }
     if (data === undefined) {
       // Only the shell's status region carries the note: saying it here as well
       // would put "offline, retrying" on the page twice, once before there is
@@ -280,41 +285,48 @@ export function createApp(deps) {
         },
       });
     }
-    if (data.kind === "missing") {
-      return el("p", {
-        attrs: { class: "empty" },
-        text: "No such project.",
-      });
-    }
-    return el("p", { attrs: { class: "empty" }, text: "No such page." });
+    return el("p", { attrs: { class: "empty" }, text: "No such project." });
   }
 
   /**
-   * The address of the link the reader's focus is on, so a redraw can put them
-   * back on the same one. `draw()` replaces every node, which on the ten-second
+   * The link the reader's focus is on — its address, and which of the links
+   * with that address it is — so a redraw can put them back on the same one.
+   * Several links share an address (the rail and a card both lead to a project),
+   * and landing on the first of them would pull a reader out of the list they
+   * were working down. `draw()` replaces every node, which on the ten-second
    * refresh would otherwise take the focus with it and drop a keyboard reader
    * at the top of the page. Compared by value, never by selector: an `href` is
    * an API string and does not belong in a query.
    */
-  function focusedHref() {
+  function focusedLink() {
     const active = doc.activeElement;
     if (active === null || !root.contains(active)) {
       return undefined;
     }
-    return active.getAttribute("href") ?? undefined;
+    const href = active.getAttribute("href");
+    if (href === null) {
+      return undefined;
+    }
+    const anchors = [...root.querySelectorAll("a")];
+    const nth = anchors
+      .slice(0, Math.max(anchors.indexOf(active), 0))
+      .filter((anchor) => anchor.getAttribute("href") === href).length;
+    return { href, nth };
   }
 
-  /** Puts the focus on the first link of the new document with the same href. */
-  function refocus(href) {
-    if (href === undefined) {
+  /**
+   * Puts the focus on the link of the new document that stands where the old
+   * one stood among the links with its address, without scrolling to it: a
+   * reader who scrolled away is not dragged back every ten seconds.
+   */
+  function refocus(link) {
+    if (link === undefined) {
       return;
     }
-    for (const anchor of root.querySelectorAll("a")) {
-      if (anchor.getAttribute("href") === href) {
-        anchor.focus();
-        return;
-      }
-    }
+    const same = [...root.querySelectorAll("a")].filter(
+      (anchor) => anchor.getAttribute("href") === link.href,
+    );
+    same[link.nth]?.focus({ preventScroll: true });
   }
 
   function draw() {
@@ -322,7 +334,7 @@ export function createApp(deps) {
     if (root === null) {
       return;
     }
-    const href = focusedHref();
+    const focused = focusedLink();
     root.replaceChildren(
       shell(
         {
@@ -335,7 +347,7 @@ export function createApp(deps) {
         body(),
       ),
     );
-    refocus(href);
+    refocus(focused);
   }
 
   /**

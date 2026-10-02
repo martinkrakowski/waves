@@ -121,6 +121,7 @@
 
 .pill,
 .fleet .badge {
+  text-transform: none;
   border: 1px solid currentcolor;
   border-radius: 0.75rem;
   font-size: 0.75rem;
