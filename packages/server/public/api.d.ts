@@ -1,5 +1,6 @@
 import type {
   AttentionView,
+  ProjectLanesView,
   ProjectSummary,
   WaveSummary,
   WaveView,
@@ -29,6 +30,11 @@ export interface Api {
    * the app reads as a failed load: the route is not optional.
    */
   attention(): Promise<AttentionView | undefined>;
+  /**
+   * Every lane of every wave of one project, with the wave heads the page draws
+   * the wave strip from. `all` asks for the waves past the retention as well.
+   */
+  lanes(projectId: string, all: boolean): Promise<ProjectLanesView | undefined>;
   waves(projectId: string): Promise<readonly WaveSummary[] | undefined>;
   wave(projectId: string, waveId: string): Promise<WaveView | undefined>;
 }

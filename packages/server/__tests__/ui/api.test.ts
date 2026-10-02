@@ -7,6 +7,7 @@ import {
   attentionLane,
   attentionView,
   projectCard,
+  projectLanes,
   waveSummary,
   waveView,
 } from "./fixtures.js";
@@ -33,16 +34,23 @@ function recorder(answer: { status: number; body?: unknown }): {
 }
 
 describe("createApi", () => {
-  it("asks for JSON from the four read endpoints", async () => {
+  it("asks for JSON from the read endpoints, and for the lanes route in both of its forms", async () => {
     const { fetch: fetchImpl, seen } = recorder({ status: 200, body: [] });
     const api = createApi(fetchImpl);
     await api.projects();
     await api.attention();
+    await api.lanes("alpha", false);
+    await api.lanes("alpha", true);
     await api.waves("alpha");
     await api.wave("alpha", "w-3");
     expect(seen).toStrictEqual([
       { path: "/api/v1/projects", accept: "application/json" },
       { path: "/api/v1/attention", accept: "application/json" },
+      { path: "/api/v1/projects/alpha/lanes", accept: "application/json" },
+      {
+        path: "/api/v1/projects/alpha/lanes?all=1",
+        accept: "application/json",
+      },
       { path: "/api/v1/projects/alpha/waves", accept: "application/json" },
       { path: "/api/v1/projects/alpha/waves/w-3", accept: "application/json" },
     ]);
@@ -51,9 +59,11 @@ describe("createApi", () => {
   it("percent-encodes the ids it puts in a path", async () => {
     const { fetch: fetchImpl, seen } = recorder({ status: 200, body: [] });
     const api = createApi(fetchImpl);
+    await api.lanes("a/b?c=d", false);
     await api.waves("a/b?c=d");
     await api.wave("a/b?c=d", "w 1");
     expect(seen.map((entry) => entry.path)).toStrictEqual([
+      "/api/v1/projects/a%2Fb%3Fc%3Dd/lanes",
       "/api/v1/projects/a%2Fb%3Fc%3Dd/waves",
       "/api/v1/projects/a%2Fb%3Fc%3Dd/waves/w%201",
     ]);
@@ -68,6 +78,7 @@ describe("createApi", () => {
   it("reads a 404 as nothing rather than as an error", async () => {
     const { fetch: fetchImpl } = recorder({ status: 404 });
     const api = createApi(fetchImpl);
+    await expect(api.lanes("nope", false)).resolves.toBeUndefined();
     await expect(api.waves("nope")).resolves.toBeUndefined();
     await expect(api.wave("nope", "w-1")).resolves.toBeUndefined();
     await expect(api.attention()).resolves.toBeUndefined();
@@ -81,6 +92,7 @@ describe("createApi", () => {
   });
 
   it("keeps the shape the read model promises", async () => {
+    const lanes = projectLanes();
     const waves = [waveSummary()];
     const view = waveView();
     const attention = attentionView({
@@ -89,6 +101,7 @@ describe("createApi", () => {
     });
     const bodies: Readonly<Record<string, unknown>> = {
       "/api/v1/attention": attention,
+      "/api/v1/projects/alpha/lanes": lanes,
       "/api/v1/projects/alpha/waves": waves,
       "/api/v1/projects/alpha/waves/w-3": view,
     };
@@ -100,6 +113,7 @@ describe("createApi", () => {
       }),
     );
     expect(await api.attention()).toStrictEqual(attention);
+    expect(await api.lanes("alpha", false)).toStrictEqual(lanes);
     expect(await api.waves("alpha")).toStrictEqual(waves);
     expect(await api.wave("alpha", "w-3")).toStrictEqual(view);
   });

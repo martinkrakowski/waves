@@ -4,6 +4,12 @@ function projectsPath() {
   return "/api/v1/projects";
 }
 
+/** One project's lanes, with the waves past retention when `all` is asked for. */
+function lanesPath(projectId, all) {
+  const lanes = `/api/v1/projects/${encodeURIComponent(projectId)}/lanes`;
+  return all ? `${lanes}?all=1` : lanes;
+}
+
 function wavesPath(projectId) {
   return `/api/v1/projects/${encodeURIComponent(projectId)}/waves`;
 }
@@ -27,6 +33,7 @@ export function createApi(fetchImpl) {
   return {
     projects: () => readJson(fetchImpl, projectsPath()),
     attention: () => readJson(fetchImpl, "/api/v1/attention"),
+    lanes: (projectId, all) => readJson(fetchImpl, lanesPath(projectId, all)),
     waves: (projectId) => readJson(fetchImpl, wavesPath(projectId)),
     wave: (projectId, waveId) =>
       readJson(fetchImpl, wavePath(projectId, waveId)),
