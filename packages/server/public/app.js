@@ -94,6 +94,13 @@ export function createApp(deps) {
    * forget them. Only a successful load moves it.
    */
   let railProjects;
+  /**
+   * Whether the data on screen was kept across a move to another wave of the
+   * same project and the pass for that wave has not answered yet. Until it does,
+   * the lane panel has nothing to show for the selection and must say it is
+   * loading, not that the wave is gone.
+   */
+  let awaitingWave = false;
   let timer = undefined;
   let inFlight = undefined;
   let stopped = false;
@@ -199,7 +206,13 @@ export function createApp(deps) {
     }
     if (data.kind === "project") {
       const project = data.project;
-      const model = { ...data, showAll, selected, view: viewFor(data) };
+      const model = {
+        ...data,
+        showAll,
+        selected,
+        view: viewFor(data),
+        loading: awaitingWave,
+      };
       return renderProject(model, clock(), {
         onSelect: (waveId) => {
           navigate(
@@ -258,6 +271,7 @@ export function createApp(deps) {
         return false;
       }
       data = next;
+      awaitingWave = false;
       if (next.projects !== undefined) {
         railProjects = next.projects;
       }
@@ -349,7 +363,8 @@ export function createApp(deps) {
     const was = route;
     read();
     note = "";
-    if (!sameProject(was, route)) {
+    awaitingWave = sameProject(was, route) && data !== undefined;
+    if (!awaitingWave) {
       data = undefined;
     }
     draw();

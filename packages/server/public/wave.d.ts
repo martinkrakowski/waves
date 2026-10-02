@@ -6,6 +6,8 @@ export interface WavePanelModel {
   readonly showAll: boolean;
   readonly selected: string;
   readonly view: WaveView | undefined;
+  /** The selected wave's lanes have been asked for and have not arrived. */
+  readonly loading?: boolean;
 }
 
 export interface WavePanelHandlers {

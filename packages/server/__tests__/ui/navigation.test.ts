@@ -559,7 +559,7 @@ describe("choosing a wave", () => {
 
 describe("the rail across a navigation", () => {
   it("keeps listing the projects while the next route loads", async () => {
-    const gate = holding(perProject, (path) => path.endsWith("/beta/waves"));
+    const gate = holding(perProject, (path) => path.endsWith("/alpha/waves"));
     const { app } = harness({ pathname: "/", fetchImpl: gate });
     app.start();
     await flush();
@@ -593,6 +593,30 @@ describe("the rail across a navigation", () => {
     app.stop();
   });
 
+  it("says a chosen wave is loading, not gone, while its lanes cannot be read", async () => {
+    const failing = holding(
+      (path) =>
+        path.endsWith("/waves/a-2")
+          ? { status: 500, body: {} }
+          : perProject(path),
+      () => false,
+    );
+    const { app } = harness({ pathname: "/p/alpha", fetchImpl: failing });
+    app.start();
+    await flush();
+    expect(textsOf(root(), "tbody tr")).toHaveLength(2);
+
+    (root().querySelectorAll(".wave")[1] as HTMLElement).click();
+    await flush();
+
+    // The wave exists; the server could not answer for it. The page says so
+    // once, and does not claim the wave was deleted.
+    expect(textsOf(root(), ".note")).toStrictEqual(["offline, retrying"]);
+    expect(textsOf(root(), ".empty")).toStrictEqual(["Loading…"]);
+    expect(textsOf(root(), "tbody tr")).toHaveLength(0);
+    app.stop();
+  });
+
   it("keeps the wave list on screen while the chosen wave's lanes load", async () => {
     const gate = holding(perProject, (path) => path.endsWith("/waves/a-2"));
     const { app } = harness({ pathname: "/p/alpha", fetchImpl: gate });
@@ -602,8 +626,11 @@ describe("the rail across a navigation", () => {
     expect(textsOf(root(), "tbody tr")).toHaveLength(2);
 
     (root().querySelectorAll(".wave")[1] as HTMLElement).click();
-    // Synchronously: the wave list has not gone back to a bare placeholder.
+    // Synchronously: the wave list has not gone back to a bare placeholder, and
+    // the lane panel says it is loading, not that the wave is gone.
     expect(textsOf(root(), ".wave code")).toStrictEqual(["a-3", "a-2"]);
+    expect(textsOf(root(), ".empty")).toStrictEqual(["Loading…"]);
+    expect(textsOf(root(), "tbody tr")).toHaveLength(0);
 
     // Let the pass reach the held detail before releasing it.
     await flush();
