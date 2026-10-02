@@ -71,10 +71,11 @@ function breadcrumb(route) {
  * leads nowhere is a dead end the reader can see and not follow.
  */
 function projectItem(project, current) {
-  const anchor = internalLink(project.name, `/p/${project.id}`);
-  if (current) {
-    anchor.setAttribute("aria-current", "page");
-  }
+  const anchor = internalLink(
+    project.name,
+    `/p/${project.id}`,
+    current ? { "aria-current": "page" } : {},
+  );
   const meta = [waveCountText(project.waves)];
   if (project.stale) {
     meta.push("stale");

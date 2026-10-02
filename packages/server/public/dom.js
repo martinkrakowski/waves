@@ -95,9 +95,9 @@ export function httpsUrl(value) {
   }
 }
 
-function anchor(label, href) {
+function anchor(label, href, attrs = {}) {
   const node = el("a", {
-    attrs: { class: "link", rel: "noopener noreferrer" },
+    attrs: { class: "link", rel: "noopener noreferrer", ...attrs },
     text: label,
   });
   node.setAttribute("href", href);
@@ -109,9 +109,12 @@ function anchor(label, href) {
  * carries `data-key="nav"`, which is how the shell's click handler knows this
  * is a link it may follow in place instead of letting the browser load the page
  * again. `repoLink` never carries it: an outbound link leaves the page.
+ *
+ * `attrs` goes through the table above like every other attribute, so a caller
+ * can mark a link — `aria-current`, say — without a way in of its own.
  */
-export function internalLink(label, path) {
-  const node = anchor(label, path);
+export function internalLink(label, path, attrs = {}) {
+  const node = anchor(label, path, attrs);
   node.setAttribute("data-key", "nav");
   return node;
 }

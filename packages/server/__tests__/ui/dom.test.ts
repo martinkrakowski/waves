@@ -128,6 +128,20 @@ describe("links", () => {
     expect(node.getAttribute("data-key")).toBe("nav");
   });
 
+  it("takes the attributes a caller may add, and refuses the rest", () => {
+    const marked = internalLink("Alpha", "/p/alpha", {
+      "aria-current": "page",
+    });
+    expect(marked.getAttribute("aria-current")).toBe("page");
+    expect(marked.getAttribute("data-key")).toBe("nav");
+    expect(() =>
+      internalLink("Alpha", "/p/alpha", { onclick: "alert(1)" }),
+    ).toThrow(TypeError);
+    expect(() =>
+      internalLink("Alpha", "/p/alpha", { "aria-current": "page", id: "x" }),
+    ).not.toThrow();
+  });
+
   it("a repository link is never one of ours to follow in place", () => {
     const linked = repoLink("git", "https://git.example.test/alpha");
     expect(linked.tagName).toBe("A");
