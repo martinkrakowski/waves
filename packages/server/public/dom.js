@@ -22,6 +22,8 @@ const SETTERS = {
   "aria-label": (node, value) => node.setAttribute("aria-label", value),
   "aria-current": (node, value) => node.setAttribute("aria-current", value),
   "aria-live": (node, value) => node.setAttribute("aria-live", value),
+  "aria-labelledby": (node, value) =>
+    node.setAttribute("aria-labelledby", value),
   placeholder: (node, value) => node.setAttribute("placeholder", value),
   value: (node, value) => node.setAttribute("value", value),
   max: (node, value) => node.setAttribute("max", value),

@@ -130,6 +130,14 @@ export function assertNoInjectedMarkup(): void {
   for (const element of host.querySelectorAll("*")) {
     expect(ALLOWED_TAGS.has(element.tagName)).toBe(true);
   }
+  // The drawer is a dialog beside #root, not inside it, so it is walked here as
+  // well: a tag outside the set has to be refused wherever on the page it is.
+  for (const dialog of document.querySelectorAll("dialog")) {
+    expect(ALLOWED_TAGS.has(dialog.tagName)).toBe(true);
+    for (const element of dialog.querySelectorAll("*")) {
+      expect(ALLOWED_TAGS.has(element.tagName)).toBe(true);
+    }
+  }
   for (const anchor of document.querySelectorAll("a[href]")) {
     const href = anchor.getAttribute("href") ?? "";
     expect(PROTOCOL_RELATIVE.test(href)).toBe(false);
