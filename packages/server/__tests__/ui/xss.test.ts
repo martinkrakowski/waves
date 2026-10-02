@@ -15,7 +15,14 @@ import { shell } from "../../public/shell.js";
 import { wavePanel } from "../../public/wave.js";
 
 import type { LaneView } from "../../src/application/read-model.js";
-import { lane, NOW_ISO, NOW_MS, projectCard, waveSummary } from "./fixtures.js";
+import {
+  attentionView,
+  lane,
+  NOW_ISO,
+  NOW_MS,
+  projectCard,
+  waveSummary,
+} from "./fixtures.js";
 import {
   assertNoInjectedMarkup,
   browserGlobals,
@@ -97,12 +104,15 @@ function expectVerbatim(
 
 /**
  * Boots the app on the fleet route over the given projects, so the rail and the
- * card draw the same strings and the whole chain is walked, not one view.
+ * card draw the same strings and the whole chain is walked, not one view. The
+ * attention view is a parameter because a payload in one of its ids has to
+ * reach the app as a failed load, not as a page.
  */
 async function bootFleet(
   projects: readonly ProjectCard[],
   pathname = "/",
   search = "",
+  attention: unknown = attentionView(),
 ): Promise<ReturnType<typeof createApp>> {
   freshRoot();
   const timers = timerStub();
@@ -115,7 +125,9 @@ async function bootFleet(
     fetch: fetchStub((path) =>
       path === "/api/v1/projects"
         ? { status: 200, body: projects }
-        : { status: 404 },
+        : path === "/api/v1/attention"
+          ? { status: 200, body: attention }
+          : { status: 404 },
     ),
     setTimer: timers.setTimer,
     clearTimer: timers.clearTimer,
@@ -383,6 +395,8 @@ describe("the rail against stored markup", () => {
           {
             route: { kind: "project", id: "alpha", wave: "wv1" },
             projects: [projectCard({ name: payload })],
+            attention: undefined,
+            all: false,
             note: "",
           },
           el("p", { text: "the page" }),

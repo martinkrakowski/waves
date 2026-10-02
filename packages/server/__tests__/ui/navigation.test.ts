@@ -4,7 +4,12 @@ import type { AppGlobals } from "../../public/app.js";
 import { createApp } from "../../public/app.js";
 import { el, repoLink } from "../../public/dom.js";
 
-import { projectCard, waveSummary, waveView } from "./fixtures.js";
+import {
+  attentionView,
+  projectCard,
+  waveSummary,
+  waveView,
+} from "./fixtures.js";
 import type { Answer, FetchStub, GatedFetch } from "./helpers.js";
 import {
   browserGlobals,
@@ -30,6 +35,9 @@ const PROJECTS = [projectCard(), projectCard({ id: "beta", name: "Beta" })];
 function perProject(path: string): Answer {
   if (path === "/api/v1/projects") {
     return { status: 200, body: PROJECTS };
+  }
+  if (path === "/api/v1/attention") {
+    return { status: 200, body: attentionView() };
   }
   const list = /^\/api\/v1\/projects\/([^/]+)\/waves$/.exec(path);
   if (list !== null) {
@@ -95,6 +103,9 @@ function answering(...projects: unknown[]): (path: string) => Answer {
   return (path) => {
     if (path === "/api/v1/projects") {
       return { status: 200, body: projects };
+    }
+    if (path === "/api/v1/attention") {
+      return { status: 200, body: attentionView() };
     }
     if (/\/waves$/.test(path)) {
       return { status: 200, body: waves };
@@ -511,6 +522,7 @@ describe("choosing a wave", () => {
     expect(textsOf(root(), ".wave.current code")).toStrictEqual(["w-2"]);
     expect(fetchImpl.calls).toStrictEqual([
       "/api/v1/projects",
+      "/api/v1/attention",
       "/api/v1/projects/alpha/waves",
       "/api/v1/projects/alpha/waves/w-2",
     ]);
@@ -575,7 +587,7 @@ describe("the rail across a navigation", () => {
     app.stop();
   });
 
-  it("keeps the last good list on a route that fetches nothing, for ever", async () => {
+  it("keeps the last good list on a route that is not a page of its own", async () => {
     const gate = holding(perProject, () => false);
     const { app } = harness({ pathname: "/", fetchImpl: gate });
     app.start();
@@ -587,7 +599,12 @@ describe("the rail across a navigation", () => {
     expect(textsOf(root(), ".projects a")).toStrictEqual(["Alpha", "Beta"]);
     await flush();
 
-    expect(gate.calls).toHaveLength(before);
+    // Not a page, so nothing for the body, and the rail's two lists: the reader
+    // still has to be able to get to a project from a page that is not there.
+    expect(gate.calls.slice(before)).toStrictEqual([
+      "/api/v1/projects",
+      "/api/v1/attention",
+    ]);
     expect(textsOf(root(), ".projects a")).toStrictEqual(["Alpha", "Beta"]);
     expect(textsOf(root(), ".empty")).toStrictEqual(["No such page."]);
     app.stop();

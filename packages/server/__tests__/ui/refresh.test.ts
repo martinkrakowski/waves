@@ -9,6 +9,7 @@ import { createApp, REFRESH_MS } from "../../public/app.js";
 
 import type { Answer, FetchStub, TimerStub } from "./helpers.js";
 import {
+  attentionView,
   envelope,
   lane,
   NOW_MS,
@@ -68,18 +69,28 @@ function harness(options: {
   return { app, timers, browser };
 }
 
+/** The fleet route's two requests, and nothing else. */
 function listing(...projects: unknown[]): (path: string) => Answer {
-  return (path) =>
-    path === "/api/v1/projects"
-      ? { status: 200, body: projects }
-      : { status: 404 };
+  return (path) => {
+    if (path === "/api/v1/projects") {
+      return { status: 200, body: projects };
+    }
+    if (path === "/api/v1/attention") {
+      return { status: 200, body: attentionView() };
+    }
+    return { status: 404 };
+  };
 }
 
-/** The rail's answer on any route: one project, so the rail has something. */
+/** The rail's answer on any route: one project, and nothing asking for it. */
 function railAnswer(path: string): Answer | undefined {
-  return path === "/api/v1/projects"
-    ? { status: 200, body: [projectCard()] }
-    : undefined;
+  if (path === "/api/v1/projects") {
+    return { status: 200, body: [projectCard()] };
+  }
+  if (path === "/api/v1/attention") {
+    return { status: 200, body: attentionView() };
+  }
+  return undefined;
 }
 
 function projectWaves(path: string): Answer {
@@ -124,7 +135,10 @@ describe("the project list route", () => {
     const { app, timers } = harness({ fetchImpl });
     app.start();
     await flush();
-    expect(fetchImpl.calls).toStrictEqual(["/api/v1/projects"]);
+    expect(fetchImpl.calls).toStrictEqual([
+      "/api/v1/projects",
+      "/api/v1/attention",
+    ]);
     expect(textsOf(root(), ".card-name")).toStrictEqual(["Alpha"]);
     expect(timers.scheduled.map((entry) => entry.delayMs)).toStrictEqual([
       REFRESH_MS,
@@ -143,36 +157,38 @@ describe("the project list route", () => {
   });
 
   it("keeps one chain when the tab is hidden and shown mid-refresh", async () => {
-    const fetchImpl = gatedFetch(() => ({
-      status: 200,
-      body: [projectCard()],
-    }));
+    // Every response is held, so a pass on the fleet route is waiting on both of
+    // its requests at once: the project list and the attention view.
+    const answers = listing(projectCard());
+    const fetchImpl = gatedFetch(
+      (path) => answers(path) ?? { status: 200, body: attentionView() },
+    );
     const { app, timers } = harness({ fetchImpl });
 
     app.start();
     await flush();
-    expect(fetchImpl.calls).toHaveLength(1);
-    expect(fetchImpl.pending()).toBe(1);
+    expect(fetchImpl.calls).toHaveLength(2);
+    expect(fetchImpl.pending()).toBe(2);
     fetchImpl.release();
     await flush();
     expect(timers.scheduled).toHaveLength(1);
 
     timers.runLast();
     await flush();
-    expect(fetchImpl.calls).toHaveLength(2);
-    expect(fetchImpl.pending()).toBe(1);
+    expect(fetchImpl.calls).toHaveLength(4);
+    expect(fetchImpl.pending()).toBe(2);
     expect(timers.scheduled).toHaveLength(0);
 
     setHidden(true);
     visible();
     setHidden(false);
     visible();
-    expect(fetchImpl.calls).toHaveLength(2);
+    expect(fetchImpl.calls).toHaveLength(4);
 
     fetchImpl.release();
     await flush();
 
-    expect(fetchImpl.calls).toHaveLength(2);
+    expect(fetchImpl.calls).toHaveLength(4);
     expect(timers.scheduled).toHaveLength(1);
     expect(timers.scheduled[0]?.delayMs).toBe(REFRESH_MS);
     app.stop();
@@ -209,14 +225,17 @@ describe("the project list route", () => {
 
   it("keeps the last good cards when a later list holds one it cannot show", async () => {
     let second = false;
-    const flaky = fetchStub(() =>
-      second
+    const flaky = fetchStub((path) => {
+      if (path === "/api/v1/attention") {
+        return { status: 200, body: attentionView() };
+      }
+      return second
         ? { status: 200, body: [null] }
         : {
             status: 200,
             body: [projectCard(), projectCard({ id: "beta", name: "Beta" })],
-          },
-    );
+          };
+    });
     const { app, timers } = harness({ fetchImpl: flaky });
     const unhandled: unknown[] = [];
     const listener = (reason: unknown): void => {
@@ -327,7 +346,10 @@ describe("the project list route", () => {
     fetchImpl.calls.length = 0;
     timers.runLast();
     await flush();
-    expect(fetchImpl.calls).toStrictEqual(["/api/v1/projects"]);
+    expect(fetchImpl.calls).toStrictEqual([
+      "/api/v1/projects",
+      "/api/v1/attention",
+    ]);
     expect(timers.scheduled).toHaveLength(1);
     app.stop();
   });
@@ -351,8 +373,12 @@ describe("the project list route", () => {
 
   it("keeps the last data, with a note, when a later fetch fails", async () => {
     let broken = false;
-    const flaky = fetchStub(() =>
-      broken ? { status: 500 } : { status: 200, body: [projectCard()] },
+    const flaky = fetchStub((path) =>
+      broken
+        ? { status: 500 }
+        : path === "/api/v1/attention"
+          ? { status: 200, body: attentionView() }
+          : { status: 200, body: [projectCard()] },
     );
     const { app } = harness({ fetchImpl: flaky });
     app.start();
@@ -370,6 +396,197 @@ describe("the project list route", () => {
   });
 });
 
+describe("the attention view", () => {
+  /** The rail answering with a project that has two lanes asking for attention. */
+  function asking(attention: unknown): (path: string) => Answer {
+    return (path) =>
+      path === "/api/v1/projects"
+        ? { status: 200, body: [projectCard()] }
+        : path === "/api/v1/attention"
+          ? { status: 200, body: attention }
+          : { status: 404 };
+  }
+
+  it("asks for it in one pass, beside the project list", async () => {
+    const fetchImpl = fetchStub(
+      asking(attentionView({ projects: [{ id: "alpha", attention: 2 }] })),
+    );
+    const { app } = harness({ fetchImpl });
+    app.start();
+    await flush();
+    expect(fetchImpl.calls).toStrictEqual([
+      "/api/v1/projects",
+      "/api/v1/attention",
+    ]);
+    expect(textsOf(root(), ".projects small")[0]).toBe(
+      "3 waves · 2 need attention",
+    );
+    expect(root().querySelectorAll(".note")).toHaveLength(0);
+    app.stop();
+  });
+
+  it("is a failed load when the route is not there at all", async () => {
+    const fetchImpl = fetchStub((path) =>
+      path === "/api/v1/attention"
+        ? { status: 404 }
+        : { status: 200, body: [projectCard()] },
+    );
+    const { app } = harness({ fetchImpl });
+    app.start();
+    await flush();
+    expect(textsOf(root(), ".empty")).toStrictEqual(["Loading…"]);
+    expect(root().querySelectorAll(".note")).toHaveLength(1);
+    expect(textOf(root().querySelector(".note"))).toBe(OFFLINE);
+    app.stop();
+  });
+
+  it("is a failed load when the view is not a view the page can draw", async () => {
+    const fetchImpl = fetchStub(asking({ lanes: [], projects: {} }));
+    const { app, timers } = harness({ fetchImpl });
+    app.start();
+    await flush();
+    expect(textsOf(root(), ".empty")).toStrictEqual(["Loading…"]);
+    expect(root().querySelectorAll(".note")).toHaveLength(1);
+
+    timers.runLast();
+    await flush();
+    expect(root().querySelectorAll(".note")).toHaveLength(1);
+    expect(textOf(root().querySelector(".note"))).toBe(OFFLINE);
+    app.stop();
+  });
+
+  it("keeps the rail's count across a failed load and a navigation", async () => {
+    let broken = false;
+    const flaky = fetchStub((path) => {
+      if (path === "/api/v1/attention") {
+        return {
+          status: 200,
+          body: attentionView({ projects: [{ id: "alpha", attention: 2 }] }),
+        };
+      }
+      return broken ? { status: 500 } : { status: 200, body: [projectCard()] };
+    });
+    const { app } = harness({ fetchImpl: flaky });
+    app.start();
+    await flush();
+    expect(textsOf(root(), ".projects small")[0]).toBe(
+      "3 waves · 2 need attention",
+    );
+
+    broken = true;
+    await app.refresh();
+    expect(textsOf(root(), ".projects small")[0]).toBe(
+      "3 waves · 2 need attention",
+    );
+    expect(textOf(root().querySelector(".note"))).toBe(OFFLINE);
+
+    app.navigate("/nope");
+    // Synchronously: the count is the last one the API gave, and the rail is
+    // never blanked to say it is loading.
+    expect(textsOf(root(), ".projects small")[0]).toBe(
+      "3 waves · 2 need attention",
+    );
+    app.stop();
+  });
+
+  it("passes again when the reader leaves a page that is not one of ours", async () => {
+    // The rail's list is held, and only the first time, so the pass for the
+    // page nobody is on is still waiting when the reader leaves it.
+    let held = false;
+    const gate = gatedFetch((path) => {
+      const answer = projectWaves(path);
+      const hold = path === "/api/v1/projects" && !held;
+      if (hold) {
+        held = true;
+      }
+      return { ...answer, hold };
+    });
+    const { app } = harness({ pathname: "/elsewhere", fetchImpl: gate });
+    app.start();
+    await flush();
+    expect(gate.pending()).toBe(1);
+    expect(textsOf(root(), ".empty")).toStrictEqual(["Loading…"]);
+
+    app.navigate("/p/alpha");
+    gate.release();
+    await flush();
+
+    expect(app.route).toStrictEqual({ kind: "project", id: "alpha" });
+    expect(textsOf(root(), ".wave.current code")).toStrictEqual(["w-3"]);
+    expect(root().querySelectorAll(".note")).toHaveLength(0);
+    app.stop();
+  });
+});
+
+describe("the focus across a redraw", () => {
+  it("follows the link the reader is on to the link that replaced it", async () => {
+    const { app } = harness({ fetchImpl: fetchStub(listing(projectCard())) });
+    app.start();
+    await flush();
+    const link = root().querySelector(".projects a") as HTMLElement;
+    link.focus();
+    expect(document.activeElement).toBe(link);
+
+    await app.refresh();
+
+    const after = root().querySelector(".projects a") as HTMLElement;
+    expect(after).not.toBe(link);
+    expect(document.activeElement).toBe(after);
+    expect(document.activeElement?.getAttribute("href")).toBe("/p/alpha");
+    app.stop();
+  });
+
+  it("leaves the focus alone when that link is not there to replace it", async () => {
+    const { app } = harness({ fetchImpl: fetchStub(listing(projectCard())) });
+    app.start();
+    await flush();
+    // A link the page owns, with an address no view draws.
+    const stray = document.createElement("a");
+    stray.setAttribute("href", "/p/nowhere");
+    root().append(stray);
+    stray.focus();
+    expect(document.activeElement).toBe(stray);
+
+    await expect(app.refresh()).resolves.toBe(true);
+
+    expect(document.activeElement).not.toBe(stray);
+    app.stop();
+  });
+
+  it("focuses nothing when nothing was focused", async () => {
+    const { app } = harness({ fetchImpl: fetchStub(listing(projectCard())) });
+    app.start();
+    await flush();
+    const before = document.activeElement;
+    expect(root().contains(before as Node)).toBe(false);
+
+    await app.refresh();
+
+    expect(document.activeElement).toBe(before);
+    app.stop();
+  });
+
+  it("leaves a control that is not a link where the browser puts it", async () => {
+    const { app } = harness({
+      pathname: "/p/alpha",
+      fetchImpl: fetchStub(projectWaves),
+    });
+    app.start();
+    await flush();
+    const toggle = root().querySelector(".toggle") as HTMLElement;
+    toggle.focus();
+    expect(document.activeElement).toBe(toggle);
+
+    await app.refresh();
+
+    const after = root().querySelector(".toggle") as HTMLElement;
+    expect(after).not.toBe(toggle);
+    expect(after.getAttribute("href")).toBeNull();
+    expect(document.activeElement).not.toBe(after);
+    app.stop();
+  });
+});
+
 describe("pausing while the page is hidden", () => {
   it("arms no timer at all when the page starts hidden", async () => {
     setHidden(true);
@@ -377,7 +594,8 @@ describe("pausing while the page is hidden", () => {
     const { app, timers } = harness({ fetchImpl });
     app.start();
     await flush();
-    expect(fetchImpl.calls).toHaveLength(1);
+    // The one pass it does make asks for the rail's two lists.
+    expect(fetchImpl.calls).toHaveLength(2);
     expect(timers.scheduled).toHaveLength(0);
     app.stop();
   });
@@ -393,12 +611,12 @@ describe("pausing while the page is hidden", () => {
     visible();
     expect(timers.cleared).toStrictEqual([1]);
     expect(timers.scheduled).toHaveLength(0);
-    expect(fetchImpl.calls).toHaveLength(1);
+    expect(fetchImpl.calls).toHaveLength(2);
 
     setHidden(false);
     visible();
     await flush();
-    expect(fetchImpl.calls).toHaveLength(2);
+    expect(fetchImpl.calls).toHaveLength(4);
     expect(timers.scheduled).toHaveLength(1);
 
     setHidden(true);
@@ -437,6 +655,7 @@ describe("the project route", () => {
     await flush();
     expect(fetchImpl.calls).toStrictEqual([
       "/api/v1/projects",
+      "/api/v1/attention",
       "/api/v1/projects/alpha/waves",
       "/api/v1/projects/alpha/waves/w-3",
     ]);
@@ -716,11 +935,14 @@ describe("the project route", () => {
 
   it("keeps the last good cards when a later list holds none it can show", async () => {
     let second = false;
-    const flaky = fetchStub(() =>
-      second
+    const flaky = fetchStub((path) => {
+      if (path === "/api/v1/attention") {
+        return { status: 200, body: attentionView() };
+      }
+      return second
         ? { status: 200, body: [{}] }
-        : { status: 200, body: [projectCard()] },
-    );
+        : { status: 200, body: [projectCard()] };
+    });
     const { app, timers } = harness({ fetchImpl: flaky });
     app.start();
     await flush();
@@ -751,6 +973,7 @@ describe("the project route", () => {
     await flush();
     expect(fetchImpl.calls).toStrictEqual([
       "/api/v1/projects",
+      "/api/v1/attention",
       "/api/v1/projects/alpha/waves",
     ]);
     expect(textsOf(root(), ".empty")).toStrictEqual([
@@ -772,13 +995,23 @@ describe("the project route", () => {
     app.stop();
   });
 
-  it("says so when the page is not one of ours", async () => {
-    const fetchImpl = fetchStub(() => ({ status: 200, body: [] }));
+  it("says so when the page is not one of ours, and still loads the rail", async () => {
+    // A cold load of a path that is not a page used to ask for nothing at all,
+    // which left the rail on that page empty; it now loads what the rail draws.
+    const fetchImpl = fetchStub((path) =>
+      path === "/api/v1/attention"
+        ? { status: 200, body: attentionView() }
+        : { status: 200, body: [projectCard()] },
+    );
     const { app } = harness({ pathname: "/elsewhere", fetchImpl });
     app.start();
     await flush();
     expect(textsOf(root(), ".empty")).toStrictEqual(["No such page."]);
-    expect(fetchImpl.calls).toStrictEqual([]);
+    expect(fetchImpl.calls).toStrictEqual([
+      "/api/v1/projects",
+      "/api/v1/attention",
+    ]);
+    expect(textsOf(root(), ".projects a")).toStrictEqual(["Alpha"]);
     app.stop();
   });
 

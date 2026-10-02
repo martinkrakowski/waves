@@ -5,7 +5,7 @@ import { el } from "../../public/dom.js";
 import type { ShellModel } from "../../public/shell.js";
 import { shell } from "../../public/shell.js";
 
-import { projectCard } from "./fixtures.js";
+import { attentionView, projectCard } from "./fixtures.js";
 import {
   assertNoInjectedMarkup,
   freshRoot,
@@ -24,6 +24,8 @@ function draw(model: Partial<ShellModel> = {}): HTMLElement {
   const full: ShellModel = {
     route: FLEET,
     projects: [projectCard()],
+    attention: undefined,
+    all: false,
     note: "",
     ...model,
   };
@@ -139,6 +141,102 @@ describe("the rail", () => {
       "disagreement — reported and derived differ",
       "agrees — reported matches derived",
     ]);
+  });
+});
+
+describe("the rail's attention counts", () => {
+  const projects = [
+    projectCard({ id: "alpha", name: "Alpha", waves: 3 }),
+    projectCard({ id: "beta", name: "Beta", waves: 1 }),
+  ];
+
+  it("says nothing at all before the first attention view arrives", () => {
+    const host = draw({ projects, attention: undefined });
+    expect(textsOf(host, ".projects small")).toStrictEqual([
+      "3 waves",
+      "1 wave",
+    ]);
+  });
+
+  it("says nothing for a project the view has no entry for", () => {
+    const host = draw({
+      projects,
+      attention: attentionView({ projects: [{ id: "gamma", attention: 4 }] }),
+    });
+    expect(textsOf(host, ".projects small")).toStrictEqual([
+      "3 waves",
+      "1 wave",
+    ]);
+  });
+
+  it("says nothing for a project whose lanes need nothing", () => {
+    const host = draw({
+      projects,
+      attention: attentionView({
+        projects: [
+          { id: "alpha", attention: 0 },
+          { id: "beta", attention: 0 },
+        ],
+      }),
+    });
+    expect(textsOf(host, ".projects small")).toStrictEqual([
+      "3 waves",
+      "1 wave",
+    ]);
+  });
+
+  it("agrees in the singular", () => {
+    const host = draw({
+      projects,
+      attention: attentionView({ projects: [{ id: "alpha", attention: 1 }] }),
+    });
+    expect(textsOf(host, ".projects small")).toStrictEqual([
+      "3 waves · 1 needs attention",
+      "1 wave",
+    ]);
+  });
+
+  it("counts the lanes, not the projects, and keeps the stale mark", () => {
+    const host = draw({
+      projects: [
+        projectCard({ id: "alpha", name: "Alpha", waves: 3, stale: true }),
+        projectCard({ id: "beta", name: "Beta", waves: 1 }),
+      ],
+      attention: attentionView({
+        projects: [
+          { id: "alpha", attention: 3 },
+          { id: "beta", attention: 2 },
+        ],
+      }),
+    });
+    expect(textsOf(host, ".projects small")).toStrictEqual([
+      "3 waves · 3 need attention · stale",
+      "1 wave · 2 need attention",
+    ]);
+  });
+});
+
+describe("the links keep the show-all state", () => {
+  it("leaves a rail link and a breadcrumb link bare when it is off", () => {
+    const host = draw({ route: WAVE, all: false });
+    expect(host.querySelector(".projects a")?.getAttribute("href")).toBe(
+      "/p/alpha",
+    );
+    expect(host.querySelectorAll(".crumbs a")[1]?.getAttribute("href")).toBe(
+      "/p/alpha",
+    );
+  });
+
+  it("carries all=1 on both when it is on, and leaves the fleet link bare", () => {
+    const host = draw({ route: WAVE, all: true });
+    expect(host.querySelector(".projects a")?.getAttribute("href")).toBe(
+      "/p/alpha?all=1",
+    );
+    expect(host.querySelectorAll(".crumbs a")[1]?.getAttribute("href")).toBe(
+      "/p/alpha?all=1",
+    );
+    expect(host.querySelector(".crumbs a")?.getAttribute("href")).toBe("/");
+    expect(host.querySelector(".brand a")?.getAttribute("href")).toBe("/");
   });
 });
 
