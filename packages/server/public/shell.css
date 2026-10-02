@@ -204,4 +204,10 @@ summary:focus-visible {
     max-width: none;
     position: static;
   }
+
+  /* The open list is in the flow here, so the menu takes a line of its own:
+     sharing one with the mark and the breadcrumb would centre them against it. */
+  .menu {
+    flex-basis: 100%;
+  }
 }

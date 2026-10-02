@@ -155,9 +155,9 @@ function menuLabel(projects) {
  * The projects, in the top bar: a native `details`, so Enter and Space open it
  * with no script at all, and the summary counts what is actually in the list.
  *
- * `open` is a property and not an attribute, so it is set here on the element
- * `el()` returned rather than through `dom.js`'s table — that table is the way
- * in for a name, and this shell never varies one.
+ * `open` is set through the element's property, on the element `el()`
+ * returned, because `dom.js`'s attribute table has no entry for it: the table
+ * is the way in for a value that varies, and this one is the app's own boolean.
  */
 function menu(model) {
   const details = el("details", {

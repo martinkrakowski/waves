@@ -1124,15 +1124,32 @@ describe("the projects menu", () => {
     app.stop();
   });
 
-  it("closes on a filter, which is a navigation too", async () => {
-    const { app } = harness({ pathname: "/p/alpha" });
+  it("closes on Back, which no click inside or outside it explains", async () => {
+    const { app, browser } = harness({ pathname: "/p/alpha" });
     app.start();
     await flush();
     menu().open = true;
 
-    (root().querySelectorAll(".wave-strip li a")[2] as HTMLElement).click();
+    browser.location.search = "?reason=gate";
+    browser.popstate();
 
     expect(menu().open).toBe(false);
+    app.stop();
+  });
+
+  it("leaves an Escape that something else already took", async () => {
+    const { app } = await onFleet();
+    menu().open = true;
+    const takeIt = (event: Event): void => {
+      event.preventDefault();
+    };
+    document.addEventListener("keydown", takeIt, true);
+
+    press("Escape");
+
+    document.removeEventListener("keydown", takeIt, true);
+    expect(menu().open).toBe(true);
+    expect(document.activeElement).toBe(document.body);
     app.stop();
   });
 

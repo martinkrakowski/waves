@@ -456,10 +456,11 @@ export function createApp(deps) {
    * In every other case the route or the listing is not the one on screen, so
    * what belonged to the route being left is forgotten, the note with it — a
    * note about the page the reader has just left is not a note about this one —
-   * and a pass is started. The menu's list is never cleared at all, and the menu
-   * is shut on every navigation: it is the same for every route, and blanking it
-   * to "Loading…" on each click, and for ever on a route that fetches nothing,
-   * was a page that had lost the one thing it knew.
+   * and a pass is started. The menu's list is never cleared at all: it is the
+   * same for every route, and blanking it to "Loading…" on each click, and for
+   * ever on a route that fetches nothing, was a page that had lost the one thing
+   * it knew. The menu itself is shut on every navigation, whichever branch: a
+   * reader who went somewhere has finished choosing where to go.
    */
   function reread() {
     const was = route;
@@ -605,8 +606,15 @@ export function createApp(deps) {
    * from it, and the summary is where they were when they opened it. It is a
    * listener of its own because it is about the frame the reader is in, while
    * `onKey` is about the page under it.
+   *
+   * An Escape something else already took — the search box clearing itself, a
+   * dialog closing — is that thing's, and is left to it: one key press does one
+   * thing.
    */
   function onMenuKey(event) {
+    if (event.defaultPrevented) {
+      return;
+    }
     if (event.key === "Escape" && menuOpen) {
       menuOpen = false;
       draw();
