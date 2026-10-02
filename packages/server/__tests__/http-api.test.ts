@@ -90,6 +90,7 @@ describe("the API surface", () => {
         repo: "https://example.com/alpha.git",
         registeredAt: "2026-10-01T12:00:00Z",
         waves: 1,
+        lanes: 1,
         lastPush: "2026-10-01T12:00:01Z",
         stale: true,
       },
@@ -168,12 +169,58 @@ describe("the API surface", () => {
     expect(body).not.toContain("tokenSha256");
   });
 
+  it("lists what every project is asking for at once", async () => {
+    const started = await startHarness({ store: await seeded() });
+
+    const response = await fetch(`${started.origin}/api/v1/attention`);
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe(
+      "application/json; charset=utf-8",
+    );
+    expectSecurityHeaders(response.headers, true);
+    expect(JSON.parse(body)).toEqual({
+      lanes: [
+        {
+          project: "alpha",
+          wave: "wv1",
+          lane: "wv1-a",
+          reasons: ["silent"],
+          receivedAt: "2026-10-01T12:00:01Z",
+          stale: true,
+        },
+      ],
+      projects: [{ id: "alpha", attention: 1 }],
+      truncated: false,
+    });
+    expect(body).not.toContain("seat");
+    expect(body).not.toContain("tokenSha256");
+  });
+
+  it("answers HEAD for the attention view with the headers of the GET", async () => {
+    const started = await startHarness({ store: await seeded() });
+
+    const head = await fetch(`${started.origin}/api/v1/attention`, {
+      method: "HEAD",
+    });
+    const get = await fetch(`${started.origin}/api/v1/attention`);
+
+    expect(head.status).toBe(200);
+    expectSecurityHeaders(head.headers, true);
+    expect(head.headers.get("content-length")).toBe(
+      get.headers.get("content-length"),
+    );
+    expect(await head.text()).toBe("");
+  });
+
   it.each([
     ["/api/v1/projects/absent/waves", "an unknown project"],
     ["/api/v1/projects/absent/waves/wv1", "an unknown project wave"],
     ["/api/v1/projects/alpha/waves/absent", "an unknown wave"],
     ["/api/v1/projects/Bad%20Id/waves", "an invalid project id"],
     ["/api/v1/projects/alpha/waves/not.a.wave", "an invalid wave id"],
+    ["/api/v1/attention/x", "a path under the attention route"],
   ])("answers 404 for %s (%s)", async (path) => {
     const started = await startHarness({ store: await seeded() });
 
@@ -273,6 +320,21 @@ describe("the read token", () => {
     expectSecurityHeaders(response.headers, true);
   });
 
+  it("refuses the attention view without a token", async () => {
+    const started = await startHarness({
+      store: await seeded(),
+      readToken: TOKEN,
+    });
+
+    const response = await fetch(`${started.origin}/api/v1/attention`);
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get("www-authenticate")).toBe(
+      'Basic realm="waves", charset="UTF-8"',
+    );
+    expectSecurityHeaders(response.headers, true);
+  });
+
   it("keeps the page and the assets behind the token", async () => {
     const started = await startHarness({
       store: await seeded(),
@@ -297,6 +359,21 @@ describe("failures", () => {
       expect(response.status).toBe(405);
       expect(response.headers.get("allow")).toBe("GET, HEAD, POST");
       expectSecurityHeaders(response.headers, true);
+    }
+  });
+
+  it("answers 405 with the read methods for a write on the attention route", async () => {
+    const started = await startHarness({ store: await seeded() });
+
+    for (const method of ["PATCH", "PUT"]) {
+      const response = await fetch(`${started.origin}/api/v1/attention`, {
+        method,
+      });
+
+      expect(response.status).toBe(405);
+      expect(response.headers.get("allow")).toBe("GET, HEAD");
+      expectSecurityHeaders(response.headers, true);
+      expect(await response.json()).toEqual({ error: "method not allowed" });
     }
   });
 

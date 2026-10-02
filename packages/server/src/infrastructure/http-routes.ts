@@ -4,12 +4,14 @@ import { resolveStaticFile, type StaticFile } from "./http-static.js";
 
 export const HEALTH_PATH = "/healthz";
 export const READY_PATH = "/readyz";
+export const ATTENTION_PATH = "/api/v1/attention";
 export const API_PREFIX = "/api/v1/projects";
 export const MAX_URL_BYTES = 2048;
 
 export type Route =
   | { readonly kind: "health" }
   | { readonly kind: "ready" }
+  | { readonly kind: "attention" }
   | { readonly kind: "projects" }
   | { readonly kind: "project"; readonly project: string }
   | { readonly kind: "waves"; readonly project: string }
@@ -26,6 +28,7 @@ export type Route =
 const ALLOWED: Readonly<Record<Route["kind"], string>> = {
   health: "GET, HEAD",
   ready: "GET, HEAD",
+  attention: "GET, HEAD",
   projects: "GET, HEAD, POST",
   project: "DELETE",
   waves: "GET, HEAD",
@@ -87,8 +90,9 @@ export function isApiPath(pathname: string): boolean {
 /**
  * Maps a request path to exactly one route. An id or a wave the contract's
  * predicates refuse is not a route at all, so an unvalidated segment never
- * reaches the store. `/` and `/p/<id>` are the entry points of the page served
- * from `public/index.html`; every other path is a static file or nothing.
+ * reaches the store. `/`, `/p/<id>` and `/p/<id>/w/<wave>` are the entry points
+ * of the page served from `public/index.html`; every other path is a static file
+ * or nothing.
  */
 export function route(pathname: string, root: string): Route {
   if (pathname === HEALTH_PATH) {
@@ -96,6 +100,9 @@ export function route(pathname: string, root: string): Route {
   }
   if (pathname === READY_PATH) {
     return { kind: "ready" };
+  }
+  if (pathname === ATTENTION_PATH) {
+    return { kind: "attention" };
   }
   const parts = pathname.split("/");
   if (parts.slice(0, 4).join("/") === API_PREFIX) {
@@ -121,7 +128,12 @@ export function route(pathname: string, root: string): Route {
   }
   if (
     pathname === "/" ||
-    (parts.length === 3 && parts[1] === "p" && isProjectId(String(parts[2])))
+    (parts.length === 3 && parts[1] === "p" && isProjectId(String(parts[2]))) ||
+    (parts.length === 5 &&
+      parts[1] === "p" &&
+      isProjectId(String(parts[2])) &&
+      parts[3] === "w" &&
+      isWaveId(String(parts[4])))
   ) {
     return { kind: "index" };
   }

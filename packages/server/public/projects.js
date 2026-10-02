@@ -31,6 +31,7 @@ function present(project) {
     typeof project.id === "string" &&
     typeof project.name === "string" &&
     typeof project.waves === "number" &&
+    typeof project.lanes === "number" &&
     typeof project.stale === "boolean"
   );
 }

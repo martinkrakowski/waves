@@ -16,6 +16,7 @@ export function projectCard(overrides: Partial<ProjectCard> = {}): ProjectCard {
     repo: "https://git.example.test/alpha",
     registeredAt: "2026-04-01T08:00:00.000Z",
     waves: 3,
+    lanes: 6,
     lastPush: "2026-04-01T11:58:00.000Z",
     stale: false,
     ...overrides,

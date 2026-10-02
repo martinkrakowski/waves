@@ -12,6 +12,8 @@ export const REFRESH_MS = 10_000;
 
 const ROOT_ID = "root";
 const PROJECT_PREFIX = "/p/";
+/** `/p/<id>/w/<wave>`: the server serves the page there, so the page must know it. */
+const WAVE_PATH = /^\/p\/([^/]+)\/w\/[^/]+$/;
 const OFFLINE_NOTE = "offline, retrying";
 const LOADING = "Loading…";
 
@@ -28,7 +30,12 @@ export function routeOf(pathname) {
     return { kind: "projects" };
   }
   if (pathname.startsWith(PROJECT_PREFIX)) {
-    const id = decodeId(pathname);
+    // A wave path is its project's page for now: the wave it names is not yet a
+    // selection, but it must never be read as part of the project's id.
+    const wavePath = WAVE_PATH.exec(pathname);
+    const id = decodeId(
+      wavePath === null ? pathname : `${PROJECT_PREFIX}${wavePath[1]}`,
+    );
     return id === undefined || id === ""
       ? { kind: "unknown" }
       : { kind: "project", id };

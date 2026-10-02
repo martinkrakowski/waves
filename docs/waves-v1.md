@@ -256,21 +256,21 @@ A wave goes stale when it has not been received for longer than
 The clock is always the server's, and the instant it uses is always the time the
 server **received** the snapshot — `receivedAt` — never the pusher's
 `generatedAt`. Every formula is fed `Date.parse(receivedAt)` and `now()` from
-the server (`createReadModel`, `packages/server/src/application/read-model.ts:119`,
-`123-187`; `Now`, `…/read-model.ts:14`). `generatedAt` is stored and echoed but
+the server (`createReadModel`, `packages/server/src/application/read-model.ts:196`,
+`200-328`; `Now`, `…/read-model.ts:20`). `generatedAt` is stored and echoed but
 no rule reads it.
 
 In the wave view, a stale wave keeps its lane data but a lane whose
 `derived.alive` is `true` is rendered as `"unknown"`, because the pusher has
 stopped telling the server whether the process is still up
-(`aliveView`, `…/read-model.ts:99-101`).
+(`aliveView`, `…/read-model.ts:138-140`).
 
 ## 5. HTTP API
 
 ### 5.1 Read routes
 
 A request is decided in this order, and the order is what picks the status you
-see (`respond`, `packages/server/src/infrastructure/http-server.ts:171-220`):
+see (`respond`, `packages/server/src/infrastructure/http-server.ts:173-222`):
 
 1. A parser refusal (`431`, `408`, `400`) happens before the request exists.
 2. An HTTP/1.1 `Expect` with any value other than `100-continue` is a `417`
@@ -293,25 +293,58 @@ answers `401`, not `405` — except on `/healthz` and `/readyz`, which the token
 does not guard and where it is a `405` — while an unauthenticated `POST` goes to
 the write pipeline and is answered by it.
 
-| path                                     | 200 response                                                                                                                               |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `GET /healthz`                           | `{"ok":true}` — the process is up                                                                                                          |
-| `GET /readyz`                            | `{"ok":true}` — the store can be read; otherwise `503` `{"ok":false}`                                                                      |
-| `GET /api/v1/projects`                   | array of `{ id, name, repo?, registeredAt, waves, lastPush?, stale }`, see below                                                           |
-| `GET /api/v1/projects/<id>/waves`        | array of `{ wave, receivedAt, intervalSeconds, lanes, stale, retained }`, `lanes` a count, newest receive first                            |
-| `GET /api/v1/projects/<id>/waves/<wave>` | `{ envelope, receivedAt, stale, staleAfterMs }`, where `envelope` is the stored envelope with `lanes[].derived.alive` possibly `"unknown"` |
-| `GET /` and `GET /p/<id>`                | the status page (`public/index.html`)                                                                                                      |
-| `GET /<static file>`                     | a file from `public`, allow-listed extensions only                                                                                         |
+| path                                              | 200 response                                                                                                                               |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /healthz`                                    | `{"ok":true}` — the process is up                                                                                                          |
+| `GET /readyz`                                     | `{"ok":true}` — the store can be read; otherwise `503` `{"ok":false}`                                                                      |
+| `GET /api/v1/projects`                            | array of `{ id, name, repo?, registeredAt, waves, lanes, lastPush?, stale }`, see below                                                    |
+| `GET /api/v1/projects/<id>/waves`                 | array of `{ wave, receivedAt, intervalSeconds, lanes, stale, retained }`, `lanes` a count, newest receive first                            |
+| `GET /api/v1/projects/<id>/waves/<wave>`          | `{ envelope, receivedAt, stale, staleAfterMs }`, where `envelope` is the stored envelope with `lanes[].derived.alive` possibly `"unknown"` |
+| `GET /api/v1/attention`                           | `{ lanes: [{ project, wave, lane, seat?, reasons, receivedAt, stale, pr? }], projects: [{ id, attention }], truncated }`, see below        |
+| `GET /`, `GET /p/<id>` and `GET /p/<id>/w/<wave>` | the status page (`public/index.html`)                                                                                                      |
+| `GET /<static file>`                              | a file from `public`, allow-listed extensions only                                                                                         |
 
-In a project summary `waves` is a count, `lastPush` is the newest `receivedAt`
-in the project, and `stale` is the staleness of the project's **newest** wave
-by the rule of section 4; a project with no waves is not stale. The token digest
-is never part of a response.
+In a project summary `waves` is a count, `lanes` is the number of lanes in the
+project's **retained** waves summed from the wave heads the route already reads,
+`lastPush` is the newest `receivedAt` in the project, and `stale` is the
+staleness of the project's **newest** wave by the rule of section 4; a project
+with no waves is not stale and has no lanes. The token digest is never part of a
+response.
 
-(`route`, `packages/server/src/infrastructure/http-routes.ts:93`;
-`replyFor`, `readyReply`, `packages/server/src/infrastructure/http-server.ts:92-137`;
+`GET /api/v1/attention` is the same view across every registered project. A lane
+is listed when it holds at least one of six reasons, and the reasons always come
+back in this order:
+
+| reason         | holds when                                                                   |
+| -------------- | ---------------------------------------------------------------------------- |
+| `failed`       | `reported.event` is `"failed"`                                               |
+| `disagreement` | `disagreements` is not empty                                                 |
+| `checks`       | `derived.pr.checks` is `"fail"`                                              |
+| `gate`         | `derived.gate.exit` is a number other than `0`                               |
+| `exit`         | `derived.alive` is `false` and `derived.exit` is a number other than `0`     |
+| `silent`       | the wave is stale, `derived.alive` is `true` and `derived.exit` is not there |
+
+A lane whose `derived.pr.state` is `merged` or `closed` holds none of them,
+whatever else it is carrying (`attentionReasons`,
+`packages/server/src/domain/attention.ts:40-72`). Only the waves the server
+received in the last 72 hours take part, counted on the receive time as
+`nowMs - Date.parse(receivedAt) <= 72 * 60 * 60 * 1000` (`inAttentionWindow`,
+`ATTENTION_WINDOW_MS`, `…/domain/attention.ts:75-80`, `21`). The lanes are
+ordered by receive time descending and cut at 200 (`MAX_ATTENTION_LANES`,
+`…/domain/attention.ts:24`); the sort is stable, so lanes received within the
+same millisecond keep the order they were found in, and `truncated` says whether
+that cut anything. `projects` carries one entry per registered project, in the
+order the registry answers it, and `attention` counts that project's lanes
+**before** the cut — a project whose lanes the cap left out still says how many
+it wanted. The route reads the wave heads of every project and then the full
+snapshot of the waves still inside the window, and never `listSnapshots`
+(`listAttention`,
+`packages/server/src/application/read-model.ts:250-305`).
+
+(`route`, `packages/server/src/infrastructure/http-routes.ts:97`;
+`replyFor`, `readyReply`, `packages/server/src/infrastructure/http-server.ts:92-139`;
 `ProjectSummary`, `WaveSummary`, `WaveView`,
-`packages/server/src/application/read-model.ts:18-56`;
+`packages/server/src/application/read-model.ts:24-68`;
 `SnapshotHead`, `packages/server/src/application/ports/store.ts:8-13`)
 
 Status codes:
@@ -321,28 +354,29 @@ Status codes:
   that is not a route, or a static file that is not there. A `project` or
   `wave` segment that fails the id pattern is not a route at all, so it is a
   `404` and never reaches the store
-  (`packages/server/src/infrastructure/http-routes.ts:100-121`).
+  (`packages/server/src/infrastructure/http-routes.ts:107-128`).
 - `405` `{"error":"method not allowed"}` with the `Allow` of that path:
   `GET, HEAD, POST` on the project collection, `DELETE` on a single project,
-  `GET, HEAD, PUT, DELETE` on a wave, and `GET, HEAD` everywhere else
-  (`ALLOWED`, `packages/server/src/infrastructure/http-routes.ts:26-36`).
+  `GET, HEAD, PUT, DELETE` on a wave, and `GET, HEAD` everywhere else —
+  `/api/v1/attention` among that last group
+  (`ALLOWED`, `packages/server/src/infrastructure/http-routes.ts:28-39`).
 - `414` `{"error":"uri too long"}` — a request target over 2048 bytes
-  (`MAX_URL_BYTES`, `packages/server/src/infrastructure/http-routes.ts:8`).
+  (`MAX_URL_BYTES`, `packages/server/src/infrastructure/http-routes.ts:9`).
   This is checked before authentication, so an oversized target is a `414`
   even without a token.
 - `431` `Request Header Fields Too Large` — a header block over 16 KiB
   (`MAX_HEADER_BYTES`, `packages/server/src/infrastructure/http-server.ts:55`).
-  The request never becomes a request, so the answer is written straight to
-  the socket by hand and carries no body; `408` and `400` come from the same
+  The request never becomes a request, so the answer is written straight to the
+  socket by hand and carries no body; `408` and `400` come from the same
   place for a timed-out or otherwise unparseable request
   (`parserRefusal`, `refuseParsedRequest`,
   `packages/server/src/infrastructure/http-security.ts:146-176`).
 - `500` `{"error":"internal"}` — anything that throws while building a reply
-  (`packages/server/src/infrastructure/http-server.ts:233-248`).
+  (`packages/server/src/infrastructure/http-server.ts:233-250`).
 - `401` `{"error":"unauthorized"}` with `WWW-Authenticate: Basic realm="waves",
 charset="UTF-8"` — only when a read token is configured and the path is
   neither `/healthz` nor `/readyz`
-  (`packages/server/src/infrastructure/http-server.ts:196-205`).
+  (`packages/server/src/infrastructure/http-server.ts:198-207`).
 
 ### 5.2 The optional viewer token
 
@@ -370,8 +404,8 @@ unless it is a `204` (`BASE_HEADERS` and `send`,
 under `/api/`, the `GET` and `HEAD` answers of `/readyz` and every answer of the
 write pipeline also carry
 `Cache-Control: no-store` (`isApiPath`,
-`packages/server/src/infrastructure/http-routes.ts:83`; `extraFor`,
-`packages/server/src/infrastructure/http-server.ts:148-150`, `186-194`;
+`packages/server/src/infrastructure/http-routes.ts:86`; `extraFor`,
+`packages/server/src/infrastructure/http-server.ts:150-152`, `188-196`;
 `answer`, `packages/server/src/infrastructure/http-write.ts:255-265`). The `405`
 that an `OPTIONS` or `PATCH` gets on `/readyz` carries no `Cache-Control`; a
 `PUT`, `POST` or `DELETE` on it is the write pipeline's `405` and does.
@@ -393,7 +427,7 @@ read these routes nor write to them; call them from a server, not from a page.
 | `POST /api/v1/projects`                     | admin   | `{ id, name, repo? }`, see below | `201` `{ id, token }`                          |
 | `DELETE /api/v1/projects/<id>`              | admin   | none                             | `204`, or `404` when there was no such project |
 
-(`writeRouteOf`, `packages/server/src/infrastructure/http-routes.ts:59-76`;
+(`writeRouteOf`, `packages/server/src/infrastructure/http-routes.ts:62-79`;
 `createWriteHandler`, `packages/server/src/infrastructure/http-write.ts:244`)
 
 A token is presented as `Authorization: Bearer <token>`: exactly that scheme,
@@ -489,7 +523,7 @@ length is looked at, with `417` `{"error":"expectation failed"}`, the headers of
 section 5.3 and — on a path under `/api/` — `Cache-Control: no-store`. The
 connection is closed rather than left for a body nobody will read, and the
 answer is logged like any other (`checkExpectation`,
-`packages/server/src/infrastructure/http-server.ts:295-305`).
+`packages/server/src/infrastructure/http-server.ts:297-307`).
 
 After the body:
 

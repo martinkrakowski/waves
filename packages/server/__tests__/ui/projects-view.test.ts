@@ -125,6 +125,10 @@ describe("the project list", () => {
     );
     expect(drawableProjects([{ ...projectCard(), waves: "3" }])).toBe(false);
     expect(drawableProjects([{ ...projectCard(), name: 7 }])).toBe(false);
+    expect(drawableProjects([{ ...projectCard(), lanes: undefined }])).toBe(
+      false,
+    );
+    expect(drawableProjects([{ ...projectCard(), lanes: "6" }])).toBe(false);
     expect(drawableProjects(undefined)).toBe(false);
     expect(drawableProjects({})).toBe(false);
   });
