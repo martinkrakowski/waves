@@ -13,6 +13,13 @@ describe("routeOf", () => {
     expect(routeOf("/p/a%20b")).toStrictEqual({ kind: "project", id: "a b" });
   });
 
+  it("routes /p/<id>/w/<wave> at that project, never at an id holding the wave", () => {
+    expect(routeOf("/p/alpha/w/wv1")).toStrictEqual({
+      kind: "project",
+      id: "alpha",
+    });
+  });
+
   it("refuses a path with no id, or an id it cannot decode", () => {
     expect(routeOf("/p/")).toStrictEqual({ kind: "unknown" });
     expect(routeOf("/p/%zz")).toStrictEqual({ kind: "unknown" });
