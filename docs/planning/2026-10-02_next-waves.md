@@ -110,6 +110,10 @@ Three lanes with disjoint source files, run in parallel.
 
 ## 3. Wave B — the "needs attention" view
 
+> **Superseded 2026-10-02 by `2026-10-02_waves-console.md`.** The rule below
+> stands and is built there as lane K1; lanes B1 and B2 are withdrawn, and the
+> fragment route chosen for B2 gives way to a path route (W11).
+
 ### What needs attention
 
 One rule over every wave of every project that was **received in the last 72
