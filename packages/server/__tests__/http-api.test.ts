@@ -57,7 +57,7 @@ async function seeded(): Promise<StorePort<Project, StoredSnapshot>> {
 }
 
 function bodyOf(raw: string): string {
-  return raw.split("\r\n\r\n").slice(1).join("\r\n");
+  return raw.split("\r\n\r\n").slice(1).join("\r\n\r\n");
 }
 
 /** One wave the store is meant to be holding and one it is past retaining. */
