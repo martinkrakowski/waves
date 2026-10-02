@@ -5,17 +5,81 @@ import { createApp } from "../../public/app.js";
 import { el, repoLink } from "../../public/dom.js";
 
 import { projectCard, waveSummary, waveView } from "./fixtures.js";
-import type { Answer, FetchStub } from "./helpers.js";
+import type { Answer, FetchStub, GatedFetch } from "./helpers.js";
 import {
   browserGlobals,
   fetchStub,
   flush,
   freshRoot,
+  gatedFetch,
   root,
   textOf,
   textsOf,
   timerStub,
 } from "./helpers.js";
+
+/** Every project's own waves name that project, so a crossed path is visible. */
+const WAVE_IDS: Readonly<Record<string, readonly string[]>> = {
+  alpha: ["a-3", "a-2"],
+  beta: ["b-3", "b-2"],
+};
+
+const PROJECTS = [projectCard(), projectCard({ id: "beta", name: "Beta" })];
+
+/** The rail's list, and every project's waves, so a crossed path is visible. */
+function perProject(path: string): Answer {
+  if (path === "/api/v1/projects") {
+    return { status: 200, body: PROJECTS };
+  }
+  const list = /^\/api\/v1\/projects\/([^/]+)\/waves$/.exec(path);
+  if (list !== null) {
+    const id = list[1] ?? "";
+    return {
+      status: 200,
+      body: (WAVE_IDS[id] ?? []).map((wave, at) =>
+        waveSummary({
+          wave,
+          receivedAt: `2026-04-01T${at === 0 ? "11" : "10"}:50:00.000Z`,
+        }),
+      ),
+    };
+  }
+  const detail = /^\/api\/v1\/projects\/([^/]+)\/waves\/([^/]+)$/.exec(path);
+  if (detail !== null) {
+    return {
+      status: 200,
+      body: waveView({
+        envelope: {
+          ...waveView().envelope,
+          project: detail[1] ?? "",
+          wave: detail[2] ?? "",
+        },
+      }),
+    };
+  }
+  return { status: 404 };
+}
+
+/** Holds the first request to each path `hold` says yes to, and only that one. */
+function holding(
+  handler: (path: string) => Answer,
+  hold: (path: string) => boolean,
+): GatedFetch {
+  const held = new Set<string>();
+  return gatedFetch((path) => {
+    const answer = handler(path);
+    if (!held.has(path) && hold(path)) {
+      held.add(path);
+      return { ...answer, hold: true };
+    }
+    return { ...answer, hold: false };
+  });
+}
+
+/** The paths asked for that name one wave's detail, whichever project. */
+function waveDetails(calls: readonly string[]): string[] {
+  return calls.filter((path) => /\/waves\/[^/]+$/.test(path));
+}
 
 /** The rail's list, and one project's waves, whichever route the test is on. */
 function answering(...projects: unknown[]): (path: string) => Answer {
@@ -310,6 +374,97 @@ describe("the back button", () => {
     expect(browser.pushes).toStrictEqual(["/p/beta"]);
     expect(app.route).toStrictEqual({ kind: "projects" });
     expect(textsOf(root(), ".card-name")).toStrictEqual(["Alpha", "Beta"]);
+    app.stop();
+  });
+});
+
+describe("a navigation that lands while a pass is in flight", () => {
+  it("loads the route it moved to, not the one the pass started for", async () => {
+    const gate = holding(perProject, (path) => path === "/api/v1/projects");
+    const { app } = harness({ pathname: "/", fetchImpl: gate });
+    app.start();
+    await flush();
+    expect(gate.pending()).toBe(1);
+
+    app.navigate("/p/beta");
+    gate.release();
+    await flush();
+
+    expect(app.route).toStrictEqual({ kind: "project", id: "beta" });
+    expect(textsOf(root(), "h1 code")).toStrictEqual(["beta"]);
+    expect(textsOf(root(), ".wave code")).toStrictEqual(["b-3", "b-2"]);
+    expect(gate.calls).toContain("/api/v1/projects/beta/waves");
+    expect(waveDetails(gate.calls)).toStrictEqual([
+      "/api/v1/projects/beta/waves/b-3",
+    ]);
+    app.stop();
+  });
+
+  it("never asks the new project for a wave of the old one", async () => {
+    const gate = holding(perProject, (path) => path.endsWith("/alpha/waves"));
+    const { app } = harness({ pathname: "/p/alpha", fetchImpl: gate });
+    app.start();
+    await flush();
+    expect(gate.calls).toContain("/api/v1/projects/alpha/waves");
+
+    app.navigate("/p/beta");
+    gate.release();
+    await flush();
+
+    expect(gate.calls).not.toContain("/api/v1/projects/beta/waves/a-3");
+    expect(gate.calls).not.toContain("/api/v1/projects/beta/waves/a-2");
+    expect(textsOf(root(), "h1 code")).toStrictEqual(["beta"]);
+    expect(textsOf(root(), ".wave code")).toStrictEqual(["b-3", "b-2"]);
+    app.stop();
+  });
+
+  it("does the same when the back button lands mid-pass", async () => {
+    const gate = holding(perProject, (path) => path === "/api/v1/projects");
+    const { app, browser } = harness({ pathname: "/", fetchImpl: gate });
+    app.start();
+    await flush();
+    expect(gate.pending()).toBe(1);
+
+    browser.location.pathname = "/p/beta";
+    browser.location.search = "";
+    browser.popstate();
+    gate.release();
+    await flush();
+
+    expect(app.route).toStrictEqual({ kind: "project", id: "beta" });
+    expect(textsOf(root(), "h1 code")).toStrictEqual(["beta"]);
+    expect(textsOf(root(), ".wave code")).toStrictEqual(["b-3", "b-2"]);
+    expect(gate.calls).toContain("/api/v1/projects/beta/waves");
+    expect(waveDetails(gate.calls)).toStrictEqual([
+      "/api/v1/projects/beta/waves/b-3",
+    ]);
+    app.stop();
+  });
+
+  it("keeps a superseded pass that failed from saying the page is offline", async () => {
+    let first = true;
+    const gate = gatedFetch((path) => {
+      if (path === "/api/v1/projects" && first) {
+        first = false;
+        // Held, and not a list of projects: the pass for `/` fails, but only
+        // after the reader has already navigated away from it.
+        return { status: 200, body: [{}], hold: true };
+      }
+      return { ...perProject(path), hold: false };
+    });
+    const { app } = harness({ pathname: "/", fetchImpl: gate });
+    app.start();
+    await flush();
+    expect(gate.pending()).toBe(1);
+
+    app.navigate("/p/beta");
+    gate.release();
+    await flush();
+
+    expect(app.route).toStrictEqual({ kind: "project", id: "beta" });
+    expect(root().querySelectorAll(".note")).toHaveLength(0);
+    expect(textsOf(root(), "h1 code")).toStrictEqual(["beta"]);
+    expect(gate.calls).toContain("/api/v1/projects/beta/waves");
     app.stop();
   });
 });

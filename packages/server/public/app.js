@@ -86,6 +86,7 @@ export function createApp(deps) {
   let data = undefined;
   let note = "";
   let selected = route.wave ?? "";
+  let generation = 0;
   let timer = undefined;
   let inFlight = undefined;
   let stopped = false;
@@ -103,40 +104,60 @@ export function createApp(deps) {
     return projects;
   }
 
+  /**
+   * One pass, for the route and the selection this call started with. The
+   * snapshot is taken before the first `await` and is the only thing read after
+   * it: `read()` rewrites `route` and `selected` on every navigation, so a pass
+   * that read them afterwards would answer one page with another's request.
+   *
+   * After each `await`, a pass that the reader has navigated away from answers
+   * `undefined`, which is how `refreshOnce()` learns to pass again for the route
+   * that is on screen now.
+   */
   async function load() {
-    if (route.kind === "unknown") {
+    const at = route;
+    const want = selected;
+    const mine = generation;
+    if (at.kind === "unknown") {
       return { kind: "unknown" };
     }
-    if (route.kind === "projects") {
-      return { kind: "projects", projects: await loadProjects() };
+    if (at.kind === "projects") {
+      const projects = await loadProjects();
+      if (mine !== generation) {
+        return undefined;
+      }
+      return { kind: "projects", projects };
     }
     // One call for the rail, one for the waves, both at once: the fleet needs
     // only the first, and a project route needs both before it can draw.
     const [projects, waves] = await Promise.all([
       loadProjects(),
-      api.waves(route.id),
+      api.waves(at.id),
     ]);
+    if (mine !== generation) {
+      return undefined;
+    }
     if (waves === undefined) {
-      return { kind: "missing", project: route.id, projects };
+      return { kind: "missing", project: at.id, projects };
     }
     if (!drawableWaves(waves)) {
       throw new Error("the wave list is not a list of waves");
     }
     const visible = visibleWaves(waves, showAll);
-    const wanted = visible.find((head) => head.wave === selected);
+    const wanted = visible.find((head) => head.wave === want);
     const chosen = wanted ?? visible[0];
     if (chosen === undefined) {
       return {
         kind: "project",
-        project: route.id,
+        project: at.id,
         projects,
         waves,
         view: undefined,
       };
     }
     selected = chosen.wave;
-    const view = await api.wave(route.id, chosen.wave);
-    if (selected !== chosen.wave) {
+    const view = await api.wave(at.id, chosen.wave);
+    if (mine !== generation || selected !== chosen.wave) {
       return undefined;
     }
     if (view !== undefined) {
@@ -147,7 +168,7 @@ export function createApp(deps) {
         throw new Error("the wave is not the one requested");
       }
     }
-    return { kind: "project", project: route.id, projects, waves, view };
+    return { kind: "project", project: at.id, projects, waves, view };
   }
 
   /** The lanes on screen, and only ever the lanes of the selected wave. */
@@ -215,10 +236,14 @@ export function createApp(deps) {
    * cannot render therefore never reaches the document and never reaches
    * `onToggleAll`, which draws straight from the data kept here.
    *
-   * Answers `false` when the load it did was for a wave the user has since
-   * moved away from, so the caller can pass again for the current selection.
+   * Answers `false` when the load it did was for a route or a wave the reader has
+   * since moved away from, so the caller can pass again for the one on screen. A
+   * pass that failed after losing its route says nothing: its failure is about a
+   * page nobody is on, and putting that page's data back would draw the route
+   * being left under the route being read.
    */
   async function refresh() {
+    const mine = generation;
     const previous = data;
     try {
       const next = await load();
@@ -229,6 +254,9 @@ export function createApp(deps) {
       note = "";
       draw();
     } catch {
+      if (mine !== generation) {
+        return false;
+      }
       data = previous;
       note = OFFLINE_NOTE;
       draw();
@@ -276,12 +304,17 @@ export function createApp(deps) {
     }, refreshMs);
   }
 
-  /** Where the browser is now, and what the view asked for, read from it. */
+  /**
+   * Where the browser is now, and what the view asked for, read from it. Every
+   * read starts a new generation, so a pass already in flight knows at once that
+   * it is answering a page the reader has left.
+   */
   function read() {
     route = routeOf(location.pathname);
     query = parseQuery(location.search);
     showAll = query.all;
     selected = route.wave ?? "";
+    generation += 1;
   }
 
   /** Forgets the data of the route being left, so nothing stale is drawn. */
