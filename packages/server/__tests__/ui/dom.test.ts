@@ -49,8 +49,9 @@ describe("el", () => {
   });
 
   it("sets every attribute the shell and the later views need", () => {
-    // `type` is here for the control a later lane will draw; no view draws one
-    // today, so this is the test that keeps the setter honest.
+    // `type` and `scope` are here for the controls and the tables a later lane
+    // will draw; no view draws one today, so this is the test that keeps the
+    // setters honest.
     const node = el("input", {
       attrs: {
         "aria-pressed": "false",
@@ -65,6 +66,7 @@ describe("el", () => {
         id: "lane-search",
         "data-key": "nav",
         type: "search",
+        scope: "row",
       },
     });
     for (const [name, value] of Object.entries({
@@ -80,6 +82,7 @@ describe("el", () => {
       id: "lane-search",
       "data-key": "nav",
       type: "search",
+      scope: "row",
     })) {
       expect(node.getAttribute(name)).toBe(value);
     }

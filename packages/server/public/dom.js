@@ -25,6 +25,7 @@ const SETTERS = {
   placeholder: (node, value) => node.setAttribute("placeholder", value),
   value: (node, value) => node.setAttribute("value", value),
   max: (node, value) => node.setAttribute("max", value),
+  scope: (node, value) => node.setAttribute("scope", value),
   /**
    * These four name something in the document or address a control, so the
    * value must be one the app owns: a literal, or a segment already held to the
