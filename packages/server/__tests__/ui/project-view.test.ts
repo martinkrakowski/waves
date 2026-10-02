@@ -1380,6 +1380,19 @@ describe("seatsOf", () => {
     ]);
   });
 
+  it("puts the lanes with no seat last however many they are", () => {
+    expect(
+      seatsOf([
+        laneRow({ id: "wv-a" }),
+        laneRow({ id: "wv-b" }),
+        laneRow({ id: "wv-c", seat: "alpha" }),
+      ]),
+    ).toStrictEqual([
+      { seat: "alpha", lanes: 1 },
+      { seat: undefined, lanes: 2 },
+    ]);
+  });
+
   it("is empty for a scope with no lanes", () => {
     expect(seatsOf([])).toStrictEqual([]);
   });
@@ -1609,6 +1622,14 @@ describe("searchText", () => {
     expect(searchText("a\tbc")).toBe("abc");
     expect(searchText("a\nb")).toBe("ab");
     expect(searchText("a\u007fb")).toBe("ab");
+  });
+
+  it("never cuts a character in half", () => {
+    // U+1F30A is two code units: the 80th and the 81st here.
+    expect(searchText(`${"a".repeat(79)}\u{1F30A}`)).toBe("a".repeat(79));
+    expect(searchText(`${"a".repeat(78)}\u{1F30A}`)).toBe(
+      `${"a".repeat(78)}\u{1F30A}`,
+    );
     expect(searchText("")).toBe("");
   });
 });

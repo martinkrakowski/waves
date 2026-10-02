@@ -123,14 +123,14 @@ export function seatsOf(rows) {
   return [...countedBy(rows, (row) => row.seat).entries()]
     .map(([seat, lanes]) => ({ seat, lanes }))
     .sort((left, right) => {
-      if (left.lanes !== right.lanes) {
-        return right.lanes - left.lanes;
-      }
       if (left.seat === undefined) {
         return 1;
       }
       if (right.seat === undefined) {
         return -1;
+      }
+      if (left.lanes !== right.lanes) {
+        return right.lanes - left.lanes;
       }
       return left.seat < right.seat ? -1 : 1;
     });
@@ -260,7 +260,10 @@ export function searchText(value) {
     }
     kept += value[at];
   }
-  return kept;
+  // The cut can fall between the two halves of one character. Half a character
+  // is not text: the address would carry a replacement mark in its place.
+  const last = kept.charCodeAt(kept.length - 1);
+  return last >= 0xd800 && last <= 0xdbff ? kept.slice(0, -1) : kept;
 }
 
 /**
