@@ -1,4 +1,5 @@
 import type {
+  AttentionView,
   ProjectSummary,
   WaveSummary,
   WaveView,
@@ -23,6 +24,11 @@ export type FetchLike = (
 
 export interface Api {
   projects(): Promise<readonly ProjectCard[]>;
+  /**
+   * What every project's lanes asked for at once. `undefined` for a 404, which
+   * the app reads as a failed load: the route is not optional.
+   */
+  attention(): Promise<AttentionView | undefined>;
   waves(projectId: string): Promise<readonly WaveSummary[] | undefined>;
   wave(projectId: string, waveId: string): Promise<WaveView | undefined>;
 }

@@ -1,4 +1,6 @@
 import type {
+  AttentionLane,
+  AttentionView,
   EnvelopeView,
   LaneView,
   WaveSummary,
@@ -88,6 +90,37 @@ export function waveView(overrides: Partial<WaveView> = {}): WaveView {
     receivedAt: NOW_ISO,
     stale: false,
     staleAfterMs: 90_000,
+    ...overrides,
+  };
+}
+
+/**
+ * One lane the attention route is asking about. The three ids are deliberately
+ * different from each other, so a view that swapped two of them builds a link
+ * that is wrong rather than one that happens to be right.
+ */
+export function attentionLane(
+  overrides: Partial<AttentionLane> = {},
+): AttentionLane {
+  return {
+    project: "alpha",
+    wave: "w-3",
+    lane: "wv-a",
+    reasons: ["failed"],
+    receivedAt: NOW_ISO,
+    stale: false,
+    ...overrides,
+  };
+}
+
+/** The whole fleet asking for attention, before anything is asking. */
+export function attentionView(
+  overrides: Partial<AttentionView> = {},
+): AttentionView {
+  return {
+    lanes: [],
+    projects: [],
+    truncated: false,
     ...overrides,
   };
 }
