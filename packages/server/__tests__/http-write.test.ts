@@ -976,6 +976,32 @@ describe("reading the body", () => {
     expect(refused.sent).toBe(0);
   });
 
+  it("drops the connection of an expectation it refused, without reading the body", async () => {
+    const started = await startHarness({ store: await seeded() });
+    const bytesBefore = started.bytesRead();
+    void started.sendAndHold(
+      `PUT ${wavePath()} HTTP/1.1`,
+      [
+        "Content-Type: application/json",
+        `Authorization: Bearer ${PROJECT_TOKEN}`,
+        `Content-Length: ${PUT_CAP}`,
+        "Expect: 200-ok",
+      ],
+      Buffer.alloc(PUT_CAP, 0x78),
+      // Nothing asked for a close on either side, so the only thing that can end
+      // this connection is the server dropping it with its 417.
+      { keepAlive: true },
+    );
+
+    const droppedAt = await firstDestroyed(started);
+    const readAtDrop = started.bytesRead();
+    await delay(200);
+
+    expect(droppedAt).toBeLessThan(500);
+    expect(readAtDrop - bytesBefore).toBeLessThan(PUT_CAP);
+    expect(started.bytesRead()).toBe(readAtDrop);
+  });
+
   it("answers a read that asks for the expectation too, uncached on an api path, and logs it", async () => {
     const started = await startHarness({ store: await seeded() });
 

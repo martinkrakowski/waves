@@ -373,7 +373,7 @@ write pipeline also carry
 `packages/server/src/infrastructure/http-routes.ts:83`; `extraFor`,
 `packages/server/src/infrastructure/http-server.ts:148-150`, `186-194`;
 `answer`, `packages/server/src/infrastructure/http-write.ts:255-265`). The `405`
-on `/readyz` itself carries none of them.
+on `/readyz` carries no `Cache-Control`.
 
 There is **no CORS**: no `Access-Control-Allow-Origin` is ever sent, no
 `OPTIONS` preflight is answered — an `OPTIONS` request is a `405`, or a `401`
