@@ -399,9 +399,13 @@ export function createApp(deps) {
    */
   function reread() {
     const was = route;
+    const wasAll = query.all;
     read();
     note = "";
-    if (!sameProject(was, route)) {
+    // The lanes on screen were asked for under one `all`. Under the other they
+    // are a different list, so they are not kept: a table of retained waves
+    // beside a strip that says every wave is shown would be two answers at once.
+    if (!sameProject(was, route) || wasAll !== query.all) {
       data = undefined;
     }
     draw();

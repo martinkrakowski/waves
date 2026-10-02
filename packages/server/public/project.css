@@ -37,6 +37,13 @@
   text-decoration: none;
 }
 
+/* The link after the list is a control, not a wave: it has to look like a link. */
+.wave-strip > a {
+  color: var(--blue);
+  font-family: inherit;
+  text-decoration: underline;
+}
+
 .wave-strip a[aria-current="page"] {
   color: var(--amber);
 }

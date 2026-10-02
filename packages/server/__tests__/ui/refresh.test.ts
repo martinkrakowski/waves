@@ -774,6 +774,10 @@ describe("the project route", () => {
     expect(textsOf(root(), ".wave-strip li a")).toHaveLength(3);
 
     (root().querySelector(".wave-strip > a") as HTMLElement).click();
+    // Synchronously: the rows asked for without the waves past retention are
+    // not shown as the answer to a page that now says it shows them.
+    expect(textsOf(root(), "tbody tr")).toHaveLength(0);
+    expect(textsOf(root(), ".empty")).toStrictEqual(["Loading…"]);
     await flush();
 
     expect(browser.pushes).toStrictEqual(["/p/alpha?all=1"]);
