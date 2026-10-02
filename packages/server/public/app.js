@@ -182,10 +182,10 @@ export function createApp(deps) {
 
   function body() {
     if (data === undefined) {
-      return el("p", {
-        attrs: { class: "empty" },
-        text: note === "" ? LOADING : note,
-      });
+      // Only the shell's status region carries the note: saying it here as well
+      // would put "offline, retrying" on the page twice, once before there is
+      // anything to load and once where every page has one place to look.
+      return el("p", { attrs: { class: "empty" }, text: LOADING });
     }
     if (data.kind === "projects") {
       return renderFleet({ projects: data.projects }, clock());
@@ -317,9 +317,14 @@ export function createApp(deps) {
     generation += 1;
   }
 
-  /** Forgets the data of the route being left, so nothing stale is drawn. */
+  /**
+   * Forgets what belonged to the route being left, so nothing stale is drawn,
+   * and the note with it: a note about the page the reader has just left is not
+   * a note about this one.
+   */
   function reread() {
     read();
+    note = "";
     data = undefined;
     draw();
     void refreshOnce().then(schedule, schedule);

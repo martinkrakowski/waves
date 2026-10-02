@@ -37,6 +37,9 @@ interface Harness {
   readonly browser: ReturnType<typeof browserGlobals>;
 }
 
+/** The only note the app ever writes, as the reader sees it. */
+const OFFLINE = "offline, retrying";
+
 function harness(options: {
   pathname?: string;
   search?: string;
@@ -181,12 +184,26 @@ describe("the project list route", () => {
     });
     app.start();
     await flush();
-    expect(textsOf(root(), ".empty")).toStrictEqual(["offline, retrying"]);
+    // The status region carries the note; the body still says it is loading.
+    expect(textsOf(root(), ".empty")).toStrictEqual(["Loading…"]);
+    expect(textOf(root().querySelector(".note"))).toBe("offline, retrying");
 
     timers.runLast();
     await flush();
     expect(timers.scheduled).toHaveLength(1);
-    expect(textsOf(root(), ".empty")).toStrictEqual(["offline, retrying"]);
+    expect(textsOf(root(), ".empty")).toStrictEqual(["Loading…"]);
+    expect(textOf(root().querySelector(".note"))).toBe("offline, retrying");
+    app.stop();
+  });
+
+  it("says the note once, and only in the status region", async () => {
+    const { app } = harness({
+      fetchImpl: fetchStub(() => ({ status: 404 })),
+    });
+    app.start();
+    await flush();
+    expect(root().querySelectorAll(".note")).toHaveLength(1);
+    expect(textOf(root()).split(OFFLINE).length - 1).toBe(1);
     app.stop();
   });
 
@@ -276,7 +293,8 @@ describe("the project list route", () => {
     app.start();
     await flush();
     expect(timers.scheduled).toHaveLength(1);
-    expect(textsOf(root(), ".empty")).toStrictEqual(["offline, retrying"]);
+    expect(textsOf(root(), ".empty")).toStrictEqual(["Loading…"]);
+    expect(textOf(root().querySelector(".note"))).toBe("offline, retrying");
     app.stop();
   });
 
@@ -326,7 +344,8 @@ describe("the project list route", () => {
     const { app } = harness({ fetchImpl: throwingFetch() });
     app.start();
     await flush();
-    expect(textsOf(root(), ".empty")).toStrictEqual(["offline, retrying"]);
+    expect(textsOf(root(), ".empty")).toStrictEqual(["Loading…"]);
+    expect(textOf(root().querySelector(".note"))).toBe("offline, retrying");
     app.stop();
   });
 
