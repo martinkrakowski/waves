@@ -17,6 +17,7 @@ import { describe, expect, it } from "vitest";
 
 const DEPLOY = fileURLToPath(new URL("../../../deploy/", import.meta.url));
 const MIDNIGHT = `${DEPLOY}k8s/overlays/midnight/`;
+const BASE_DEPLOYMENT = `${DEPLOY}k8s/base/deployment.yaml`;
 
 interface Manifest {
   readonly body: string;
@@ -139,5 +140,23 @@ describe("the midnight overlay", () => {
       .filter((operation) => operation.op === "add")
       .map((operation) => operation.value ?? {});
     expect(added).toContainEqual({ name: "WAVES_TRUST_PROXY", value: "1" });
+  });
+});
+
+describe("the base deployment", () => {
+  // The other mistake that is invisible until applied, and then only on the
+  // second pod: with fsGroup and no change policy the kubelet re-applies the
+  // group to the whole data volume for every new pod, which widens the store
+  // directory to a mode the store refuses, and /readyz answers 503.
+  it("keeps the kubelet from re-owning the data volume for every new pod", () => {
+    const lines = readFileSync(BASE_DEPLOYMENT, "utf8").split("\n");
+    const fsGroup = lines.findIndex((line) => /^ {8}fsGroup: \d+$/.test(line));
+
+    expect(fsGroup, "the pod sets fsGroup").toBeGreaterThanOrEqual(0);
+    expect(
+      lines.filter(
+        (line) => line === "        fsGroupChangePolicy: OnRootMismatch",
+      ),
+    ).toHaveLength(1);
   });
 });
