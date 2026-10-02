@@ -360,6 +360,13 @@ describe("the breadcrumb", () => {
     expect(textOf(crumbs as Element)).toBe("waves");
   });
 
+  it("leads back to the fleet from a page that is not one of ours", () => {
+    const host = draw({ route: { kind: "unknown" } });
+    expect(textsOf(host, ".crumbs a")).toStrictEqual(["waves"]);
+    expect(host.querySelector(".crumbs a")?.getAttribute("href")).toBe("/");
+    expect(host.querySelector('.crumbs [aria-current="page"]')).toBeNull();
+  });
+
   it("is the brand and the project on a project route", () => {
     const host = draw({ route: PROJECT });
     expect(textsOf(host, ".crumbs a")).toStrictEqual(["waves"]);

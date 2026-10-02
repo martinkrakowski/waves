@@ -78,7 +78,10 @@ body {
 
 /* The projects, in a native disclosure: the summary is a control of its own and
    `details` does the opening, so nothing here has to. */
+/* At the end of the bar, and the list opens from its right edge: a list that
+   opened rightwards from after a long breadcrumb would run off the screen. */
 .menu {
+  margin-left: auto;
   position: relative;
 }
 
@@ -99,13 +102,13 @@ body {
   border: 1px solid var(--line);
   border-radius: 0.5rem;
   box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
-  left: 0;
   max-height: min(70vh, 28rem);
   max-width: min(24rem, calc(100vw - 2.5rem));
   min-width: 16rem;
   overflow-y: auto;
   padding: 0.6rem 0.75rem;
   position: absolute;
+  right: 0;
   top: calc(100% + 0.35rem);
   z-index: 3;
 }

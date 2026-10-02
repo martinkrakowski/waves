@@ -1196,9 +1196,32 @@ describe("the projects menu", () => {
   it("closes on a click outside it", async () => {
     const { app } = await onFleet();
     menu().open = true;
+    const heading = root().querySelector("h1") as HTMLElement;
 
-    (root().querySelector("h1") as HTMLElement).click();
+    heading.click();
 
+    expect(menu().open).toBe(false);
+    // Shut in place: the page the click landed on is still the page on screen.
+    expect(heading.isConnected).toBe(true);
+    await app.refresh();
+    expect(menu().open).toBe(false);
+    app.stop();
+  });
+
+  it("shuts when the reader picks the page already on screen", async () => {
+    const { app, browser } = harness({ pathname: "/p/alpha" });
+    app.start();
+    await flush();
+    menu().open = true;
+    const here = Array.from(root().querySelectorAll(".menu-list a")).find(
+      (anchor) => anchor.getAttribute("href") === "/p/alpha",
+    ) as HTMLElement;
+
+    here.click();
+
+    expect(menu().open).toBe(false);
+    expect(browser.pushes).toStrictEqual([]);
+    await app.refresh();
     expect(menu().open).toBe(false);
     app.stop();
   });

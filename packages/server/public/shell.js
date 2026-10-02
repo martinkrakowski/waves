@@ -55,8 +55,13 @@ function projectHref(id, all) {
  * page's own text; only an id that is a whole route becomes a link.
  */
 function breadcrumb(route, all) {
-  if (route.kind !== "project") {
+  if (route.kind === "projects") {
     return [here(BRAND)];
+  }
+  // A page that is not one of ours still has the fleet above it, and with the
+  // rail gone this is the only link that leads there.
+  if (route.kind !== "project") {
+    return [internalLink(BRAND, "/")];
   }
   const parts = [internalLink(BRAND, "/")];
   parts.push(

@@ -515,9 +515,25 @@ export function createApp(deps) {
    *
    * A click outside the menu closes it, whatever the click was for: a menu left
    * open under a click elsewhere would go on covering the page the reader is
-   * reaching for. The redraw comes first and the click carries on into the logic
+   * reaching for. It is shut where it stands, with no redraw: a redraw here would
+   * replace the control the click is about to reach — a label's select, a search
+   * box — before the browser acts on it. The click then carries on into the logic
    * below, so a link outside the menu still navigates.
+   *
+   * A link the app follows shuts it too, even one to the page already on screen,
+   * which `navigate` ignores: the reader has chosen, so the menu is done.
    */
+  /**
+   * Shuts the menu in place: the state, and the element on screen, so the next
+   * draw and the page agree without one being made now.
+   */
+  function shutMenu() {
+    menuOpen = false;
+    for (const details of root.querySelectorAll("details.menu")) {
+      details.open = false;
+    }
+  }
+
   function onClick(event) {
     if (event.defaultPrevented || event.button !== 0) {
       return;
@@ -529,14 +545,14 @@ export function createApp(deps) {
     if (node === null || node.nodeType !== 1) {
       return;
     }
-    if (menuOpen && node.closest("details.menu") === null) {
-      menuOpen = false;
-      draw();
+    if (node.closest("details.menu") === null) {
+      shutMenu();
     }
     const anchor = node.closest("a");
     if (anchor === null || anchor.getAttribute("data-key") !== "nav") {
       return;
     }
+    shutMenu();
     const href = anchor.getAttribute("href");
     event.preventDefault();
     if (href !== null) {
