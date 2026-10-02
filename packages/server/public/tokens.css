@@ -1,0 +1,58 @@
+/*
+ * Every colour, and only the colours, in this file. The page is dark by default
+ * because a status page is left open on a wall; a reader who asks for the light
+ * scheme gets it from the same names below. A stylesheet that needs a colour
+ * outside this set is asking for a palette of its own, which is how a status
+ * page ends up unreadable in one of the two schemes.
+ */
+
+:root {
+  color-scheme: dark;
+
+  --bg: #0e0f12;
+  --bg-raise: #16181d;
+  --bg-sink: #0a0b0d;
+  --line: #2a2d34;
+  --line-strong: #3a3e48;
+  --text: #e8e4da;
+  --muted: #a0a49b;
+  --faint: #80857c;
+  --amber: #e4b15a;
+  --red: #e36d6d;
+  --teal: #3dbeb0;
+  --blue: #7ea2e0;
+  --violet: #b39adf;
+
+  --rail: 232px;
+
+  --sans: ui-sans-serif, system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+
+    --bg: #f6f4ee;
+    --bg-raise: #ffffff;
+    --bg-sink: #ebe8df;
+    --line: #d5d0c3;
+    --line-strong: #b9b3a3;
+    --text: #1c1d1f;
+    --muted: #55584f;
+    --faint: #6b6e65;
+    --amber: #8a5a00;
+    --red: #a8322f;
+    --teal: #0f6f66;
+    --blue: #2f5fb3;
+    --violet: #6a4bb0;
+  }
+}
+
+/* Nothing on a status page needs to move; the reader has asked for that. */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
