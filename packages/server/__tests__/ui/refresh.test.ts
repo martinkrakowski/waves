@@ -463,7 +463,10 @@ describe("the project route", () => {
       "/api/v1/projects/alpha/waves/w-3",
     ]);
 
+    const callsBeforeClick = gate.calls.length;
     (root().querySelectorAll(".wave")[1] as HTMLElement).click();
+    // The click waits for the pass in flight; it starts no fetch of its own.
+    expect(gate.calls).toHaveLength(callsBeforeClick);
 
     gate.release();
     await flush();
