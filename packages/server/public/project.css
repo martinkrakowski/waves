@@ -116,6 +116,177 @@
   font-size: 0.85rem;
 }
 
+.project .banner {
+  border: 1px solid var(--amber);
+  border-radius: 0.5rem;
+  color: var(--amber);
+  margin: 0.75rem 0;
+  padding: 0.6rem 0.8rem;
+}
+
+.project .kpis {
+  margin: 0.75rem 0;
+}
+
+.split {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  margin: 0.75rem 0;
+}
+
+.panel {
+  background: var(--bg-raise);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+}
+
+.panel h2 {
+  font-size: 0.95rem;
+  margin: 0 0 0.5rem;
+}
+
+.panel ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Not `.empty`: that class carries the padding of a line of its own on the page,
+   which inside a panel is a band of nothing between the heading and the list. */
+.panel .panel-empty {
+  color: var(--muted);
+  margin: 0;
+}
+
+.panel.disagreements li {
+  align-items: baseline;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.6rem;
+  padding: 0.35rem 0;
+}
+
+.panel.disagreements li:first-child {
+  border-top: none;
+}
+
+.panel.seats li {
+  align-items: center;
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: minmax(0, 1fr) 6rem 2.5rem;
+  padding: 0.2rem 0;
+}
+
+.panel.seats .name {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.panel.seats meter {
+  height: 0.5rem;
+  width: 100%;
+}
+
+.panel.seats .count,
+.stages .count {
+  font-family: var(--mono);
+  text-align: right;
+}
+
+.stages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  list-style: none;
+  margin: 0.75rem 0;
+  padding: 0;
+}
+
+.stages li {
+  background: var(--bg-sink);
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.3rem 0.6rem;
+}
+
+.stages .name {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.toolbar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  margin: 0.75rem 0 0.25rem;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.chips a {
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  padding: 0.1rem 0.55rem;
+  text-decoration: none;
+}
+
+.chips a[aria-current="true"] {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
+.toolbar label {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.toolbar select,
+.toolbar input {
+  background: var(--bg-sink);
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  color: var(--text);
+  font: inherit;
+  /* A select is as wide as its widest option, and a seat may be 128 characters. */
+  max-width: min(100%, 18rem);
+  min-width: 0;
+  padding: 0.25rem 0.45rem;
+}
+
+.toolbar select:focus-visible,
+.toolbar input:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.toolbar .shown {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin-left: auto;
+}
+
+/* One column below the width the shell drops its rail at, so the panels reflow at
+   the same moment the frame does. */
+@media (max-width: 1080px) {
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* The narrow layout in app.css lays every cell out as two columns, one for its
    data-label and one for its contents. This lane's cells hold up to four
    children each — a link, a seat, a mismatch, a stamp — which would wrap into

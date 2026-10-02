@@ -16,6 +16,7 @@ export interface AppGlobals {
   readonly location: { pathname: string; search: string };
   readonly history: {
     pushState(data: unknown, unused: string, url: string): void;
+    replaceState(data: unknown, unused: string, url: string): void;
   };
   readonly win: {
     addEventListener(type: "popstate", listener: () => void): void;
@@ -33,16 +34,18 @@ export interface App {
   stop(): void;
   /** `false` when the load was for a route the user has since left. */
   refresh(): Promise<boolean>;
-  /** Ignores anything that is not a same-origin path, or the current URL. */
-  navigate(url: string): void;
+  /**
+   * Ignores anything that is not a same-origin path, or the current URL.
+   * `{ replace: true }` writes the address without adding to the history, which
+   * is what a search box changes it for.
+   */
+  navigate(url: string, options?: { readonly replace?: boolean }): void;
   readonly route: Route;
 }
 
 export declare const REFRESH_MS: number;
 
 export declare function routeOf(pathname: string): Route;
-
-export declare function pathOf(route: Route): string;
 
 export declare function createApp(globals: AppGlobals): App;
 

@@ -1,7 +1,10 @@
 import { expect } from "vitest";
 
 import type { ApiResponse, FetchLike } from "../../public/api.js";
-import type { ProjectModel } from "../../public/views/project.js";
+import type {
+  ProjectHandlers,
+  ProjectModel,
+} from "../../public/views/project.js";
 import { renderProject } from "../../public/views/project.js";
 
 import { NOW_MS, projectLanes } from "./fixtures.js";
@@ -286,6 +289,7 @@ export interface BrowserGlobals {
   readonly location: { pathname: string; search: string };
   readonly history: {
     pushState(data: unknown, unused: string, url: string): void;
+    replaceState(data: unknown, unused: string, url: string): void;
   };
   readonly win: {
     addEventListener(type: "popstate", listener: () => void): void;
@@ -293,6 +297,8 @@ export interface BrowserGlobals {
   };
   /** Every URL a `pushState` was given, in order. */
   readonly pushes: string[];
+  /** Every URL a `replaceState` was given, in order. */
+  readonly replaces: string[];
   /** How many `popstate` listeners the app has attached. */
   readonly popstates: number;
   popstate(): void;
@@ -306,13 +312,21 @@ export interface BrowserGlobals {
 export function browserGlobals(pathname = "/", search = ""): BrowserGlobals {
   const location = { pathname, search };
   const pushes: string[] = [];
+  const replaces: string[] = [];
   const listeners: (() => void)[] = [];
+  const move = (url: string): void => {
+    const target = new URL(url, "http://test");
+    location.pathname = target.pathname;
+    location.search = target.search;
+  };
   const history = {
     pushState: (_data: unknown, _unused: string, url: string): void => {
       pushes.push(url);
-      const target = new URL(url, "http://test");
-      location.pathname = target.pathname;
-      location.search = target.search;
+      move(url);
+    },
+    replaceState: (_data: unknown, _unused: string, url: string): void => {
+      replaces.push(url);
+      move(url);
     },
   };
   const win = {
@@ -333,6 +347,7 @@ export function browserGlobals(pathname = "/", search = ""): BrowserGlobals {
     history,
     win,
     pushes,
+    replaces,
     get popstates() {
       return listeners.length;
     },
@@ -347,12 +362,15 @@ export function browserGlobals(pathname = "/", search = ""): BrowserGlobals {
 /**
  * Draws one project's page with the given model, defaulting to the whole
  * project with one wave and one lane, and returns the host it was drawn into.
+ * `handlers` defaults to a pair of stubs: most view tests are about what is
+ * drawn, and a test about what a filter asks for passes its own.
  * The markup invariants are asserted on the way out, so every view test that
  * uses this harness also gets `assertNoInjectedMarkup`.
  */
 export function renderProjectView(
   model: Partial<ProjectModel> = {},
   nowMs: number = NOW_MS,
+  handlers: ProjectHandlers = { onFilter() {}, onSearch() {} },
 ): HTMLElement {
   const full: ProjectModel = {
     lanes: projectLanes(),
@@ -361,7 +379,7 @@ export function renderProjectView(
     ...model,
   };
   const host = freshRoot();
-  host.append(renderProject(full, nowMs));
+  host.append(renderProject(full, nowMs, handlers));
   assertNoInjectedMarkup();
   return host;
 }

@@ -7,18 +7,20 @@ import { isProjectId, isWaveId } from "./patterns.js";
 import { parseQuery } from "./query.js";
 import { shell } from "./shell.js";
 import { renderFleet } from "./views/fleet.js";
-import { renderProject } from "./views/project.js";
+import { hrefFor, renderProject } from "./views/project.js";
 
 export const REFRESH_MS = 10_000;
 
 const ROOT_ID = "root";
 const PROJECT_PREFIX = "/p/";
-const WAVE_SEGMENT = "/w/";
 const OFFLINE_NOTE = "offline, retrying";
 const LOADING = "Loading…";
 
 /** `/p/<id>` or `/p/<id>/w/<wave>`: the server serves the page on both. */
 const PROJECT_PATH = /^\/p\/([^/]+)(\/w\/([^/]+))?$/;
+
+/** The tags a reader is already typing into, where a `/` is a `/`. */
+const TYPING = ["INPUT", "SELECT", "TEXTAREA"];
 
 export function routeOf(pathname) {
   if (pathname === "/" || pathname === "") {
@@ -42,21 +44,6 @@ export function routeOf(pathname) {
   }
   const wave = parts[3];
   return isWaveId(wave) ? { kind: "project", id, wave } : { kind: "unknown" };
-}
-
-/**
- * The path a route is drawn at. A valid id needs no encoding, so the
- * `encodeURIComponent` only matters to a hand-built route, and the fleet is the
- * path for anything that is not a project.
- */
-export function pathOf(route) {
-  if (route.kind !== "project") {
-    return "/";
-  }
-  const project = `${PROJECT_PREFIX}${encodeURIComponent(route.id)}`;
-  return route.wave === undefined
-    ? project
-    : `${project}${WAVE_SEGMENT}${encodeURIComponent(route.wave)}`;
 }
 
 /** Only same-origin absolute paths: no scheme, and no protocol-relative form. */
@@ -215,14 +202,57 @@ export function createApp(deps) {
       );
     }
     if (data.kind === "project") {
-      // No handlers: every control this view draws is a link, and the app
-      // follows its own links in place.
       return renderProject(
         { lanes: data.lanes, wave: route.wave, query },
         clock(),
+        projectHandlers(),
       );
     }
     return el("p", { attrs: { class: "empty" }, text: "No such project." });
+  }
+
+  /**
+   * The two things a filter on a project's page can ask for. Both are
+   * navigations, so a filter is a place a reader can be sent, read aloud, copied
+   * or opened in a new tab, and the address is where the filter lives rather than
+   * inside a control that a reload forgets. Typing replaces the address rather
+   * than pushing onto it: a reader typing one word must not fill the history
+   * with one entry per keystroke.
+   */
+  function projectHandlers() {
+    return {
+      onFilter: (patch) => {
+        navigate(
+          hrefFor(route.id, route.wave, {
+            ...query,
+            ...patch,
+            lane: undefined,
+          }),
+        );
+      },
+      onSearch: (text) => {
+        navigate(
+          hrefFor(route.id, route.wave, {
+            ...query,
+            q: text === "" ? undefined : text,
+            lane: undefined,
+          }),
+          { replace: true },
+        );
+      },
+    };
+  }
+
+  /**
+   * The control inside the page the view gave this key, compared by value and
+   * never by a selector built from it: a key is one this page's own markup
+   * carries, and a selector is the one place an API string would end up in a
+   * query.
+   */
+  function controlWith(key) {
+    return [...root.querySelectorAll("[data-key]")].find(
+      (element) => element.getAttribute("data-key") === key,
+    );
   }
 
   /**
@@ -234,11 +264,23 @@ export function createApp(deps) {
    * refresh would otherwise take the focus with it and drop a keyboard reader
    * at the top of the page. Compared by value, never by selector: an `href` is
    * an API string and does not belong in a query.
+   *
+   * A control is remembered by the key it was drawn with, and with its caret: a
+   * reader typing in the search box would otherwise be dropped out of it on
+   * every character. It is asked about first, because a `select` and an `input`
+   * carry no address at all.
    */
   function focusedLink() {
     const active = doc.activeElement;
     if (active === null || !root.contains(active)) {
       return undefined;
+    }
+    const key = active.getAttribute("data-key");
+    if (key !== null && key !== "nav") {
+      const start = active.selectionStart;
+      return typeof start === "number"
+        ? { key, start, end: active.selectionEnd }
+        : { key };
     }
     const href = active.getAttribute("href");
     if (href === null) {
@@ -252,18 +294,31 @@ export function createApp(deps) {
   }
 
   /**
-   * Puts the focus on the link of the new document that stands where the old
-   * one stood among the links with its address, without scrolling to it: a
-   * reader who scrolled away is not dragged back every ten seconds.
+   * Puts the focus back where it was: a control by its key, a link by its
+   * address and its place among the links with that address, without scrolling
+   * to it — a reader who scrolled away is not dragged back every ten seconds. A
+   * control the redraw did not draw is left alone, which is what happens when
+   * the scope emptied and the toolbar went with it.
    */
-  function refocus(link) {
-    if (link === undefined) {
+  function refocus(focused) {
+    if (focused === undefined) {
+      return;
+    }
+    if (focused.key !== undefined) {
+      const control = controlWith(focused.key);
+      if (control === undefined) {
+        return;
+      }
+      control.focus({ preventScroll: true });
+      if (focused.start !== undefined) {
+        control.setSelectionRange(focused.start, focused.end);
+      }
       return;
     }
     const same = [...root.querySelectorAll("a")].filter(
-      (anchor) => anchor.getAttribute("href") === link.href,
+      (anchor) => anchor.getAttribute("href") === focused.href,
     );
-    same[link.nth]?.focus({ preventScroll: true });
+    same[focused.nth]?.focus({ preventScroll: true });
   }
 
   function draw() {
@@ -368,14 +423,14 @@ export function createApp(deps) {
   }
 
   /**
-   * Where the browser is now, and what the view asked for, read from it. Every
-   * read starts a new generation, so a pass already in flight knows at once that
-   * it is answering a page the reader has left.
+   * Where the browser is now, and what the view asked for, read from it.
+   * Reading it starts no generation: only a pass that is about to be asked for
+   * needs one, and a change of what is drawn — a wave, a filter, a lane — asks
+   * for nothing new.
    */
   function read() {
     route = routeOf(location.pathname);
     query = parseQuery(location.search);
-    generation += 1;
   }
 
   /** Whether a route is another wave of the project already on screen. */
@@ -386,21 +441,33 @@ export function createApp(deps) {
   }
 
   /**
-   * Forgets what belonged to the route being left, so nothing stale is drawn,
-   * and the note with it: a note about the page the reader has just left is not
-   * a note about this one.
+   * Reads the address again and draws what it now says.
    *
-   * Another wave of the project already on screen is the same project, so its
-   * lanes stay where they are while the pass for the new wave runs: the table a
-   * reader is working down does not vanish under them because they followed a
-   * link. The rail's list is never cleared at all: it is the same for every
-   * route, and blanking it to "Loading…" on each click, and for ever on a route
-   * that fetches nothing, was a page that had lost the one thing it knew.
+   * What a pass requests depends on the route's kind, its id and `all` — and on
+   * nothing else. So when all three are the same as they were and the answer is
+   * already held, the reader chose another wave, another filter or another lane
+   * of the same listing, and the page is redrawn from the data in hand: no
+   * request, no new generation, and no note cleared. A page that is offline
+   * stays marked offline through a filter, because no pass follows to say
+   * otherwise; the next one will.
+   *
+   * In every other case the route or the listing is not the one on screen, so
+   * what belonged to the route being left is forgotten, the note with it — a
+   * note about the page the reader has just left is not a note about this one —
+   * and a pass is started. The rail's list is never cleared at all: it is the
+   * same for every route, and blanking it to "Loading…" on each click, and for
+   * ever on a route that fetches nothing, was a page that had lost the one thing
+   * it knew.
    */
   function reread() {
     const was = route;
     const wasAll = query.all;
     read();
+    if (data !== undefined && sameProject(was, route) && wasAll === query.all) {
+      draw();
+      return;
+    }
+    generation += 1;
     note = "";
     // The lanes on screen were asked for under one `all`. Under the other they
     // are a different list, so they are not kept: a table of retained waves
@@ -412,7 +479,12 @@ export function createApp(deps) {
     void refreshOnce().then(schedule, schedule);
   }
 
-  function navigate(url) {
+  /**
+   * The page's own navigation, in place: a `push` so the reader can come back,
+   * or a `replace` for an address that changes as it is typed, which would
+   * otherwise put one entry per keystroke in front of the reader's back button.
+   */
+  function navigate(url, options = {}) {
     const path = ownPath(url);
     if (path === undefined) {
       return;
@@ -420,7 +492,11 @@ export function createApp(deps) {
     if (path === `${location.pathname}${location.search}`) {
       return;
     }
-    history.pushState(null, "", path);
+    if (options.replace === true) {
+      history.replaceState(null, "", path);
+    } else {
+      history.pushState(null, "", path);
+    }
     reread();
   }
 
@@ -466,10 +542,40 @@ export function createApp(deps) {
     void refreshOnce().then(schedule, schedule);
   }
 
+  /**
+   * `/` goes to the search box, the way it does everywhere else a reader expects
+   * it to — and only when the reader is not already in a control, so a slash in
+   * the search box, or a `#` and a slash a reader is typing into a seat, is a
+   * slash and not a command. A page with no search box is left alone, and a
+   * `/` with Command, Control or Alt is left to the browser, which has its own
+   * meaning for it. Shift is not refused: on several keyboard layouts it is how
+   * a slash is typed.
+   */
+  function onKey(event) {
+    if (root === null || event.key !== "/") {
+      return;
+    }
+    if (event.metaKey || event.ctrlKey || event.altKey) {
+      return;
+    }
+    const active = doc.activeElement;
+    if (active !== null && TYPING.includes(active.tagName)) {
+      return;
+    }
+    const box = controlWith("q");
+    if (box === undefined) {
+      return;
+    }
+    event.preventDefault();
+    box.focus();
+  }
+
   function start() {
     stopped = false;
     read();
+    generation += 1;
     doc.addEventListener("visibilitychange", onVisibility);
+    doc.addEventListener("keydown", onKey);
     win.addEventListener("popstate", onPopState);
     if (root !== null) {
       root.addEventListener("click", onClick);
@@ -485,6 +591,7 @@ export function createApp(deps) {
       timer = undefined;
     }
     doc.removeEventListener("visibilitychange", onVisibility);
+    doc.removeEventListener("keydown", onKey);
     win.removeEventListener("popstate", onPopState);
     if (root !== null) {
       root.removeEventListener("click", onClick);
