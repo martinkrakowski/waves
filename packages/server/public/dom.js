@@ -13,10 +13,27 @@ import { relativeTime } from "./format.js";
 const SETTERS = {
   class: (node, value) => node.setAttribute("class", value),
   "data-label": (node, value) => node.setAttribute("data-label", value),
+  "data-key": (node, value) => node.setAttribute("data-key", value),
   rel: (node, value) => node.setAttribute("rel", value),
   role: (node, value) => node.setAttribute("role", value),
   title: (node, value) => node.setAttribute("title", value),
   type: (node, value) => node.setAttribute("type", value),
+  "aria-pressed": (node, value) => node.setAttribute("aria-pressed", value),
+  "aria-label": (node, value) => node.setAttribute("aria-label", value),
+  "aria-current": (node, value) => node.setAttribute("aria-current", value),
+  "aria-live": (node, value) => node.setAttribute("aria-live", value),
+  placeholder: (node, value) => node.setAttribute("placeholder", value),
+  value: (node, value) => node.setAttribute("value", value),
+  max: (node, value) => node.setAttribute("max", value),
+  /**
+   * These four name something in the document or address a control, so the
+   * value must be one the app owns: a literal, or a segment already held to the
+   * id patterns in `patterns.js`. An API string that reached one of them could
+   * point a label at another project's control or claim a name this page uses.
+   */
+  name: (node, value) => node.setAttribute("name", value),
+  for: (node, value) => node.setAttribute("for", value),
+  id: (node, value) => node.setAttribute("id", value),
 };
 
 function attributes(node, values) {
@@ -87,9 +104,16 @@ function anchor(label, href) {
   return node;
 }
 
-/** A same-origin path, which the app owns and never takes from the API. */
+/**
+ * A same-origin path, which the app owns and never takes from the API. It
+ * carries `data-key="nav"`, which is how the shell's click handler knows this
+ * is a link it may follow in place instead of letting the browser load the page
+ * again. `repoLink` never carries it: an outbound link leaves the page.
+ */
 export function internalLink(label, path) {
-  return anchor(label, path);
+  const node = anchor(label, path);
+  node.setAttribute("data-key", "nav");
+  return node;
 }
 
 /** A repository the project registered: a link when it is `https:`, else text. */

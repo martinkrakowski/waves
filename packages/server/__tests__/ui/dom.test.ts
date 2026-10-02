@@ -32,9 +32,49 @@ describe("el", () => {
   });
 
   it("refuses any attribute outside the list, event handlers included", () => {
-    for (const name of ["onclick", "style", "src", "srcdoc", "href", "id"]) {
+    for (const name of [
+      "onclick",
+      "style",
+      "src",
+      "srcdoc",
+      "href",
+      "tabindex",
+    ]) {
       expect(() => el("p", { attrs: { [name]: "x" } })).toThrow(TypeError);
       expect(() => el("p", { attrs: { [name]: "x" } })).toThrow(name);
+    }
+  });
+
+  it("sets every attribute the shell and the later views need", () => {
+    const node = el("input", {
+      attrs: {
+        "aria-pressed": "false",
+        "aria-label": "Projects",
+        "aria-current": "page",
+        "aria-live": "polite",
+        placeholder: "lane id",
+        value: "wv-a",
+        max: "128",
+        name: "lane",
+        for: "lane-search",
+        id: "lane-search",
+        "data-key": "nav",
+      },
+    });
+    for (const [name, value] of Object.entries({
+      "aria-pressed": "false",
+      "aria-label": "Projects",
+      "aria-current": "page",
+      "aria-live": "polite",
+      placeholder: "lane id",
+      value: "wv-a",
+      max: "128",
+      name: "lane",
+      for: "lane-search",
+      id: "lane-search",
+      "data-key": "nav",
+    })) {
+      expect(node.getAttribute(name)).toBe(value);
     }
   });
 
@@ -80,11 +120,21 @@ describe("httpsUrl", () => {
 });
 
 describe("links", () => {
-  it("internal links carry the path the app owns", () => {
+  it("internal links carry the path the app owns, and say they are ours", () => {
     const node = internalLink("alpha", "/p/alpha");
     expect(node.tagName).toBe("A");
     expect(node.getAttribute("href")).toBe("/p/alpha");
     expect(node.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(node.getAttribute("data-key")).toBe("nav");
+  });
+
+  it("a repository link is never one of ours to follow in place", () => {
+    const linked = repoLink("git", "https://git.example.test/alpha");
+    expect(linked.tagName).toBe("A");
+    expect(linked.getAttribute("href")).toBe("https://git.example.test/alpha");
+    expect(linked.hasAttribute("data-key")).toBe(false);
+    const plain = repoLink("no repository registered", undefined);
+    expect(plain.hasAttribute("data-key")).toBe(false);
   });
 
   it("a repository is a link only when it is https", () => {
