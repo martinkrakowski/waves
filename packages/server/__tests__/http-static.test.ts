@@ -21,10 +21,10 @@ function bodyOf(raw: string): string {
 afterEach(cleanupHarnesses);
 
 describe("the placeholder page", () => {
-  it("serves the page at the root and at a project", async () => {
+  it("serves the page at the root, at a project and at one of its waves", async () => {
     const started = await startHarness();
 
-    for (const path of ["/", "/p/alpha"]) {
+    for (const path of ["/", "/p/alpha", "/p/alpha/w/wv1"]) {
       const response = await fetch(`${started.origin}${path}`);
 
       expect(response.status).toBe(200);
@@ -37,11 +37,18 @@ describe("the placeholder page", () => {
     }
   });
 
-  it("refuses a project page whose id the contract rejects", async () => {
+  it.each([
+    ["/p/Bad%20Id", "a project id the contract rejects"],
+    ["/p/", "no project id at all"],
+    ["/p/alpha/w/", "no wave id"],
+    ["/p/alpha/w/a/b", "a path under the wave page"],
+    ["/p/alpha/x/wv1", "a segment that is not w"],
+    ["/p/ALPHA/w/wv1", "a project id the contract rejects"],
+    ["/p/alpha/w/-bad", "a wave id the contract rejects"],
+  ])("refuses %s (%s)", async (path) => {
     const started = await startHarness();
 
-    expect((await fetch(`${started.origin}/p/Bad%20Id`)).status).toBe(404);
-    expect((await fetch(`${started.origin}/p/`)).status).toBe(404);
+    expect((await fetch(`${started.origin}${path}`)).status).toBe(404);
   });
 
   it("serves the linked assets with a fixed content type", async () => {
