@@ -1,10 +1,21 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type {
+  LaneDerivedView,
+  LaneView,
+} from "../../src/application/read-model.js";
 import type { AppGlobals } from "../../public/app.js";
 import { createApp, REFRESH_MS } from "../../public/app.js";
 
 import type { Answer, FetchStub, TimerStub } from "./helpers.js";
-import { NOW_MS, projectCard, waveSummary, waveView } from "./fixtures.js";
+import {
+  envelope,
+  lane,
+  NOW_MS,
+  projectCard,
+  waveSummary,
+  waveView,
+} from "./fixtures.js";
 import {
   fetchStub,
   flush,
@@ -479,6 +490,137 @@ describe("the project route", () => {
     expect(textsOf(root(), ".wave.current code")).toStrictEqual(["w-2"]);
     expect(textsOf(root(), ".lane-panel h2 code")).toStrictEqual(["w-2"]);
     expect(timers.scheduled).toHaveLength(1);
+    app.stop();
+  });
+
+  it("keeps the last good lanes when the detail answers with another wave", async () => {
+    let second = false;
+    const other = waveView({ envelope: envelope({ wave: "w-9" }) });
+    const flaky = fetchStub((path) => {
+      if (path.endsWith("/waves")) {
+        return { status: 200, body: [waveSummary({ wave: "w-3" })] };
+      }
+      return second
+        ? { status: 200, body: other }
+        : { status: 200, body: waveView() };
+    });
+    const { app, timers } = harness({ pathname: "/p/alpha", fetchImpl: flaky });
+    app.start();
+    await flush();
+    expect(textsOf(root(), "tbody tr")).toHaveLength(2);
+
+    second = true;
+    timers.runLast();
+    await flush();
+
+    expect(timers.scheduled).toHaveLength(1);
+    expect(textsOf(root(), "tbody tr")).toHaveLength(2);
+    expect(textOf(root().querySelector(".note"))).toBe("offline, retrying");
+    app.stop();
+  });
+
+  it.each([
+    [
+      "an envelope with nothing around it",
+      { envelope: { wave: "w-3", lanes: [] } },
+    ],
+    [
+      "lanes that are not a list",
+      waveView({
+        envelope: envelope({ lanes: "two" as unknown as LaneView[] }),
+      }),
+    ],
+    [
+      "a lane with no derived",
+      waveView({
+        envelope: envelope({
+          lanes: [lane({ derived: undefined as unknown as LaneDerivedView })],
+        }),
+      }),
+    ],
+  ])(
+    "keeps the last good lanes when the detail is %s",
+    async (_label, body) => {
+      let second = false;
+      const flaky = fetchStub((path) => {
+        if (path.endsWith("/waves")) {
+          return { status: 200, body: [waveSummary({ wave: "w-3" })] };
+        }
+        return second
+          ? { status: 200, body }
+          : { status: 200, body: waveView() };
+      });
+      const { app, timers } = harness({
+        pathname: "/p/alpha",
+        fetchImpl: flaky,
+      });
+      app.start();
+      await flush();
+      expect(textsOf(root(), "tbody tr")).toHaveLength(2);
+
+      second = true;
+      timers.runLast();
+      await flush();
+
+      expect(timers.scheduled).toHaveLength(1);
+      expect(textsOf(root(), "tbody tr")).toHaveLength(2);
+      expect(textOf(root().querySelector(".note"))).toBe("offline, retrying");
+      app.stop();
+    },
+  );
+
+  it("draws a later full wave detail for the wave it is showing", async () => {
+    let second = false;
+    const thinner = waveView({
+      envelope: envelope({ lanes: [lane({ id: "wv-c" })] }),
+    });
+    const flaky = fetchStub((path) => {
+      if (path.endsWith("/waves")) {
+        return { status: 200, body: [waveSummary({ wave: "w-3" })] };
+      }
+      return second
+        ? { status: 200, body: thinner }
+        : { status: 200, body: waveView() };
+    });
+    const { app, timers } = harness({ pathname: "/p/alpha", fetchImpl: flaky });
+    app.start();
+    await flush();
+    expect(textsOf(root(), "tbody tr")).toHaveLength(2);
+
+    second = true;
+    timers.runLast();
+    await flush();
+
+    expect(timers.scheduled).toHaveLength(1);
+    expect(textsOf(root(), ".lane-panel h2 code")).toStrictEqual(["w-3"]);
+    expect(textsOf(root(), "tbody tr")).toHaveLength(1);
+    expect(root().querySelectorAll(".note")).toHaveLength(0);
+    app.stop();
+  });
+
+  it("says the wave is gone when its detail answers 404", async () => {
+    let second = false;
+    const flaky = fetchStub((path) => {
+      if (path.endsWith("/waves")) {
+        return { status: 200, body: [waveSummary({ wave: "w-3" })] };
+      }
+      return second ? { status: 404 } : { status: 200, body: waveView() };
+    });
+    const { app, timers } = harness({ pathname: "/p/alpha", fetchImpl: flaky });
+    app.start();
+    await flush();
+    expect(textsOf(root(), "tbody tr")).toHaveLength(2);
+
+    second = true;
+    timers.runLast();
+    await flush();
+
+    expect(timers.scheduled).toHaveLength(1);
+    expect(textsOf(root(), ".empty")).toStrictEqual([
+      "That wave is no longer stored.",
+    ]);
+    expect(root().querySelectorAll("tbody")).toHaveLength(0);
+    expect(root().querySelectorAll(".note")).toHaveLength(0);
     app.stop();
   });
 

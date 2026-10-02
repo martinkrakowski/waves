@@ -1,7 +1,12 @@
 import { createApi } from "./api.js";
 import { el } from "./dom.js";
 import { drawableProjects, projectList } from "./projects.js";
-import { drawableWaves, visibleWaves, wavePanel } from "./wave.js";
+import {
+  drawableWave,
+  drawableWaves,
+  visibleWaves,
+  wavePanel,
+} from "./wave.js";
 
 export const REFRESH_MS = 10_000;
 
@@ -78,6 +83,14 @@ export function createApp(deps) {
       const view = await api.wave(route.id, chosen.wave);
       if (selected !== chosen.wave) {
         return undefined;
+      }
+      if (view !== undefined) {
+        if (!drawableWave(view)) {
+          throw new Error("the wave is not a wave");
+        }
+        if (view.envelope.wave !== chosen.wave) {
+          throw new Error("the wave is not the one requested");
+        }
       }
       return { kind: "project", project: route.id, waves, view };
     }
