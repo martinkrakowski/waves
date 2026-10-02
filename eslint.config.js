@@ -16,6 +16,33 @@ const OTHER_PACKAGE_PATTERN = `^(?!${KERNEL}(/|$))[^./]`;
 const PORT_MESSAGE =
   "Domain and application code takes dependencies through ports, never dynamic imports or require.";
 
+/**
+ * These rules are the guard rail for the UI, not its guarantee: they catch the
+ * sinks a reviewer can read, and no static rule catches a name assembled at
+ * runtime (`node["inner" + "HTML"]`). The guarantee is `xss.test.ts`, which
+ * asserts on the rendered DOM after feeding every payload through every field.
+ */
+const HTML_MESSAGE =
+  "The UI builds elements through public/dom.js and textContent, never HTML strings. An HTML string here is a stored cross-site scripting hole.";
+
+const CODE_MESSAGE =
+  "The UI never evaluates source at runtime. Render what the API sent as text.";
+
+const ATTRIBUTE_MESSAGE =
+  "The UI sets attributes by name from a fixed list in public/dom.js. A computed name, or a name starting with 'on', is a hole the attribute allow-list cannot close.";
+
+/** The names that parse a string as HTML, however they are reached. */
+const HTML_LITERAL_NAMES = [
+  "innerHTML",
+  "outerHTML",
+  "insertAdjacentHTML",
+  "setHTMLUnsafe",
+  "createContextualFragment",
+];
+
+/** The names that write an attribute, however they are reached. */
+const ATTRIBUTE_LITERAL_NAMES = ["setAttribute", "setAttributeNS"];
+
 export default tseslint.config(
   {
     ignores: ["**/dist/**", "**/coverage/**", ".yarn/**"],
@@ -68,7 +95,147 @@ export default tseslint.config(
       globals: {
         document: "readonly",
         fetch: "readonly",
+        location: "readonly",
+        setTimeout: "readonly",
+        clearTimeout: "readonly",
+        URL: "readonly",
       },
+    },
+    rules: {
+      "no-restricted-properties": [
+        "error",
+        {
+          object: "document",
+          property: "innerHTML",
+          message: HTML_MESSAGE,
+        },
+        {
+          object: "document",
+          property: "outerHTML",
+          message: HTML_MESSAGE,
+        },
+        {
+          object: "document",
+          property: "insertAdjacentHTML",
+          message: HTML_MESSAGE,
+        },
+        {
+          object: "document",
+          property: "write",
+          message: HTML_MESSAGE,
+        },
+        {
+          object: "document",
+          property: "writeln",
+          message: HTML_MESSAGE,
+        },
+        {
+          object: "globalThis",
+          property: "innerHTML",
+          message: HTML_MESSAGE,
+        },
+        {
+          object: "globalThis",
+          property: "outerHTML",
+          message: HTML_MESSAGE,
+        },
+        {
+          object: "globalThis",
+          property: "insertAdjacentHTML",
+          message: HTML_MESSAGE,
+        },
+        {
+          object: "window",
+          property: "innerHTML",
+          message: HTML_MESSAGE,
+        },
+        {
+          object: "window",
+          property: "outerHTML",
+          message: HTML_MESSAGE,
+        },
+        {
+          object: "window",
+          property: "insertAdjacentHTML",
+          message: HTML_MESSAGE,
+        },
+        {
+          object: "window",
+          property: "eval",
+          message: CODE_MESSAGE,
+        },
+        {
+          object: "globalThis",
+          property: "eval",
+          message: CODE_MESSAGE,
+        },
+      ],
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "MemberExpression[property.name='innerHTML']",
+          message: HTML_MESSAGE,
+        },
+        {
+          selector: "MemberExpression[property.name='outerHTML']",
+          message: HTML_MESSAGE,
+        },
+        {
+          selector: "MemberExpression[property.name='insertAdjacentHTML']",
+          message: HTML_MESSAGE,
+        },
+        {
+          selector: "MemberExpression[property.name='setHTMLUnsafe']",
+          message: HTML_MESSAGE,
+        },
+        {
+          selector:
+            "MemberExpression[property.name='createContextualFragment']",
+          message: HTML_MESSAGE,
+        },
+        ...HTML_LITERAL_NAMES.map((name) => ({
+          selector: `Literal[value='${name}']`,
+          message: HTML_MESSAGE,
+        })),
+        ...HTML_LITERAL_NAMES.map((name) => ({
+          selector: `TemplateElement[value.cooked='${name}']`,
+          message: HTML_MESSAGE,
+        })),
+        ...HTML_LITERAL_NAMES.map((name) => ({
+          selector: `Property[key.name='${name}']`,
+          message: HTML_MESSAGE,
+        })),
+        ...ATTRIBUTE_LITERAL_NAMES.map((name) => ({
+          selector: `Literal[value='${name}']`,
+          message: ATTRIBUTE_MESSAGE,
+        })),
+        {
+          selector: "CallExpression[callee.property.name='setAttributeNS']",
+          message: ATTRIBUTE_MESSAGE,
+        },
+        {
+          selector:
+            "CallExpression[callee.property.name='setAttribute']:not(:has(> Literal:first-child))",
+          message: ATTRIBUTE_MESSAGE,
+        },
+        {
+          selector:
+            "CallExpression[callee.property.name='setAttribute'] > Literal:first-child[value=/^on/i]",
+          message: ATTRIBUTE_MESSAGE,
+        },
+        {
+          selector: "CallExpression[callee.name='eval']",
+          message: CODE_MESSAGE,
+        },
+        {
+          selector: "CallExpression[callee.name='Function']",
+          message: CODE_MESSAGE,
+        },
+        {
+          selector: "NewExpression[callee.name='Function']",
+          message: CODE_MESSAGE,
+        },
+      ],
     },
   },
 );
