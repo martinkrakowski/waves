@@ -91,15 +91,18 @@ at mode 0700. Keep that, or bind a volume that already hands the directory over
 with those two properties.
 
 Keep `fsGroupChangePolicy: OnRootMismatch` as well. The pod sets `fsGroup` so the
-admin Secret is readable, and on a volume type that honours it — a local-path
-volume does — the kubelet otherwise re-applies the group to everything under the
-mount on every pod start, which turns `store/` into mode 2770. The store refuses
-that, so the first start works and every restart after it answers 503 on
-`/readyz`. If a volume is already in that state, repair it from inside the pod:
+admin Secret is readable, and on a volume type that honours it — the `local`
+PersistentVolume k3s's local-path provisioner creates does — the kubelet otherwise re-applies the group to everything under the
+mount for every new pod, which turns `store/` into mode 2770 and its files into 0660. The store refuses that, so the first pod works and every pod after it —
+a redeploy, a rollout restart, an eviction — answers 503 on `/readyz`. If a volume is already in that state, repair it from inside the pod:
 
 ```sh
 kubectl -n waves exec deploy/waves -- chmod -R g-rwxs,o-rwx /data/store
 ```
+
+Apply the manifest with the policy first, then repair: a repaired volume under a
+pod without the policy is widened again by the next pod. The store re-checks the
+directory on every call, so the next readiness probe passes with no restart.
 
 ## midnight
 

@@ -37,7 +37,7 @@ spec:
         # Without this the kubelet re-applies fsGroup to the whole data volume on
         # every pod start, which adds group access and the setgid bit to the store
         # directory the server created at 0700. The store refuses a directory other
-        # users can reach, so the second start of any pod answered 503 on /readyz.
+        # users can reach, so every pod after the first answered 503 on /readyz.
         # With it the kubelet looks only at the volume root, finds it already in
         # the right group, and leaves what is under it alone.
         fsGroupChangePolicy: OnRootMismatch
