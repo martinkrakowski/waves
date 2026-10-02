@@ -16,14 +16,20 @@ body {
   margin: 0;
 }
 
+/* Three children in two columns: the rail takes the whole first column, and the
+   top bar and the page share the second. Each is placed by name, because left to
+   auto-placement the page wraps into a second row under the rail. */
 .app {
   display: grid;
   grid-template-columns: var(--rail) minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
   min-height: 100vh;
 }
 
 /* The rail holds its place while the page scrolls under it. */
 .rail {
+  grid-column: 1;
+  grid-row: 1 / span 2;
   border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
@@ -95,6 +101,8 @@ body {
 }
 
 .topbar {
+  grid-column: 2;
+  grid-row: 1;
   align-items: baseline;
   background: var(--bg);
   border-bottom: 1px solid var(--line);
@@ -141,6 +149,8 @@ body {
 }
 
 .page {
+  grid-column: 2;
+  grid-row: 2;
   min-width: 0;
   padding: 1.25rem;
 }
@@ -155,16 +165,26 @@ button:focus-visible {
 @media (max-width: 1080px) {
   .app {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
   }
 
   .rail {
     border-bottom: 1px solid var(--line);
     border-right: none;
+    grid-column: 1;
+    grid-row: auto;
     height: auto;
     position: static;
   }
 
   .topbar {
+    grid-column: 1;
+    grid-row: auto;
     position: static;
+  }
+
+  .page {
+    grid-column: 1;
+    grid-row: auto;
   }
 }
