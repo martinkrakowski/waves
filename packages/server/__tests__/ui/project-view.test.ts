@@ -127,6 +127,30 @@ describe("the wave strip", () => {
     lanes: [laneRow(), laneRow({ id: "wv-b" }), laneRow({ id: "wv-c" })],
   });
 
+  it("counts the lanes of the waves it shows, by their heads, not the rows it was sent", () => {
+    // A listing cut short still carries every head: the count beside "all
+    // lanes" must agree with the counts beside the waves, not with the cut.
+    const host = renderProjectView({
+      lanes: projectLanes({
+        waves: WAVES,
+        lanes: [laneRow()],
+        truncated: true,
+      }),
+    });
+    expect(textsOf(host, ".wave-strip li")[0]).toBe("all lanes3 lanes");
+  });
+
+  it("never carries the chosen lane to another scope's link", () => {
+    const host = renderProjectView({
+      lanes: LISTING,
+      wave: "w-3",
+      query: { all: false, lane: "wv-a" },
+    });
+    for (const anchor of host.querySelectorAll(".wave-strip a")) {
+      expect(anchor.getAttribute("href")).not.toContain("lane=");
+    }
+  });
+
   it("counts every lane of the response beside all lanes", () => {
     const host = renderProjectView({ lanes: LISTING });
     expect(textsOf(host, ".wave-strip li")).toStrictEqual([
@@ -231,11 +255,11 @@ describe("the wave strip", () => {
         anchor.getAttribute("href"),
       ),
     ).toStrictEqual([
-      "/p/alpha?reason=gate&lane=wv-b&all=1",
-      "/p/alpha/w/w-3?reason=gate&lane=wv-b&all=1",
-      "/p/alpha/w/w-2?reason=gate&lane=wv-b&all=1",
-      "/p/alpha/w/w-1?reason=gate&lane=wv-b&all=1",
-      "/p/alpha/w/w-2?reason=gate&lane=wv-b",
+      "/p/alpha?reason=gate&all=1",
+      "/p/alpha/w/w-3?reason=gate&all=1",
+      "/p/alpha/w/w-2?reason=gate&all=1",
+      "/p/alpha/w/w-1?reason=gate&all=1",
+      "/p/alpha/w/w-2?reason=gate",
     ]);
   });
 });

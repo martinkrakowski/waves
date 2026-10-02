@@ -140,18 +140,35 @@ function projectId(model) {
   return model.lanes.project.id;
 }
 
+/**
+ * The query a link to another scope carries: the filters, and not the lane.
+ * A lane id names a lane of one wave, and the same id recurs in other waves, so
+ * carrying it to another scope would point at a lane the reader never chose.
+ */
+function scopeQuery(model) {
+  return { ...model.query, lane: undefined };
+}
+
+/** The lanes of the waves the strip shows, by what each wave's head says. */
+function shownLanes(model) {
+  return visibleWaves(model.lanes.waves, model.query.all).reduce(
+    (lanes, head) => lanes + head.lanes,
+    0,
+  );
+}
+
 function allLanesItem(model) {
   const current = model.wave === undefined;
   return el("li", {
     children: [
       internalLink(
         "all lanes",
-        hrefFor(projectId(model), undefined, model.query),
+        hrefFor(projectId(model), undefined, scopeQuery(model)),
         current ? { "aria-current": "page" } : {},
       ),
       el("span", {
         attrs: { class: "meta" },
-        text: laneCountText(model.lanes.lanes.length),
+        text: laneCountText(shownLanes(model)),
       }),
     ],
   });
@@ -161,7 +178,7 @@ function waveItem(model, head, nowMs) {
   const children = [
     internalLink(
       head.wave,
-      hrefFor(projectId(model), head.wave, model.query),
+      hrefFor(projectId(model), head.wave, scopeQuery(model)),
       model.wave === head.wave ? { "aria-current": "page" } : {},
     ),
     el("span", {
@@ -205,7 +222,7 @@ function waveStrip(model, nowMs) {
           ? "hide waves past retention"
           : "show waves past retention",
         hrefFor(projectId(model), model.wave, {
-          ...model.query,
+          ...scopeQuery(model),
           all: !model.query.all,
         }),
       ),
@@ -377,12 +394,34 @@ function laneTable(model, rows, nowMs) {
   });
 }
 
-/** Why there is no table: nothing pushed, or nothing in this scope. */
-function emptyMessage(view) {
-  return el("p", {
-    attrs: { class: "empty" },
-    text: view.waves.length === 0 ? NO_WAVES : NOTHING_IN_SCOPE,
-  });
+const PAST_RETENTION =
+  "This wave is past retention. Show the waves past retention to list its lanes.";
+
+/** Whether the path names a wave whose lanes were not asked for. */
+function waveLeftOut(model) {
+  return (
+    !model.query.all &&
+    model.lanes.waves.some(
+      (head) => head.wave === model.wave && head.retained === false,
+    )
+  );
+}
+
+/**
+ * Why there is no table: nothing pushed, a wave whose lanes this listing left
+ * out, or nothing in this scope. The middle one is said apart because the wave
+ * does hold lanes: "no lanes" would be false, and the link under the strip is
+ * how the reader gets them.
+ */
+function emptyMessage(model) {
+  const view = model.lanes;
+  let text = NOTHING_IN_SCOPE;
+  if (view.waves.length === 0) {
+    text = NO_WAVES;
+  } else if (waveLeftOut(model)) {
+    text = PAST_RETENTION;
+  }
+  return el("p", { attrs: { class: "empty" }, text });
 }
 
 export function renderProject(model, nowMs) {
@@ -410,7 +449,7 @@ export function renderProject(model, nowMs) {
   children.push(waveStrip(model, nowMs));
   const rows = sortRows(scopeOf(view, model.wave), view.waves);
   if (rows.length === 0) {
-    children.push(emptyMessage(view));
+    children.push(emptyMessage(model));
   } else {
     children.push(laneTable(model, rows, nowMs));
   }

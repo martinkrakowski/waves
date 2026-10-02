@@ -809,7 +809,7 @@ describe("the project route", () => {
       root().querySelectorAll('.wave-strip a[aria-current="page"]'),
     ).toHaveLength(0);
     expect(textsOf(root(), ".empty")).toStrictEqual([
-      "No lanes in this scope.",
+      "This wave is past retention. Show the waves past retention to list its lanes.",
     ]);
     expect(textsOf(root(), ".wave-strip > a")).toStrictEqual([
       "show waves past retention",
