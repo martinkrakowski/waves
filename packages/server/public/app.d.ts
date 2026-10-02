@@ -18,7 +18,8 @@ export interface AppGlobals {
 export interface App {
   start(): void;
   stop(): void;
-  refresh(): Promise<void>;
+  /** `false` when the load was for a wave the user has since left. */
+  refresh(): Promise<boolean>;
   readonly route: Route;
 }
 
