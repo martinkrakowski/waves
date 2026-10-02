@@ -305,10 +305,13 @@ describe("the fleet page against stored markup", () => {
  * How many times one payload appears in the rendered text of the project page:
  * the project's name in the heading, its repository as a line of text, the lane's
  * seat, the stage the lane reported, the first disagreement, the plan review and
- * the risk. The two timestamps reach the document as `title` attributes rather
- * than as text, and this case holds both of them to NOW_ISO.
+ * the risk. The seat, the stage and the disagreement are each drawn a second
+ * time — in the seats panel, in the stage rail and in the disagreements panel —
+ * so the count of ten is ten places a reader could see it, all of them text. The
+ * two timestamps reach the document as `title` attributes rather than as text,
+ * and this case holds both of them to NOW_ISO.
  */
-const PROJECT_OCCURRENCES = 7;
+const PROJECT_OCCURRENCES = 10;
 
 describe("the project page against stored markup", () => {
   it("renders every field of a row as text", () => {
@@ -339,6 +342,13 @@ describe("the project page against stored markup", () => {
       expect(textsOf(host, "td[data-label='Notes']")).toStrictEqual([
         `${payload}+1 more${payload}${payload}`,
       ]);
+      // The three that are drawn twice: once in the table, once in the roll-up
+      // that says the same thing about fewer rows.
+      expect(textsOf(host, ".panel.seats .name")).toStrictEqual([payload]);
+      expect(textsOf(host, ".stages .name")).toStrictEqual([payload]);
+      expect(textsOf(host, ".panel.disagreements .disagreement")).toStrictEqual(
+        [payload],
+      );
       expectVerbatim(payload, PROJECT_OCCURRENCES, 0);
     }
   });

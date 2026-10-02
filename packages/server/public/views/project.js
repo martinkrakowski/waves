@@ -57,6 +57,115 @@ export function scopeOf(view, wave) {
 }
 
 /**
+ * The six numbers the page leads with, counted over the rows in scope rather than
+ * over the response. A filter narrows the table and leaves these alone: a
+ * counter that moved with the filter would be a second, contradicting answer to
+ * the same question.
+ */
+export function countersOf(rows) {
+  let alive = 0;
+  let unknown = 0;
+  let attention = 0;
+  let disagreements = 0;
+  let openPrs = 0;
+  for (const row of rows) {
+    if (row.derived.alive === true) {
+      alive += 1;
+    } else if (row.derived.alive === "unknown") {
+      // A lane of a wave that has stopped arriving: the last push derived it
+      // alive, and nothing since has said whether it still is.
+      unknown += 1;
+    }
+    if (row.reasons.length > 0) {
+      attention += 1;
+    }
+    if (row.disagreements > 0) {
+      disagreements += 1;
+    }
+    if (row.derived.pr?.state === "open") {
+      openPrs += 1;
+    }
+  }
+  return {
+    lanes: rows.length,
+    alive,
+    unknown,
+    attention,
+    disagreements,
+    openPrs,
+  };
+}
+
+/** How many rows carry each key, in the order the keys were first seen. */
+function countedBy(rows, keyOf) {
+  const counts = new Map();
+  for (const row of rows) {
+    const key = keyOf(row);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/**
+ * The seats in scope, busiest first, so the panel says where the work is before
+ * it says which lane is on it. A seat is a pusher's own string, so ties are
+ * broken by the plain `<` and not by a locale's idea of an alphabetical order,
+ * and the lanes that recorded no seat sort last: that entry is the absence of an
+ * answer rather than an answer of its own.
+ */
+export function seatsOf(rows) {
+  return [...countedBy(rows, (row) => row.seat).entries()]
+    .map(([seat, lanes]) => ({ seat, lanes }))
+    .sort((left, right) => {
+      if (left.lanes !== right.lanes) {
+        return right.lanes - left.lanes;
+      }
+      if (left.seat === undefined) {
+        return 1;
+      }
+      if (right.seat === undefined) {
+        return -1;
+      }
+      return left.seat < right.seat ? -1 : 1;
+    });
+}
+
+/**
+ * The stages in scope, in the order the pushers first report them, and the lanes
+ * that reported nothing last. The console has no vocabulary of its own: a stage
+ * is a word the pusher chose, and the order it is shown in is the order it was
+ * said in.
+ */
+export function stagesOf(rows) {
+  return [...countedBy(rows, (row) => row.reported?.stage).entries()]
+    .map(([stage, lanes]) => ({ stage, lanes }))
+    .sort((left, right) => {
+      if (left.stage === undefined) {
+        return 1;
+      }
+      if (right.stage === undefined) {
+        return -1;
+      }
+      return 0;
+    });
+}
+
+/**
+ * The wave heads in scope that are stale, which is what the banner above the
+ * table is worded from. A wave route answers for its own wave whatever the strip
+ * is showing: a reader who opened that wave's page is being told about that wave,
+ * and being quiet because the retention hid it would be the one place staleness
+ * is worth saying that says nothing.
+ */
+export function staleWavesOf(view, wave, all) {
+  if (wave !== undefined) {
+    const head = view.waves.find((entry) => entry.wave === wave);
+    return head?.stale === true ? [head] : [];
+  }
+  return visibleWaves(view.waves, all).filter((head) => head.stale);
+}
+
+/**
  * The path a route is drawn at. Every segment is one the shape check has held
  * to an id pattern, so the encoding only ever matters to a hand-built path.
  */
@@ -231,6 +340,203 @@ function waveStrip(model, nowMs) {
   return el("nav", {
     attrs: { "aria-label": "Waves", class: "wave-strip" },
     children,
+  });
+}
+
+/** One number, with the name it counts, in a box of its own. */
+function kpi(label, value, warn) {
+  return el("div", {
+    attrs: { class: warn ? "kpi warn" : "kpi" },
+    children: [el("dt", { text: label }), el("dd", { text: String(value) })],
+  });
+}
+
+/**
+ * The six numbers of the rows in scope, above everything that reads a row. Three
+ * of the six are warnings, and each says so in colour and in the number itself:
+ * a counter that is only amber is a counter a reader who cannot see amber has not
+ * read.
+ */
+function laneCounters(rows) {
+  const counts = countersOf(rows);
+  return el("dl", {
+    attrs: { class: "kpis" },
+    children: [
+      kpi("Lanes", counts.lanes, false),
+      kpi("Alive", counts.alive, false),
+      kpi("Unknown", counts.unknown, counts.unknown > 0),
+      kpi("Need attention", counts.attention, counts.attention > 0),
+      kpi("Disagreements", counts.disagreements, counts.disagreements > 0),
+      kpi("Open PRs", counts.openPrs, false),
+    ],
+  });
+}
+
+/** What a wave that has stopped arriving is said in, with and without a clock. */
+const STALE_WAVE =
+  "This wave is stale: no snapshot arrived inside its interval, so lanes last seen alive read unknown. Last received ";
+const STALE_WAVE_NO_INTERVAL =
+  "This wave is stale: no snapshot arrived since it was pushed without an interval, so lanes last seen alive read unknown. Last received ";
+/** The end of the project's own sentence, which counts the waves instead. */
+const STALE_TAIL = ": lanes last seen alive in them read unknown.";
+
+/** The count of the waves the strip is showing, which is what the page can see. */
+function manyStale(model, stale) {
+  const shown = visibleWaves(model.lanes.waves, model.query.all).length;
+  return `${stale} of ${shown} waves shown ${stale === 1 ? "is" : "are"} stale${STALE_TAIL}`;
+}
+
+/**
+ * Why the numbers below it may not be trusted, said before they are. A wave's
+ * own page gets that wave's sentence and the exact stamp of the last push; the
+ * project's own page can only count the waves the strip is showing, so it counts
+ * them. `role="status"` because a reader watching the page for a change has to be
+ * told about this one without having to go looking for it.
+ */
+function staleBanner(model, nowMs, stale) {
+  const head = model.wave === undefined ? undefined : stale[0];
+  const children =
+    head === undefined
+      ? [text(manyStale(model, stale.length))]
+      : [
+          text(
+            head.intervalSeconds === null ? STALE_WAVE_NO_INTERVAL : STALE_WAVE,
+          ),
+          stamp(head.receivedAt, nowMs),
+          text("."),
+        ];
+  return el("p", {
+    attrs: { class: "banner stale", role: "status" },
+    children,
+  });
+}
+
+/** What an empty list of disagreements is said in. */
+const NOTHING_DISAGREES =
+  "Nothing in this scope disagrees. A missing snapshot is still not agreement.";
+
+/**
+ * One lane that disagrees: the link to it, the wave it is in, what the two facts
+ * said, and how many further disagreements are behind it. The count is only said
+ * where there is a disagreement to count.
+ */
+function disagreementItem(model, row) {
+  const children = [
+    internalLink(
+      row.id,
+      hrefFor(projectId(model), row.wave, { ...model.query, lane: row.id }),
+    ),
+    el("code", { text: row.wave }),
+    el("span", { attrs: { class: "disagreement" }, text: row.disagreement }),
+  ];
+  if (row.disagreements > 1) {
+    children.push(
+      el("span", {
+        attrs: { class: "meta" },
+        text: `+${row.disagreements - 1} more`,
+      }),
+    );
+  }
+  return el("li", { children });
+}
+
+/**
+ * The rows whose reported and derived facts do not agree, in the order the table
+ * shows them, so the panel and the table are read as one list. The empty line
+ * says the half that is easy to forget: a lane that reported nothing has not
+ * agreed with the last push, it has said nothing at all.
+ */
+function disagreementsPanel(model, scope) {
+  const children = [el("h2", { text: "Disagreements" })];
+  const rows = sortRows(
+    scope.filter((row) => row.disagreements > 0),
+    model.lanes.waves,
+  );
+  if (rows.length === 0) {
+    children.push(
+      el("p", { attrs: { class: "panel-empty" }, text: NOTHING_DISAGREES }),
+    );
+  } else {
+    children.push(
+      el("ul", {
+        children: rows.map((row) => disagreementItem(model, row)),
+      }),
+    );
+  }
+  return el("section", {
+    attrs: { class: "panel disagreements" },
+    children,
+  });
+}
+
+/** How many seats the panel names by name, and what the rest are called. */
+const SEATS_NAMED = 8;
+const OTHERS = "others";
+const NO_SEAT = "no seat recorded";
+
+/** One seat: its name, how much of the scope is under it, and that as a number. */
+function seatItem(name, lanes, scope) {
+  return el("li", {
+    children: [
+      el("span", { attrs: { class: "name" }, text: name }),
+      el("meter", { attrs: { value: lanes, max: scope } }),
+      el("span", { attrs: { class: "count" }, text: String(lanes) }),
+    ],
+  });
+}
+
+/**
+ * The seats in scope, busiest first, eight of them by name and then one line for
+ * everything left: a project with a hundred seats is showing which few hold the
+ * work, and the rest belong in a number rather than in a hundred rows of their
+ * own. Each meter is measured against every row in scope, so two rows read the
+ * same on every seat and the panel cannot say more than it has.
+ */
+function seatsPanel(scope) {
+  const heading = el("h2", { text: "Seats" });
+  if (scope.length === 0) {
+    return el("section", {
+      attrs: { class: "panel seats" },
+      children: [
+        heading,
+        el("p", { attrs: { class: "panel-empty" }, text: NOTHING_IN_SCOPE }),
+      ],
+    });
+  }
+  const entries = seatsOf(scope);
+  const items = entries
+    .slice(0, SEATS_NAMED)
+    .map((entry) => seatItem(entry.seat ?? NO_SEAT, entry.lanes, scope.length));
+  if (entries.length > SEATS_NAMED) {
+    const lanes = entries
+      .slice(SEATS_NAMED)
+      .reduce((total, entry) => total + entry.lanes, 0);
+    items.push(seatItem(OTHERS, lanes, scope.length));
+  }
+  return el("section", {
+    attrs: { class: "panel seats" },
+    children: [heading, el("ul", { children: items })],
+  });
+}
+
+/** What the lanes that reported no stage at all are called. */
+const NOT_REPORTED = "not reported";
+
+/** The stages in scope, in the order the pushers reported them, with their counts. */
+function stageRail(scope) {
+  return el("ul", {
+    attrs: { class: "stages" },
+    children: stagesOf(scope).map((entry) =>
+      el("li", {
+        children: [
+          el("span", {
+            attrs: { class: "name" },
+            text: entry.stage ?? NOT_REPORTED,
+          }),
+          el("span", { attrs: { class: "count" }, text: String(entry.lanes) }),
+        ],
+      }),
+    ),
   });
 }
 
@@ -447,7 +753,22 @@ export function renderProject(model, nowMs) {
     });
   }
   children.push(waveStrip(model, nowMs));
-  const rows = sortRows(scopeOf(view, model.wave), view.waves);
+  const scope = scopeOf(view, model.wave);
+  children.push(laneCounters(scope));
+  const stale = staleWavesOf(view, model.wave, model.query.all);
+  if (stale.length > 0) {
+    children.push(staleBanner(model, nowMs, stale));
+  }
+  children.push(
+    el("div", {
+      attrs: { class: "split" },
+      children: [disagreementsPanel(model, scope), seatsPanel(scope)],
+    }),
+  );
+  if (scope.length > 0) {
+    children.push(stageRail(scope));
+  }
+  const rows = sortRows(scope, view.waves);
   if (rows.length === 0) {
     children.push(emptyMessage(model));
   } else {

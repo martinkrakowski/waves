@@ -31,6 +31,45 @@ export declare function hrefFor(
   query: ViewQuery,
 ): string;
 
+export interface Counters {
+  readonly lanes: number;
+  readonly alive: number;
+  readonly unknown: number;
+  readonly attention: number;
+  readonly disagreements: number;
+  readonly openPrs: number;
+}
+
+export interface SeatCount {
+  /** Absent for the rows that recorded no seat. */
+  readonly seat: string | undefined;
+  readonly lanes: number;
+}
+
+export interface StageCount {
+  /** Absent for the rows that reported nothing. */
+  readonly stage: string | undefined;
+  readonly lanes: number;
+}
+
+/** The six numbers the page leads with, over the rows in scope. */
+export declare function countersOf(rows: readonly LaneRow[]): Counters;
+
+/** The seats in scope, busiest first, with no seat last. */
+export declare function seatsOf(rows: readonly LaneRow[]): readonly SeatCount[];
+
+/** The stages in scope in the order they are first reported, none reported last. */
+export declare function stagesOf(
+  rows: readonly LaneRow[],
+): readonly StageCount[];
+
+/** The stale wave heads in scope: the route's own wave, or the shown waves. */
+export declare function staleWavesOf(
+  view: ProjectLanesView,
+  wave: string | undefined,
+  all: boolean,
+): readonly WaveSummary[];
+
 /** Reasons first, then the newest wave, then the lane id. */
 export declare function sortRows(
   rows: readonly LaneRow[],
