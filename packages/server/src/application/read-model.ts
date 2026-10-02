@@ -48,6 +48,15 @@ export const MAX_PROJECT_LANES_BYTES = 2 * 1024 * 1024;
 export const ROW_OVERHEAD_BYTES = 256;
 
 /**
+ * The most waves one listing asks the store for. A project that has pushed a wave
+ * every ten minutes for a year holds thousands, and past the retention nothing
+ * deletes them, so `all = true` is otherwise a read over everything the project
+ * ever pushed. The wave heads carry the lane counts, so a wave bound costs the
+ * reader the same rows the row bounds would have cut.
+ */
+export const MAX_WAVES_PER_READ = 200;
+
+/**
  * How many waves' computed rows one read model holds at once, and how many rows
  * they may add up to. The wave count is generous on purpose: a poll that asks
  * for more waves than this would evict each of them just before it asked for it,
@@ -609,6 +618,7 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
       );
       const rows: LaneRow[] = [];
       let bytes = 0;
+      let read = 0;
       let truncated = false;
       // Set when a bound has stopped the rows. No later wave can add one either,
       // and each of them that holds lanes means rows that are not listed.
@@ -624,6 +634,18 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
           truncated = truncated || summary.lanes > 0;
           continue;
         }
+        if (summary.lanes === 0) {
+          // Nothing to read, and the head has already said so.
+          continue;
+        }
+        if (read === MAX_WAVES_PER_READ) {
+          // The wave bound is spent: the rest are heads only, and each that holds
+          // lanes means rows that are not listed.
+          truncated = truncated || summary.lanes > 0;
+          stopped = true;
+          continue;
+        }
+        read += 1;
         const entry = await cachedWave(projectId, summary);
         if (entry === undefined) {
           continue;

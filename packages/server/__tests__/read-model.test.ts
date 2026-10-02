@@ -8,6 +8,7 @@ import {
   MAX_CACHED_WAVES,
   MAX_PROJECT_LANES,
   MAX_PROJECT_LANES_BYTES,
+  MAX_WAVES_PER_READ,
   utf8Length,
 } from "../src/application/read-model.js";
 import { MemoryStore } from "../src/infrastructure/memory-store.js";
@@ -1080,6 +1081,50 @@ describe("the project lanes view", () => {
     // one after it was not.
     expect(store.asked).toHaveLength(11);
     expect(store.asked[10]).toBe("wv002");
+  });
+
+  it("reads no wave whose head says it holds no lanes", async () => {
+    const store = new WaryStore("wv-absent");
+    // Every wave a project ever pushed, and only the newest one holds a lane.
+    await filled(store, "alpha", 301, (_wave, index) =>
+      index === 301 ? [laneOf("wv301-a")] : [],
+    );
+
+    const view = await model(store).listLanes("alpha", true);
+
+    expect(view?.lanes.map((row) => row.id)).toEqual(["wv301-a"]);
+    expect(view?.waves).toHaveLength(301);
+    expect(view?.truncated).toBe(false);
+    expect(store.asked).toEqual(["wv301"]);
+  });
+
+  it("stops at the wave bound and reads no wave past it", async () => {
+    const store = new WaryStore("wv-absent");
+    const waves = MAX_WAVES_PER_READ + 50;
+    await filled(store, "alpha", waves, (wave) => [laneOf(`${wave}-a`)]);
+
+    const view = await model(store).listLanes("alpha", true);
+
+    expect(view?.lanes).toHaveLength(MAX_WAVES_PER_READ);
+    expect(view?.truncated).toBe(true);
+    expect(store.asked).toHaveLength(MAX_WAVES_PER_READ);
+    // The newest waves, in the order the answer lists them.
+    expect(store.asked).toEqual(
+      (view?.waves ?? []).map((wave) => wave.wave).slice(0, MAX_WAVES_PER_READ),
+    );
+  });
+
+  it("truncates nothing when exactly the wave bound matches", async () => {
+    const store = new WaryStore("wv-absent");
+    await filled(store, "alpha", MAX_WAVES_PER_READ, (wave) => [
+      laneOf(`${wave}-a`),
+    ]);
+
+    const view = await model(store).listLanes("alpha", true);
+
+    expect(view?.lanes).toHaveLength(MAX_WAVES_PER_READ);
+    expect(view?.truncated).toBe(false);
+    expect(store.asked).toHaveLength(MAX_WAVES_PER_READ);
   });
 
   it("answers the whole cap of small lanes without cutting it", async () => {
