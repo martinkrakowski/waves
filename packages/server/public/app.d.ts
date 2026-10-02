@@ -31,7 +31,7 @@ export interface AppGlobals {
 export interface App {
   start(): void;
   stop(): void;
-  /** `false` when the load was for a wave the user has since left. */
+  /** `false` when the load was for a route the user has since left. */
   refresh(): Promise<boolean>;
   /** Ignores anything that is not a same-origin path, or the current URL. */
   navigate(url: string): void;

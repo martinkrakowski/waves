@@ -1,8 +1,9 @@
-import { el, internalLink, stamp, text } from "./dom.js";
-import { laneCountText, waveCountText } from "./format.js";
-import { drawableLanes, laneTable } from "./lanes.js";
-
-const PAST_RETENTION = "past retention";
+/**
+ * The two shape checks the wave strip leans on, and the two functions that read
+ * a list of wave heads. Nothing here draws: the project page draws the strip
+ * from these, and the shape check for a project's lanes leans on `drawableWaves`
+ * so the two answers agree about what a wave head is.
+ */
 
 /** The required fields of one wave head, as the wave list endpoint sends it. */
 function waveHead(head) {
@@ -38,6 +39,8 @@ function drawableLane(lane) {
  * missing a field it renders, or that describes a lane the lane table cannot
  * read, is a broken endpoint: the app treats it as a failed load rather than
  * replacing lanes that were right with a table it could only half fill.
+ *
+ * Kept with its test for lane K6's drawer, which asks for one wave at a time.
  */
 export function drawableWave(view) {
   return (
@@ -72,153 +75,4 @@ function presentWaves(waves) {
 export function visibleWaves(waves, showAll) {
   const kept = presentWaves(waves);
   return showAll ? kept : kept.filter((head) => head.retained);
-}
-
-function badge(label, className) {
-  return el("span", { attrs: { class: `badge ${className}` }, text: label });
-}
-
-function waveItem(head, current, nowMs, onSelect) {
-  const meta = [
-    laneCountText(head.lanes),
-    head.intervalSeconds === null
-      ? "no interval"
-      : `every ${head.intervalSeconds}s`,
-  ];
-  const children = [
-    el("code", { text: head.wave }),
-    el("span", { attrs: { class: "meta" }, text: meta.join(" · ") }),
-    stamp(head.receivedAt, nowMs),
-  ];
-  if (head.stale) {
-    children.push(badge("stale", "stale"));
-  }
-  if (!head.retained) {
-    children.push(badge(PAST_RETENTION, "aging"));
-  }
-  const button = el("button", {
-    attrs: { class: current ? "wave current" : "wave", type: "button" },
-    children,
-  });
-  button.addEventListener("click", () => onSelect(head.wave));
-  return el("li", { attrs: { class: "wave-item" }, children: [button] });
-}
-
-function retentionToggle(model, retained, onToggleAll) {
-  if (model.waves.length === retained) {
-    return [];
-  }
-  const toggle = el("button", {
-    attrs: { class: "toggle", type: "button" },
-    text: model.showAll
-      ? "show only retained"
-      : `show ${waveCountText(model.waves.length - retained)} ${PAST_RETENTION}`,
-  });
-  toggle.addEventListener("click", onToggleAll);
-  return [toggle];
-}
-
-function waveList(model, nowMs, onSelect) {
-  const visible = visibleWaves(model.waves, model.showAll);
-  if (visible.length === 0) {
-    return el("p", {
-      attrs: { class: "empty" },
-      text:
-        model.waves.length === 0
-          ? "No waves pushed yet."
-          : `Every wave is ${PAST_RETENTION}.`,
-    });
-  }
-  return el("ul", {
-    attrs: { class: "wave-list" },
-    children: visible.map((head) =>
-      waveItem(head, head.wave === model.selected, nowMs, onSelect),
-    ),
-  });
-}
-
-function waveHeading(view, nowMs) {
-  return el("h2", {
-    children: [
-      text("wave "),
-      el("code", { text: view.envelope.wave }),
-      el("span", {
-        attrs: { class: "meta" },
-        children: [
-          text(` · ${laneCountText(drawableLanes(view).length)}`),
-          text(" "),
-          stamp(view.receivedAt, nowMs),
-        ],
-      }),
-    ],
-  });
-}
-
-/**
- * Why there are no lanes: still loading, nothing pushed, nothing chosen, or
- * nothing stored.
- */
-function lanePanelMessage(model) {
-  if (model.loading === true) {
-    return "Loading…";
-  }
-  if (model.waves.length === 0) {
-    return "This project has no waves yet.";
-  }
-  const visible = visibleWaves(model.waves, model.showAll);
-  if (model.selected === "" && visible.length > 0) {
-    return "No wave selected.";
-  }
-  return "That wave is no longer stored.";
-}
-
-function lanePanel(model, nowMs) {
-  const view = model.view;
-  if (view === undefined) {
-    return el("p", {
-      attrs: { class: "empty" },
-      text: lanePanelMessage(model),
-    });
-  }
-  const children = [waveHeading(view, nowMs)];
-  if (view.stale) {
-    children.push(
-      el("p", {
-        attrs: { class: "banner stale" },
-        text: "This wave is stale: no snapshot arrived inside its interval, so lane liveness reads unknown.",
-      }),
-    );
-  }
-  children.push(laneTable(view, nowMs));
-  return el("div", { attrs: { class: "lane-panel" }, children });
-}
-
-export function wavePanel(model, nowMs, handlers) {
-  const kept = presentWaves(model.waves);
-  const retained = kept.filter((head) => head.retained).length;
-  return el("section", {
-    attrs: { class: "view" },
-    children: [
-      el("h1", {
-        children: [
-          internalLink("waves", "/"),
-          text(" / "),
-          el("code", { text: model.project }),
-        ],
-      }),
-      el("div", {
-        attrs: { class: "waves" },
-        children: [
-          el("h2", { text: "Waves" }),
-          waveList(model, nowMs, handlers.onSelect),
-          ...retentionToggle(
-            { ...model, waves: kept },
-            retained,
-            handlers.onToggleAll,
-          ),
-        ],
-      }),
-      lanePanel(model, nowMs),
-    ],
-  });
 }

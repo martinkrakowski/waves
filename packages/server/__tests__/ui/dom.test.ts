@@ -5,10 +5,13 @@ import {
   httpsUrl,
   internalLink,
   repoLink,
+  stamp,
   text,
 } from "../../public/dom.js";
 
 import { freshRoot, tagsIn, textOf } from "./helpers.js";
+
+const NOW_MS = Date.parse("2026-04-01T12:00:00.000Z");
 
 describe("el", () => {
   it("creates a bare element when given nothing", () => {
@@ -46,6 +49,8 @@ describe("el", () => {
   });
 
   it("sets every attribute the shell and the later views need", () => {
+    // `type` is here for the control a later lane will draw; no view draws one
+    // today, so this is the test that keeps the setter honest.
     const node = el("input", {
       attrs: {
         "aria-pressed": "false",
@@ -59,6 +64,7 @@ describe("el", () => {
         for: "lane-search",
         id: "lane-search",
         "data-key": "nav",
+        type: "search",
       },
     });
     for (const [name, value] of Object.entries({
@@ -73,6 +79,7 @@ describe("el", () => {
       for: "lane-search",
       id: "lane-search",
       "data-key": "nav",
+      type: "search",
     })) {
       expect(node.getAttribute(name)).toBe(value);
     }
@@ -81,6 +88,20 @@ describe("el", () => {
   it("stringifies whatever text() is handed", () => {
     expect(textOf(text(42))).toBe("42");
     expect(textOf(text(undefined))).toBe("undefined");
+  });
+});
+
+describe("stamp", () => {
+  it("says how long ago a timestamp was, with the timestamp in a title", () => {
+    const node = stamp("2026-04-01T11:59:00.000Z", NOW_MS);
+    expect(textOf(node)).toBe("1m ago");
+    expect(node.getAttribute("title")).toBe("2026-04-01T11:59:00.000Z");
+  });
+
+  it("says so plainly when there is no timestamp to read", () => {
+    const node = stamp(undefined, NOW_MS);
+    expect(textOf(node)).toBe("unknown");
+    expect(node.getAttribute("title")).toBe("");
   });
 });
 

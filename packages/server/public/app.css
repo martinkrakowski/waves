@@ -34,7 +34,6 @@ code {
 }
 
 .meta,
-.muted,
 small {
   color: var(--muted);
   font-size: 0.85em;
@@ -45,23 +44,14 @@ small {
   padding: 1rem 0;
 }
 
-.note,
-.banner {
+.note {
   background: var(--bg-raise);
   border: 1px solid var(--amber);
   border-radius: 0.4rem;
   color: var(--amber);
   margin: 0.5rem 0;
   padding: 0.5rem 0.75rem;
-}
-
-.note {
   font-size: 0.9rem;
-}
-
-.banner.stale {
-  border-color: var(--red);
-  color: var(--red);
 }
 
 dt {
@@ -83,110 +73,18 @@ dd {
   white-space: nowrap;
 }
 
-.badge.running,
-.badge.pass {
+.badge.running {
   color: var(--teal);
 }
 
-.badge.stopped,
-.badge.fail {
+.badge.stopped {
   color: var(--red);
 }
 
 .badge.stale,
 .badge.unknown,
-.badge.pending,
 .badge.aging {
   color: var(--amber);
-}
-
-.waves {
-  margin: 1rem 0;
-}
-
-.wave-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  list-style: none;
-  margin: 0.5rem 0;
-  padding: 0;
-}
-
-.wave {
-  align-items: center;
-  background: var(--bg-raise);
-  border: 1px solid var(--line);
-  border-radius: 0.4rem;
-  color: inherit;
-  cursor: pointer;
-  display: flex;
-  flex-wrap: wrap;
-  font: inherit;
-  gap: 0.5rem;
-  padding: 0.45rem 0.6rem;
-  text-align: left;
-  width: 100%;
-}
-
-.wave.current {
-  border-color: var(--blue);
-  outline: 1px solid var(--blue);
-}
-
-.toggle {
-  background: none;
-  border: 1px solid var(--line);
-  border-radius: 0.4rem;
-  color: var(--blue);
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.9rem;
-  padding: 0.35rem 0.6rem;
-}
-
-.lanes {
-  border-collapse: collapse;
-  font-size: 0.9rem;
-  width: 100%;
-}
-
-.lanes th,
-.lanes td {
-  border-bottom: 1px solid var(--line);
-  padding: 0.4rem 0.5rem;
-  text-align: left;
-  vertical-align: top;
-}
-
-.lanes th {
-  color: var(--muted);
-  font-size: 0.8rem;
-  text-transform: uppercase;
-}
-
-.disagreements,
-.detail,
-.prose {
-  margin: 0 0 0.35rem;
-  padding-left: 1.1rem;
-}
-
-.prose,
-.detail {
-  color: var(--muted);
-}
-
-.tail {
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 0.3rem;
-  margin: 0.35rem 0 0;
-  max-height: 16rem;
-  overflow: auto;
-  padding: 0.5rem;
-  white-space: pre-wrap;
-  word-break: break-word;
 }
 
 @media (max-width: 44rem) {

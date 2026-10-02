@@ -1,27 +1,22 @@
 import { describe, expect, it } from "vitest";
 
-import type {
-  CheckStatus,
-  LaneEvent,
-  PullRequestState,
-} from "@hexagen-monaco/waves-contract";
-
 import type { AppGlobals } from "../../public/app.js";
 import { createApp } from "../../public/app.js";
 import type { ProjectCard } from "../../public/api.js";
 import { el } from "../../public/dom.js";
 import { shell } from "../../public/shell.js";
 import { renderFleet } from "../../public/views/fleet.js";
-import { wavePanel } from "../../public/wave.js";
+import { renderProject } from "../../public/views/project.js";
 
-import type { LaneView } from "../../src/application/read-model.js";
+import type { ProjectLanesView } from "../../src/application/read-model.js";
 import {
   attentionLane,
   attentionView,
-  lane,
+  laneRow,
   NOW_ISO,
   NOW_MS,
   projectCard,
+  projectLanes,
   waveSummary,
 } from "./fixtures.js";
 import {
@@ -61,24 +56,6 @@ const CARD_OCCURRENCES = 3;
 
 /** The `title` attributes in that card that hold the payload: `lastPush`. */
 const CARD_TITLES = 1;
-
-/**
- * How many times one payload appears in the rendered text of a wave panel: the
- * project in the heading, the wave id in the wave list, the wave id again in the
- * lane-panel heading, the lane id, the seat, the stage, the event, the one
- * detail value, the pull-request state, the pull-request checks, the plan
- * review, the risk, the one disagreement, the `generatedAt` in the tail label
- * and the tail. The three timestamps reach the document as attributes, not as
- * text, and `LANE_TITLES` counts those.
- */
-const LANE_OCCURRENCES = 15;
-
-/**
- * The `title` attributes holding the payload: the wave's `receivedAt` in the
- * wave list, the view's `receivedAt` in the lane-panel heading, and the lane's
- * reported `ts` in its reported cell.
- */
-const LANE_TITLES = 3;
 
 function documentText(): string {
   return document.body.textContent ?? "";
@@ -159,53 +136,81 @@ function projectWith(payload: string): ProjectCard {
 }
 
 /**
- * Every lane field that reaches the DOM, each carrying the payload. The event,
- * the pull-request state and the pull-request checks are contract values, so
- * the payload is cast in: the point of the test is that the UI renders whatever
- * arrives rather than leaning on the server having validated it.
+ * Every lane field the project's page renders, each carrying the payload. The
+ * event, the pull-request state and the pull-request checks are contract values
+ * and the shape check refuses a payload in any of them, so they are left as
+ * contract values here; what is under test is what the view writes down.
  */
-function laneWith(payload: string): LaneView {
-  return lane({
-    id: payload,
+function rowWith(payload: string): ReturnType<typeof laneRow> {
+  return laneRow({
+    id: "wv-a",
     seat: payload,
-    reported: {
-      stage: payload,
-      event: payload as LaneEvent,
-      ts: payload,
-      pr: 1,
-      round: 1,
-      detail: { note: payload },
-    },
+    reported: { stage: payload, event: "failed", ts: NOW_ISO, pr: 9, round: 1 },
     derived: {
       alive: true,
-      pr: {
-        number: 1,
-        state: payload as PullRequestState,
-        checks: payload as CheckStatus,
-        unresolvedThreads: 1,
-      },
+      exit: 1,
+      pr: { number: 42, state: "open", checks: "pass" },
       planReview: payload,
       risk: payload,
-      log: { bytes: 1, mtimeMs: 0, tail: payload },
     },
-    disagreements: [payload],
+    disagreements: 2,
+    disagreement: payload,
+    reasons: ["failed", "gate"],
   });
 }
 
-function hostileView(payload: string) {
-  return {
-    envelope: {
-      schema: "waves/v1" as const,
-      project: payload,
-      wave: payload,
-      generatedAt: payload,
-      intervalSeconds: 30,
-      lanes: [laneWith(payload)],
-    },
-    receivedAt: payload,
-    stale: true,
-    staleAfterMs: 1,
-  };
+/** One project's whole answer, with the payload in every field that is text. */
+function listingWith(payload: string): ProjectLanesView {
+  return projectLanes({
+    project: { id: "alpha", name: payload, repo: payload },
+    lanes: [rowWith(payload)],
+  });
+}
+
+/** The same answer with the payload in one of the three ids a link is built from. */
+function brokenListing(field: string, payload: string): unknown {
+  if (field === "a row's id") {
+    return projectLanes({ lanes: [{ ...rowWith(payload), id: payload }] });
+  }
+  if (field === "a row's wave") {
+    return projectLanes({ lanes: [{ ...rowWith(payload), wave: payload }] });
+  }
+  return projectLanes({ waves: [{ ...waveSummary(), wave: payload }] });
+}
+
+/**
+ * Boots the app on a project route over the given listing, so the rail and the
+ * page draw the same strings and the whole chain is walked, not one view. The
+ * listing is a parameter because a payload in one of its ids has to reach the
+ * app as a failed load, not as a page.
+ */
+async function bootProject(
+  body: unknown,
+  pathname = "/p/alpha",
+  search = "",
+): Promise<ReturnType<typeof createApp>> {
+  freshRoot();
+  const timers = timerStub();
+  const browser = browserGlobals(pathname, search);
+  const app = createApp({
+    doc: document,
+    location: browser.location,
+    history: browser.history,
+    win: browser.win,
+    fetch: fetchStub((path) =>
+      path === "/api/v1/projects"
+        ? { status: 200, body: [projectCard()] }
+        : path === "/api/v1/attention"
+          ? { status: 200, body: attentionView() }
+          : { status: 200, body },
+    ),
+    setTimer: timers.setTimer,
+    clearTimer: timers.clearTimer,
+    clock: () => NOW_MS,
+  } satisfies AppGlobals);
+  app.start();
+  await flush();
+  return app;
 }
 
 describe("the fleet page against stored markup", () => {
@@ -296,100 +301,112 @@ describe("the fleet page against stored markup", () => {
   });
 });
 
-describe("the wave panel against stored markup", () => {
-  it("renders every field of a lane as text", () => {
+/**
+ * How many times one payload appears in the rendered text of the project page:
+ * the project's name in the heading, its repository as a line of text, the lane's
+ * seat, the stage the lane reported, the first disagreement, the plan review and
+ * the risk. The two timestamps reach the document as `title` attributes rather
+ * than as text, and this case holds both of them to NOW_ISO.
+ */
+const PROJECT_OCCURRENCES = 7;
+
+describe("the project page against stored markup", () => {
+  it("renders every field of a row as text", () => {
     for (const payload of TEXT_PAYLOADS) {
       freshRoot();
       const host = document.getElementById("root") as HTMLElement;
       host.append(
-        wavePanel(
+        renderProject(
           {
-            project: payload,
-            waves: [waveSummary({ wave: payload, receivedAt: payload })],
-            showAll: true,
-            selected: payload,
-            view: hostileView(payload),
+            lanes: listingWith(payload),
+            wave: undefined,
+            query: { all: false },
           },
           NOW_MS,
-          { onSelect: () => undefined, onToggleAll: () => undefined },
         ),
       );
       assertNoInjectedMarkup();
       expect(host.querySelectorAll("img")).toHaveLength(0);
       expect(host.querySelectorAll("script")).toHaveLength(0);
-      expect(host.querySelectorAll("details").length).toBe(1);
-      expectVerbatim(payload, LANE_OCCURRENCES, LANE_TITLES);
+      expect(textsOf(host, "h1")).toStrictEqual([payload]);
+      expect(textsOf(host, ".repo")).toStrictEqual([payload]);
+      expect(textsOf(host, "td[data-label='Lane'] small")).toStrictEqual([
+        payload,
+      ]);
+      expect(
+        textsOf(host, "td[data-label='Reported'] span:first-child")[0],
+      ).toBe(`${payload} · failed · round 1 · PR #9`);
+      expect(textsOf(host, "td[data-label='Notes']")).toStrictEqual([
+        `${payload}+1 more${payload}${payload}`,
+      ]);
+      expectVerbatim(payload, PROJECT_OCCURRENCES, 0);
     }
   });
 
-  it("renders the pull request and the reported stage and event as text", () => {
+  it("keeps a payload out of every link and every attribute", () => {
     for (const payload of TEXT_PAYLOADS) {
       freshRoot();
       const host = document.getElementById("root") as HTMLElement;
       host.append(
-        wavePanel(
+        renderProject(
           {
-            project: "alpha",
-            waves: [waveSummary()],
-            showAll: false,
-            selected: "w-3",
-            view: hostileView(payload),
+            lanes: listingWith(payload),
+            wave: undefined,
+            query: { all: false },
           },
           NOW_MS,
-          { onSelect: () => undefined, onToggleAll: () => undefined },
         ),
       );
       assertNoInjectedMarkup();
-      expect(textsOf(host, "td[data-label='pr']")).toStrictEqual([
-        `#1 ${payload} · checks ${payload} · 1 open thread`,
-      ]);
-      const reported = textsOf(host, "td[data-label='reported']")[0] ?? "";
-      expect(reported.startsWith(`${payload} · ${payload}`)).toBe(true);
-      expect(reported).toContain(`note: ${payload}`);
+      expect(host.querySelectorAll("a[href^='javascript:']")).toHaveLength(0);
+      expect(host.querySelectorAll("a[href*='@']")).toHaveLength(0);
+      for (const value of attributeValues()) {
+        expect(value).not.toContain(payload);
+      }
     }
   });
 
-  it("keeps a payload in the tail from closing the details element", () => {
-    freshRoot();
-    const host = document.getElementById("root") as HTMLElement;
-    host.append(
-      wavePanel(
-        {
-          project: "alpha",
-          waves: [waveSummary()],
-          showAll: false,
-          selected: "w-3",
-          view: {
-            envelope: {
-              schema: "waves/v1",
-              project: "alpha",
-              wave: "w-3",
-              generatedAt: NOW_ISO,
-              intervalSeconds: 30,
-              lanes: [
-                lane({
-                  derived: {
-                    alive: true,
-                    log: { bytes: 1, mtimeMs: 0, tail: CLOSING_DETAILS },
-                  },
-                }),
-              ],
-            },
-            receivedAt: NOW_ISO,
-            stale: false,
-            staleAfterMs: 1,
-          },
-        },
-        NOW_MS,
-        { onSelect: () => undefined, onToggleAll: () => undefined },
-      ),
-    );
-    assertNoInjectedMarkup();
-    expect(host.querySelectorAll("details")).toHaveLength(1);
-    expect(host.querySelectorAll("details > *")).toHaveLength(2);
-    expect(textsOf(host, "pre")).toStrictEqual([CLOSING_DETAILS]);
-    expectVerbatim(CLOSING_DETAILS, 1, 0);
+  it("renders the wave's own name in the lede, and nothing else", () => {
+    for (const payload of TEXT_PAYLOADS) {
+      freshRoot();
+      const host = document.getElementById("root") as HTMLElement;
+      host.append(
+        renderProject(
+          { lanes: listingWith(payload), wave: "w-3", query: { all: false } },
+          NOW_MS,
+        ),
+      );
+      assertNoInjectedMarkup();
+      expect(textsOf(host, ".lede")[0]).toBe(
+        `One wave of ${payload}: what each lane reported, beside what the last push could derive.`,
+      );
+    }
   });
+
+  /**
+   * The three ids this page builds its links out of. A payload in any of them
+   * has to make the whole listing undrawable rather than be encoded into a path.
+   */
+  const IDS = ["a row's id", "a row's wave", "a wave's id"] as const;
+
+  it.each(IDS)(
+    "makes the whole listing undrawable when %s carries a payload",
+    async (field) => {
+      for (const payload of TEXT_PAYLOADS) {
+        const app = await bootProject(brokenListing(field, payload));
+        assertNoInjectedMarkup();
+        // A failed load: the note, once, and nothing drawn from the listing.
+        expect(root().querySelectorAll(".note")).toHaveLength(1);
+        expect(textOf(root().querySelector(".note"))).toBe("offline, retrying");
+        expect(root().querySelectorAll("table")).toHaveLength(0);
+        expect(documentText()).not.toContain(payload);
+        for (const value of attributeValues()) {
+          expect(value).not.toContain(payload);
+        }
+        app.stop();
+      }
+    },
+  );
 });
 
 /**
@@ -513,4 +530,38 @@ describe("the query string against stored markup", () => {
       app.stop();
     }
   });
+
+  /**
+   * The project page is the one that reads the whole query and writes it back
+   * out on every link it draws, so a payload in a parameter has to come back as
+   * a percent-encoded address rather than as text, a `title` or an attribute
+   * value of its own.
+   */
+  it.each(["seat", "q"] as const)(
+    "keeps a payload in the project's %s out of the document",
+    async (key) => {
+      for (const payload of TEXT_PAYLOADS) {
+        const app = await bootProject(
+          projectLanes(),
+          "/p/alpha",
+          `?${key}=${encodeURIComponent(payload)}`,
+        );
+        assertNoInjectedMarkup();
+        expect(root().querySelectorAll("img")).toHaveLength(0);
+        expect(root().querySelectorAll("script")).toHaveLength(0);
+        expect(root().querySelectorAll("table")).toHaveLength(1);
+        expect(documentText()).not.toContain(payload);
+        for (const value of attributeValues()) {
+          expect(value).not.toContain(payload);
+        }
+        // The hrefs carry the query, and only in its encoded form.
+        expect(
+          Array.from(root().querySelectorAll(".wave-strip a")).every((anchor) =>
+            anchor.getAttribute("href")?.startsWith("/p/alpha"),
+          ),
+        ).toBe(true);
+        app.stop();
+      }
+    },
+  );
 });

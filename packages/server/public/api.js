@@ -10,12 +10,9 @@ function lanesPath(projectId, all) {
   return all ? `${lanes}?all=1` : lanes;
 }
 
-function wavesPath(projectId) {
-  return `/api/v1/projects/${encodeURIComponent(projectId)}/waves`;
-}
-
 function wavePath(projectId, waveId) {
-  return `${wavesPath(projectId)}/${encodeURIComponent(waveId)}`;
+  const project = `/api/v1/projects/${encodeURIComponent(projectId)}`;
+  return `${project}/waves/${encodeURIComponent(waveId)}`;
 }
 
 async function readJson(fetchImpl, path) {
@@ -34,7 +31,8 @@ export function createApi(fetchImpl) {
     projects: () => readJson(fetchImpl, projectsPath()),
     attention: () => readJson(fetchImpl, "/api/v1/attention"),
     lanes: (projectId, all) => readJson(fetchImpl, lanesPath(projectId, all)),
-    waves: (projectId) => readJson(fetchImpl, wavesPath(projectId)),
+    // One wave on its own, for the drawer in lane K6 and nothing else: the page
+    // itself never asks for it, and keeps it because that lane will.
     wave: (projectId, waveId) =>
       readJson(fetchImpl, wavePath(projectId, waveId)),
   };

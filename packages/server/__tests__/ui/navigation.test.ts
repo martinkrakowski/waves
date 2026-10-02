@@ -4,11 +4,13 @@ import type { AppGlobals } from "../../public/app.js";
 import { createApp } from "../../public/app.js";
 import { el, repoLink } from "../../public/dom.js";
 
+import type { ProjectLanesView } from "../../src/application/read-model.js";
 import {
   attentionView,
+  laneRow,
   projectCard,
+  projectLanes,
   waveSummary,
-  waveView,
 } from "./fixtures.js";
 import type { Answer, FetchStub, GatedFetch } from "./helpers.js";
 import {
@@ -23,15 +25,35 @@ import {
   timerStub,
 } from "./helpers.js";
 
-/** Every project's own waves name that project, so a crossed path is visible. */
+/** Every wave each project's listing answers with, so a crossed path shows. */
 const WAVE_IDS: Readonly<Record<string, readonly string[]>> = {
   alpha: ["a-3", "a-2"],
   beta: ["b-3", "b-2"],
 };
 
+/** The name each project's listing answers with, which is the page's heading. */
+const NAMES: Readonly<Record<string, string>> = {
+  alpha: "Alpha",
+  beta: "Beta",
+};
+
 const PROJECTS = [projectCard(), projectCard({ id: "beta", name: "Beta" })];
 
-/** The rail's list, and every project's waves, so a crossed path is visible. */
+/** One project's whole answer: its waves, and one lane in each of them. */
+function listingFor(id: string, waves: readonly string[]): ProjectLanesView {
+  return projectLanes({
+    project: { id, name: NAMES[id] ?? id },
+    waves: waves.map((wave, at) =>
+      waveSummary({
+        wave,
+        receivedAt: `2026-04-01T${at === 0 ? "11" : "10"}:50:00.000Z`,
+      }),
+    ),
+    lanes: waves.map((wave) => laneRow({ wave })),
+  });
+}
+
+/** The rail's list, and every project's lanes, so a crossed path is visible. */
 function perProject(path: string): Answer {
   if (path === "/api/v1/projects") {
     return { status: 200, body: PROJECTS };
@@ -39,31 +61,10 @@ function perProject(path: string): Answer {
   if (path === "/api/v1/attention") {
     return { status: 200, body: attentionView() };
   }
-  const list = /^\/api\/v1\/projects\/([^/]+)\/waves$/.exec(path);
-  if (list !== null) {
-    const id = list[1] ?? "";
-    return {
-      status: 200,
-      body: (WAVE_IDS[id] ?? []).map((wave, at) =>
-        waveSummary({
-          wave,
-          receivedAt: `2026-04-01T${at === 0 ? "11" : "10"}:50:00.000Z`,
-        }),
-      ),
-    };
-  }
-  const detail = /^\/api\/v1\/projects\/([^/]+)\/waves\/([^/]+)$/.exec(path);
-  if (detail !== null) {
-    return {
-      status: 200,
-      body: waveView({
-        envelope: {
-          ...waveView().envelope,
-          project: detail[1] ?? "",
-          wave: detail[2] ?? "",
-        },
-      }),
-    };
+  const lanes = /^\/api\/v1\/projects\/([^/]+)\/lanes(?:\?all=1)?$/.exec(path);
+  if (lanes !== null) {
+    const id = lanes[1] ?? "";
+    return { status: 200, body: listingFor(id, WAVE_IDS[id] ?? []) };
   }
   return { status: 404 };
 }
@@ -84,22 +85,31 @@ function holding(
   });
 }
 
-/** The paths asked for that name one wave's detail, whichever project. */
-function waveDetails(calls: readonly string[]): string[] {
-  return calls.filter((path) => /\/waves\/[^/]+$/.test(path));
+/** The paths asked for that name one project's lanes, whichever project. */
+function lanesAskedFor(calls: readonly string[]): string[] {
+  return calls.filter((path) => /\/lanes/.test(path));
 }
 
-/** The rail's list, and one project's waves, whichever route the test is on. */
+/**
+ * A fetch that holds the SECOND listing request and answers every other one, so
+ * a test can start on a page that has drawn, move, and be holding the pass for
+ * the route it moved to.
+ */
+function holdingSecondListing(handler: (path: string) => Answer): GatedFetch {
+  let seen = 0;
+  return gatedFetch((path) => {
+    const answer = handler(path);
+    if (!/\/lanes/.test(path)) {
+      return { ...answer, hold: false };
+    }
+    seen += 1;
+    return { ...answer, hold: seen === 2 };
+  });
+}
+
+/** The rail's list, and one project's lanes, whichever route the test is on. */
 function answering(...projects: unknown[]): (path: string) => Answer {
-  const waves = [
-    waveSummary({ wave: "w-3" }),
-    waveSummary({ wave: "w-2", receivedAt: "2026-04-01T11:50:00.000Z" }),
-    waveSummary({
-      wave: "w-1",
-      receivedAt: "2026-04-01T11:00:00.000Z",
-      retained: false,
-    }),
-  ];
+  const waves = ["w-3", "w-2", "w-1"];
   return (path) => {
     if (path === "/api/v1/projects") {
       return { status: 200, body: projects };
@@ -107,15 +117,23 @@ function answering(...projects: unknown[]): (path: string) => Answer {
     if (path === "/api/v1/attention") {
       return { status: 200, body: attentionView() };
     }
-    if (/\/waves$/.test(path)) {
-      return { status: 200, body: waves };
-    }
-    const wave = /\/waves\/([^/]+)$/.exec(path);
-    if (wave !== null) {
+    const lanes = /^\/api\/v1\/projects\/([^/]+)\/lanes(?:\?all=1)?$/.exec(
+      path,
+    );
+    if (lanes !== null) {
+      const id = lanes[1] ?? "";
       return {
         status: 200,
-        body: waveView({
-          envelope: { ...waveView().envelope, wave: wave[1] ?? "" },
+        body: projectLanes({
+          project: { id, name: NAMES[id] ?? id },
+          waves: waves.map((wave) =>
+            waveSummary({
+              wave,
+              receivedAt: "2026-04-01T11:50:00.000Z",
+              retained: wave !== "w-1",
+            }),
+          ),
+          lanes: waves.map((wave) => laneRow({ wave })),
         }),
       };
     }
@@ -192,7 +210,7 @@ describe("a click on one of the app's own links", () => {
     expect(browser.pushes).toStrictEqual(["/p/beta"]);
     expect(browser.location.pathname).toBe("/p/beta");
     expect(app.route).toStrictEqual({ kind: "project", id: "beta" });
-    expect(textsOf(root(), "h1 code")).toStrictEqual(["beta"]);
+    expect(textsOf(root(), "h1")).toStrictEqual(["Beta"]);
     expect(document.title).toBe("waves — beta");
     app.stop();
   });
@@ -375,7 +393,7 @@ describe("the back button", () => {
 
     (root().querySelectorAll(".projects a")[1] as HTMLElement).click();
     await flush();
-    expect(textsOf(root(), "h1 code")).toStrictEqual(["beta"]);
+    expect(textsOf(root(), "h1")).toStrictEqual(["Beta"]);
 
     browser.location.pathname = "/";
     browser.location.search = "";
@@ -405,30 +423,42 @@ describe("a navigation that lands while a pass is in flight", () => {
     await flush();
 
     expect(app.route).toStrictEqual({ kind: "project", id: "beta" });
-    expect(textsOf(root(), "h1 code")).toStrictEqual(["beta"]);
-    expect(textsOf(root(), ".wave code")).toStrictEqual(["b-3", "b-2"]);
-    expect(gate.calls).toContain("/api/v1/projects/beta/waves");
-    expect(waveDetails(gate.calls)).toStrictEqual([
-      "/api/v1/projects/beta/waves/b-3",
+    expect(textsOf(root(), "h1")).toStrictEqual(["Beta"]);
+    expect(textsOf(root(), ".wave-strip li a")).toStrictEqual([
+      "all lanes",
+      "b-3",
+      "b-2",
+    ]);
+    expect(lanesAskedFor(gate.calls)).toStrictEqual([
+      "/api/v1/projects/beta/lanes",
     ]);
     app.stop();
   });
 
   it("never asks the new project for a wave of the old one", async () => {
-    const gate = holding(perProject, (path) => path.endsWith("/alpha/waves"));
+    const gate = holding(perProject, (path) => path.endsWith("/alpha/lanes"));
     const { app } = harness({ pathname: "/p/alpha", fetchImpl: gate });
     app.start();
     await flush();
-    expect(gate.calls).toContain("/api/v1/projects/alpha/waves");
+    expect(gate.calls).toContain("/api/v1/projects/alpha/lanes");
 
     app.navigate("/p/beta");
     gate.release();
     await flush();
 
-    expect(gate.calls).not.toContain("/api/v1/projects/beta/waves/a-3");
-    expect(gate.calls).not.toContain("/api/v1/projects/beta/waves/a-2");
-    expect(textsOf(root(), "h1 code")).toStrictEqual(["beta"]);
-    expect(textsOf(root(), ".wave code")).toStrictEqual(["b-3", "b-2"]);
+    // One request for the project on screen, and nothing of alpha's after the
+    // navigation.
+    expect(lanesAskedFor(gate.calls)).toStrictEqual([
+      "/api/v1/projects/alpha/lanes",
+      "/api/v1/projects/beta/lanes",
+    ]);
+    expect(textsOf(root(), "h1")).toStrictEqual(["Beta"]);
+    expect(textsOf(root(), ".wave-strip li a")).toStrictEqual([
+      "all lanes",
+      "b-3",
+      "b-2",
+    ]);
+    expect(textsOf(root(), "tbody tr .in-wave")).toStrictEqual(["b-3", "b-2"]);
     app.stop();
   });
 
@@ -446,11 +476,14 @@ describe("a navigation that lands while a pass is in flight", () => {
     await flush();
 
     expect(app.route).toStrictEqual({ kind: "project", id: "beta" });
-    expect(textsOf(root(), "h1 code")).toStrictEqual(["beta"]);
-    expect(textsOf(root(), ".wave code")).toStrictEqual(["b-3", "b-2"]);
-    expect(gate.calls).toContain("/api/v1/projects/beta/waves");
-    expect(waveDetails(gate.calls)).toStrictEqual([
-      "/api/v1/projects/beta/waves/b-3",
+    expect(textsOf(root(), "h1")).toStrictEqual(["Beta"]);
+    expect(textsOf(root(), ".wave-strip li a")).toStrictEqual([
+      "all lanes",
+      "b-3",
+      "b-2",
+    ]);
+    expect(lanesAskedFor(gate.calls)).toStrictEqual([
+      "/api/v1/projects/beta/lanes",
     ]);
     app.stop();
   });
@@ -477,8 +510,60 @@ describe("a navigation that lands while a pass is in flight", () => {
 
     expect(app.route).toStrictEqual({ kind: "project", id: "beta" });
     expect(root().querySelectorAll(".note")).toHaveLength(0);
-    expect(textsOf(root(), "h1 code")).toStrictEqual(["beta"]);
-    expect(gate.calls).toContain("/api/v1/projects/beta/waves");
+    expect(textsOf(root(), "h1")).toStrictEqual(["Beta"]);
+    expect(gate.calls).toContain("/api/v1/projects/beta/lanes");
+    app.stop();
+  });
+
+  it("loads the fleet, and nothing of the project, when a project route is left mid-pass", async () => {
+    const gate = holding(perProject, (path) => path.endsWith("/alpha/lanes"));
+    const { app } = harness({ pathname: "/p/alpha", fetchImpl: gate });
+    app.start();
+    await flush();
+    expect(gate.pending()).toBe(1);
+    // The project has drawn nothing yet: its one pass is still waiting on it.
+    expect(textsOf(root(), ".empty")).toStrictEqual(["Loading…"]);
+
+    app.navigate("/");
+    expect(textsOf(root(), ".empty")).toStrictEqual(["Loading…"]);
+    gate.release();
+    await flush();
+
+    expect(app.route).toStrictEqual({ kind: "projects" });
+    // The pass for the project was dropped rather than drawn under the fleet,
+    // and the fleet asked for nothing but the rail's two lists.
+    expect(root().querySelectorAll("table")).toHaveLength(0);
+    expect(textsOf(root(), ".project-card h3 a")).toStrictEqual([
+      "Alpha",
+      "Beta",
+    ]);
+    expect(
+      gate.calls.filter((path) => path !== "/api/v1/projects"),
+    ).toStrictEqual([
+      "/api/v1/attention",
+      "/api/v1/projects/alpha/lanes",
+      "/api/v1/attention",
+    ]);
+    app.stop();
+  });
+
+  it("says a path that is not a page, asking for the rail and nothing else", async () => {
+    const gate = holding(perProject, (path) => path.endsWith("/alpha/lanes"));
+    const { app } = harness({ pathname: "/p/alpha", fetchImpl: gate });
+    app.start();
+    await flush();
+    expect(gate.pending()).toBe(1);
+
+    app.navigate("/nope");
+    // A path that is not a page is said at once, whatever is still in flight.
+    expect(textsOf(root(), ".empty")).toStrictEqual(["No such page."]);
+    expect(root().querySelectorAll("table")).toHaveLength(0);
+    gate.release();
+    await flush();
+
+    expect(app.route).toStrictEqual({ kind: "unknown" });
+    expect(textsOf(root(), ".empty")).toStrictEqual(["No such page."]);
+    expect(textsOf(root(), ".projects a")).toStrictEqual(["Alpha", "Beta"]);
     app.stop();
   });
 });
@@ -489,7 +574,7 @@ describe("choosing a wave", () => {
     app.start();
     await flush();
 
-    (root().querySelectorAll(".wave")[1] as HTMLElement).click();
+    (root().querySelectorAll(".wave-strip li a")[2] as HTMLElement).click();
     await flush();
 
     expect(browser.pushes).toStrictEqual(["/p/alpha/w/w-2"]);
@@ -498,8 +583,31 @@ describe("choosing a wave", () => {
       id: "alpha",
       wave: "w-2",
     });
-    expect(textsOf(root(), ".wave.current code")).toStrictEqual(["w-2"]);
+    expect(textsOf(root(), '.wave-strip a[aria-current="page"]')).toStrictEqual(
+      ["w-2"],
+    );
+    expect(textsOf(root(), "tbody tr")).toHaveLength(1);
     expect(document.title).toBe("waves — alpha");
+    app.stop();
+  });
+
+  it("navigates to a lane's own wave with the lane chosen", async () => {
+    const { app, browser } = harness({ pathname: "/p/alpha" });
+    app.start();
+    await flush();
+
+    const lane = root().querySelector("td[data-label='Lane'] a") as HTMLElement;
+    expect(lane.getAttribute("href")).toBe("/p/alpha/w/w-3?lane=wv-a");
+    lane.click();
+    await flush();
+
+    expect(browser.pushes).toStrictEqual(["/p/alpha/w/w-3?lane=wv-a"]);
+    expect(app.route).toStrictEqual({
+      kind: "project",
+      id: "alpha",
+      wave: "w-3",
+    });
+    expect(root().querySelectorAll("tbody tr.current")).toHaveLength(1);
     app.stop();
   });
 
@@ -508,26 +616,34 @@ describe("choosing a wave", () => {
     app.start();
     await flush();
 
-    (root().querySelector(".toggle") as HTMLElement).click();
-    (root().querySelectorAll(".wave")[2] as HTMLElement).click();
+    (root().querySelector(".wave-strip > a") as HTMLElement).click();
+    await flush();
+    (root().querySelectorAll(".wave-strip li a")[3] as HTMLElement).click();
     await flush();
 
-    expect(browser.pushes).toStrictEqual(["/p/alpha/w/w-1?all=1"]);
+    expect(browser.pushes).toStrictEqual([
+      "/p/alpha?all=1",
+      "/p/alpha/w/w-1?all=1",
+    ]);
+    expect(textsOf(root(), '.wave-strip a[aria-current="page"]')).toStrictEqual(
+      ["w-1"],
+    );
     app.stop();
   });
 
-  it("shows the wave the route names", async () => {
+  it("shows the wave the route names, from the one listing", async () => {
     const fetchImpl = fetchStub(answering(projectCard()));
     const { app } = harness({ pathname: "/p/alpha/w/w-2", fetchImpl });
     app.start();
     await flush();
 
-    expect(textsOf(root(), ".wave.current code")).toStrictEqual(["w-2"]);
+    expect(textsOf(root(), '.wave-strip a[aria-current="page"]')).toStrictEqual(
+      ["w-2"],
+    );
     expect(fetchImpl.calls).toStrictEqual([
       "/api/v1/projects",
       "/api/v1/attention",
-      "/api/v1/projects/alpha/waves",
-      "/api/v1/projects/alpha/waves/w-2",
+      "/api/v1/projects/alpha/lanes",
     ]);
     expect(textsOf(root(), '.crumbs [aria-current="page"]')).toStrictEqual([
       "w-2",
@@ -535,15 +651,19 @@ describe("choosing a wave", () => {
     app.stop();
   });
 
-  it("falls back to the first wave it can show when the route names none", async () => {
+  it("says a wave the project does not have, and asks for nothing more", async () => {
     const fetchImpl = fetchStub(answering(projectCard()));
     const { app } = harness({ pathname: "/p/alpha/w/w-9", fetchImpl });
     app.start();
     await flush();
 
-    expect(textsOf(root(), ".wave.current code")).toStrictEqual(["w-3"]);
-    expect(fetchImpl.calls).toContain("/api/v1/projects/alpha/waves/w-3");
-    expect(fetchImpl.calls).not.toContain("/api/v1/projects/alpha/waves/w-9");
+    expect(textsOf(root(), ".empty")).toStrictEqual([
+      "No such wave in this project.",
+    ]);
+    expect(fetchImpl.calls).not.toContain("/api/v1/projects/alpha/waves/w-3");
+    expect(lanesAskedFor(fetchImpl.calls)).toStrictEqual([
+      "/api/v1/projects/alpha/lanes",
+    ]);
     app.stop();
   });
 
@@ -552,7 +672,12 @@ describe("choosing a wave", () => {
     app.start();
     await flush();
 
-    expect(textsOf(root(), ".wave code")).toStrictEqual(["w-3", "w-2", "w-1"]);
+    expect(textsOf(root(), ".wave-strip li a")).toStrictEqual([
+      "all lanes",
+      "w-3",
+      "w-2",
+      "w-1",
+    ]);
     app.stop();
   });
 
@@ -564,7 +689,7 @@ describe("choosing a wave", () => {
     app.start();
     await flush();
 
-    (root().querySelectorAll(".wave")[1] as HTMLElement).click();
+    (root().querySelectorAll(".wave-strip li a")[2] as HTMLElement).click();
     await flush();
 
     expect(browser.pushes).toStrictEqual(["/p/alpha/w/w-2?reason=gate"]);
@@ -574,7 +699,7 @@ describe("choosing a wave", () => {
 
 describe("the rail across a navigation", () => {
   it("keeps listing the projects while the next route loads", async () => {
-    const gate = holding(perProject, (path) => path.endsWith("/alpha/waves"));
+    const gate = holding(perProject, (path) => path.endsWith("/alpha/lanes"));
     const { app } = harness({ pathname: "/", fetchImpl: gate });
     app.start();
     await flush();
@@ -613,53 +738,55 @@ describe("the rail across a navigation", () => {
     app.stop();
   });
 
-  it("says a chosen wave is loading, not gone, while its lanes cannot be read", async () => {
-    const failing = holding(
-      (path) =>
-        path.endsWith("/waves/a-2")
-          ? { status: 500, body: {} }
-          : perProject(path),
-      () => false,
+  it("keeps the table on screen while the next wave's pass runs", async () => {
+    const gate = holdingSecondListing(perProject);
+    const { app, browser } = harness({ pathname: "/p/alpha", fetchImpl: gate });
+    app.start();
+    await flush();
+    expect(textsOf(root(), ".wave-strip li a")).toStrictEqual([
+      "all lanes",
+      "a-3",
+      "a-2",
+    ]);
+    expect(textsOf(root(), "tbody tr")).toHaveLength(2);
+    // Exactly one listing request so far: the project's own page.
+    expect(lanesAskedFor(gate.calls)).toStrictEqual([
+      "/api/v1/projects/alpha/lanes",
+    ]);
+
+    // The second listing request is held, so the pass for the wave the reader
+    // picks has started and has not answered.
+    (root().querySelectorAll(".wave-strip li a")[2] as HTMLElement).click();
+    // Synchronously: another wave of the same project changes nothing about the
+    // project's lanes, so the table is still there — narrowed to the wave being
+    // read, because the same answer holds it — and never a bare "Loading…".
+    expect(textsOf(root(), ".wave-strip li a")).toStrictEqual([
+      "all lanes",
+      "a-3",
+      "a-2",
+    ]);
+    expect(textsOf(root(), '.wave-strip a[aria-current="page"]')).toStrictEqual(
+      ["a-2"],
     );
-    const { app } = harness({ pathname: "/p/alpha", fetchImpl: failing });
-    app.start();
-    await flush();
-    expect(textsOf(root(), "tbody tr")).toHaveLength(2);
+    expect(textsOf(root(), "tbody tr")).toHaveLength(1);
+    expect(root().querySelectorAll(".note")).toHaveLength(0);
+    expect(browser.pushes).toStrictEqual(["/p/alpha/w/a-2"]);
 
-    (root().querySelectorAll(".wave")[1] as HTMLElement).click();
-    await flush();
-
-    // The wave exists; the server could not answer for it. The page says so
-    // once, and does not claim the wave was deleted.
-    expect(textsOf(root(), ".note")).toStrictEqual(["offline, retrying"]);
-    expect(textsOf(root(), ".empty")).toStrictEqual(["Loading…"]);
-    expect(textsOf(root(), "tbody tr")).toHaveLength(0);
-    app.stop();
-  });
-
-  it("keeps the wave list on screen while the chosen wave's lanes load", async () => {
-    const gate = holding(perProject, (path) => path.endsWith("/waves/a-2"));
-    const { app } = harness({ pathname: "/p/alpha", fetchImpl: gate });
-    app.start();
-    await flush();
-    expect(textsOf(root(), ".wave code")).toStrictEqual(["a-3", "a-2"]);
-    expect(textsOf(root(), "tbody tr")).toHaveLength(2);
-
-    (root().querySelectorAll(".wave")[1] as HTMLElement).click();
-    // Synchronously: the wave list has not gone back to a bare placeholder, and
-    // the lane panel says it is loading, not that the wave is gone.
-    expect(textsOf(root(), ".wave code")).toStrictEqual(["a-3", "a-2"]);
-    expect(textsOf(root(), ".empty")).toStrictEqual(["Loading…"]);
-    expect(textsOf(root(), "tbody tr")).toHaveLength(0);
-
-    // Let the pass reach the held detail before releasing it.
+    // Let the pass reach the held listing before releasing it.
     await flush();
     expect(gate.pending()).toBe(1);
     gate.release();
     await flush();
 
-    expect(textsOf(root(), ".wave.current code")).toStrictEqual(["a-2"]);
-    expect(textsOf(root(), "tbody tr")).toHaveLength(2);
+    expect(textsOf(root(), '.wave-strip a[aria-current="page"]')).toStrictEqual(
+      ["a-2"],
+    );
+    expect(textsOf(root(), "tbody tr")).toHaveLength(1);
+    // One new pass, and one request for it.
+    expect(lanesAskedFor(gate.calls)).toStrictEqual([
+      "/api/v1/projects/alpha/lanes",
+      "/api/v1/projects/alpha/lanes",
+    ]);
     app.stop();
   });
 });
