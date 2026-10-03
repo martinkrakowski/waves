@@ -173,6 +173,10 @@ describe("the phase of an ambient animation", () => {
     // Just before the wrap, and the wrap itself.
     expect(phaseOf(36_999, WAVE_C_MS)).toBe("phase-11");
     expect(phaseOf(37_000, WAVE_C_MS)).toBe("phase-0");
+    // A clock below zero still names a phase: one millisecond before zero is
+    // the last twelfth of the cycle before it.
+    expect(phaseOf(-1, WAVE_C_MS)).toBe("phase-11");
+    expect(phaseOf(-37_000, WAVE_C_MS)).toBe("phase-0");
     // And on through the clock's own larger cycles, which is what a wall clock
     // reads rather than a page's age.
     expect(phaseOf(1_000_000_000, WAVE_A_MS)).toBe("phase-6");

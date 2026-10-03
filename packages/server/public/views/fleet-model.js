@@ -158,5 +158,8 @@ const PHASES_PER_CYCLE = 12;
  * agree about where in the cycle the page is.
  */
 export function phaseOf(nowMs, periodMs) {
-  return PHASES[Math.floor((nowMs % periodMs) / (periodMs / PHASES_PER_CYCLE))];
+  // `%` keeps the sign of the clock, and an injected clock may read below zero:
+  // folded into the cycle, so every reading names one of the twelve.
+  const at = ((nowMs % periodMs) + periodMs) % periodMs;
+  return PHASES[Math.floor(at / (periodMs / PHASES_PER_CYCLE))];
 }

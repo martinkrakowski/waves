@@ -311,7 +311,7 @@ time a reader looked, so a badge about it would be a badge that is almost always
 on and never actionable. The received time is the fact behind the badge, and it
 is what is drawn instead — on the fleet row's own status line and in the status
 panel, never as a warning (`statusFact`,
-`packages/server/public/views/fleet-rows.js:124-137`; the panel's own note,
+`packages/server/public/views/fleet-rows.js:141-154`; the panel's own note,
 `packages/server/public/views/status-panel.js:14-19`).
 
 A minimal valid status document, carrying neither key:
@@ -796,7 +796,7 @@ stop eventually, and every finished wave goes stale when they do
 put the whole fleet under one tab on any quiet day and leave `active` and `quiet`
 permanently empty. Staleness is still said, where it is about the project rather
 than about the fleet: the row's own `stale` pill, and the caption of the projects
-stat card (`tabOf`, `packages/server/public/views/fleet-model.js:31-44`).
+stat card (`tabOf`, `packages/server/public/views/fleet-model.js:31-42`).
 
 **`?q=`** on `/` is a substring of a project's **name**, **id** or **repository**,
 matched without regard to case, and a project that registered no repository is not
@@ -813,8 +813,8 @@ keystroke replaces the address rather than pushing onto it, so neither fills the
 history with one entry per word.
 
 (`TABS`, `packages/server/public/query.js:14-20`; `formatQuery`,
-`…/query.js:93-104`; `renderFleet`, `packages/server/public/views/fleet.js:389-412`;
-`fleetHandlers`, `packages/server/public/app.js:337-362`)
+`…/query.js:93-104`; `renderFleet`, `packages/server/public/views/fleet.js:418-436`;
+`fleetHandlers`, `packages/server/public/app.js:354-367`)
 
 ### 5.2 The optional viewer token
 
