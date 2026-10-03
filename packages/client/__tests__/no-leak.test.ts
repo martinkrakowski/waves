@@ -48,6 +48,11 @@ const LANES = JSON.stringify({
   ],
 });
 
+const STATUS = JSON.stringify({
+  prs: { skipped: 2 },
+  backlog: { state: "recorded", at: "2026-10-03T07:55:00Z" },
+});
+
 let stub: Stub;
 let directory: string;
 let configDir: string;
@@ -230,6 +235,34 @@ describe("a token never leaves the file it was written to", () => {
     const borrowed = await run(["push", "--wave", WAVE, "--stdin"], {
       project,
       stdin: LANES,
+    });
+    expect(borrowed.code).toBe(1);
+    expectNoSecrets(borrowed);
+  });
+
+  it("is not printed by a status, or by one the server refused", async () => {
+    const project = "waves-leak-status";
+    await register(project);
+    const sent = await run(["status", "--stdin"], {
+      project,
+      stdin: STATUS,
+    });
+    expect(sent.code).toBe(0);
+    expectNoSecrets(sent);
+
+    const refused = await run(["status", "--stdin"], {
+      project,
+      stdin: '{"backlogg":{"state":"recorded"}}',
+    });
+    expect(refused.code).toBe(2);
+    expectNoSecrets(refused);
+
+    await writeFile(tokenFile(project), "waves-leak-t0ken-not-mine", {
+      mode: 0o600,
+    });
+    const borrowed = await run(["status", "--stdin"], {
+      project,
+      stdin: STATUS,
     });
     expect(borrowed.code).toBe(1);
     expectNoSecrets(borrowed);

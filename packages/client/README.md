@@ -1,6 +1,6 @@
 # @hexagen-monaco/waves-client
 
-The `waves` CLI: register a project with a [waves](https://github.com/martinkrakowski/waves) server, then push, update and delete its wave snapshots. Snapshots follow the `waves/v1` contract (`docs/waves-v1.md` in the repository).
+The `waves` CLI: register a project with a [waves](https://github.com/martinkrakowski/waves) server, then push its wave snapshots, send its status and delete a wave. Snapshots follow the `waves/v1` contract and the status document the `waves-status/v1` one (`docs/waves-v1.md` in the repository).
 
 ```sh
 npm install --save-dev @hexagen-monaco/waves-client
@@ -64,17 +64,43 @@ Per entry, in order: a token file already there is counted as skipped and no req
 
 ```sh
 WAVES_URL=https://waves.example.com WAVES_PROJECT=my-project \
-  waves push --wave my-wave --file status.json --interval 10
+  waves push --wave my-wave --file lanes.json --interval 10
 ```
 
 The input is `{ "lanes": [...] }` or a full envelope; the CLI fills in `schema`, `project`, `wave`, `generatedAt` and `intervalSeconds`, and validates the envelope locally before sending. Log tails are stripped unless `--include-tails` is given, and then truncated to their last 4 KiB. `--stdin` reads the input from stdin. `waves delete --wave <wave>` removes a wave.
+
+## Send the project's status
+
+```sh
+WAVES_URL=https://waves.example.com WAVES_PROJECT=my-project \
+  waves status --file status.json --interval 10
+```
+
+Some things a project knows are about the project rather than about any one wave: how many pull-request rows a listing could not read, and what its last `plan:verify` artifact said. Those go in their own document, with `waves-status/v1` as its schema, and `waves status` sends it to the project's own status route.
+
+The input is a JSON object with two optional keys, `prs` and `backlog`, and no others:
+
+```json
+{
+  "backlog": {
+    "state": "recorded",
+    "at": "2026-10-03T07:55:00Z",
+    "scope": { "kind": "full", "plans": ["plan:verify"] },
+    "premises": [{ "lane": "C1", "plan": "plan:verify", "status": "holds" }]
+  }
+}
+```
+
+`{}` is a valid input and means "alive, nothing to report". The CLI fills in `schema`, `project`, `generatedAt` and `intervalSeconds` — `project` from `WAVES_PROJECT` and `generatedAt` from its own clock, whatever the input said — and validates the document locally before sending, with the same closed-object rule the server applies. Any other key in the input is refused rather than dropped, so a misspelt `backlogg` is a mistake and not a status with nothing in it. `--stdin` reads the input from stdin. The project token is read the same way a push reads it, from `~/.config/waves/<project>.token`, and is never printed.
+
+**Pacing.** The server gives a project one write a second, shared by its pushes and its status. A `429` is waited for exactly as long as the `Retry-After` header asks, up to a minute, so a status sent right after a push is waited for rather than refused outright, up to three times.
 
 ## Configuration
 
 | Variable                      | Meaning                                                                                           |
 | ----------------------------- | ------------------------------------------------------------------------------------------------- |
 | `WAVES_URL`                   | The server. Required.                                                                             |
-| `WAVES_PROJECT`               | The project a push or delete belongs to.                                                          |
+| `WAVES_PROJECT`               | The project a push, a status or a delete belongs to.                                              |
 | `WAVES_CONFIG_DIR`            | Where token files live (default `~/.config/waves`).                                               |
 | `WAVES_CA_FILE`               | A CA certificate to pin (default `~/.config/waves/ca.crt` if present, else the system store).     |
 | `WAVES_ALLOW_INSECURE_HTTP=1` | Allow plain `http://` to a non-loopback host. Warns on every request: the token travels in clear. |
@@ -83,7 +109,7 @@ TLS verification is always on. Plain `http://` is accepted for loopback hosts wi
 
 ## Exit codes
 
-`0` success, `1` a server or network failure (after at most two retries for a network error and, for `push`, a 5xx, and a bounded wait on 429; `register` and `register-all` never retry a 5xx, because the request may already have minted a project), `2` a usage, configuration or local-validation error. A `register-all` run exits `2` for anything wrong with its list or its credential — having sent nothing — and `1` when a request failed or the run stopped; conflicts alone leave it at `0`.
+`0` success, `1` a server or network failure (after at most two retries for a network error and, for `push` and `status`, a 5xx, and a bounded wait on 429; `register` and `register-all` never retry a 5xx, because the request may already have minted a project), `2` a usage, configuration or local-validation error. A `register-all` run exits `2` for anything wrong with its list or its credential — having sent nothing — and `1` when a request failed or the run stopped; conflicts alone leave it at `0`.
 
 ## Licence
 

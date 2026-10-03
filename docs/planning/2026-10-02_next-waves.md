@@ -256,6 +256,10 @@ every array capped (`plans`, `premises`); no opaque blob.
    — as a second command or as envelope keys, per W8 — and moves the client's
    dependency range, since `^0.1.0` does not admit a 0.2.0 contract.
 
+C1 (#34), C2 and C3 (#35) are the three lanes of this wave. C3 adds
+`waves status`, which sends the project status document, and the contract's
+`repo` refuses a user or a password.
+
 Rollout order is fixed by the closed-object rule (`docs/waves-v1.md` §7): a
 reader that does not know a key refuses it, and a server that does not know a
 route answers 404 or 405. The server is deployed first, then the contract and

@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  carriesCredentials,
   insecureWarning,
   isHostName,
   isHttpsUrl,
   isLoopback,
   projectsPath,
   readEndpoint,
+  statusPath,
   wavePath,
 } from "../src/domain/endpoint.js";
 
@@ -121,22 +121,16 @@ describe("hosts", () => {
     expect(isHttpsUrl("https://user@github.com/")).toBe(false);
     expect(isHttpsUrl("not a url")).toBe(false);
   });
-
-  it("spots a user or a password in any URL it can read", () => {
-    expect(carriesCredentials("https://user@example.com/")).toBe(true);
-    expect(carriesCredentials("https://user:pw@example.com/")).toBe(true);
-    expect(carriesCredentials("https://example.com/")).toBe(false);
-    expect(carriesCredentials("not a url")).toBe(false);
-  });
 });
 
 describe("paths", () => {
-  it("builds the collection and the wave paths", () => {
+  it("builds the collection, the wave and the status paths", () => {
     expect(projectsPath(false)).toBe("/api/v1/projects");
     expect(projectsPath(true)).toBe("/api/v1/projects?rotate=1");
     expect(wavePath("waves-demo", "wv5")).toBe(
       "/api/v1/projects/waves-demo/waves/wv5",
     );
+    expect(statusPath("waves-demo")).toBe("/api/v1/projects/waves-demo/status");
   });
 
   it("names an insecure origin once, for every request", () => {
