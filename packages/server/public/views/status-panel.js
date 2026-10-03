@@ -112,7 +112,7 @@ function premisesTable(premises) {
 function backlogSection(backlog, nowMs) {
   const children = [text(backlog.state)];
   if (backlog.at !== undefined) {
-    children.push(stamp(backlog.at, nowMs));
+    children.push(text(" · "), stamp(backlog.at, nowMs));
   }
   if (backlog.scope !== undefined) {
     children.push(text(` · ${backlog.scope.kind}`));

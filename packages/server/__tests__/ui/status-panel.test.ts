@@ -81,7 +81,7 @@ describe("the status panel", () => {
     const host = panel(statusView());
     const line = textsOf(host, ".panel.status .backlog p")[0] ?? "";
 
-    expect(line).toContain("recorded");
+    expect(line).toMatch(/^recorded · /);
     expect(line).toContain("full");
     expect(titles(host, ".panel.status .backlog span[title]")).toContain(
       "2026-04-01T11:40:00.000Z",
