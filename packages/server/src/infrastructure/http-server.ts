@@ -130,6 +130,10 @@ async function replyFor(
       const view = await readModel.getWave(matched.project, matched.wave);
       return view === undefined ? NOT_FOUND : jsonReply(200, view);
     }
+    case "status": {
+      const view = await readModel.getStatus(matched.project);
+      return view === undefined ? NOT_FOUND : jsonReply(200, view);
+    }
     case "index":
       return staticReply(realRoot, {
         path: resolve(root, INDEX_FILE),
@@ -146,12 +150,12 @@ async function replyFor(
 
 /**
  * Health, readiness, the four listings — every project, one project's waves, one
- * project's lanes and the attention across the fleet — the wave views and the
- * page, plus the whole write path. The read token guards only what it did before
- * — the GET and HEAD routes, and neither probe — because a project pushing a
- * wave holds a project token and has no read token; a write is answered with a
- * bearer token or with nothing at all, and every response carries the same
- * security headers.
+ * project's lanes and the attention across the fleet — the wave views, one
+ * project's own status, the page, plus the whole write path. The read token
+ * guards only what it did before — the GET and HEAD routes, and neither probe —
+ * because a project pushing a wave or a status holds a project token and has no
+ * read token; a write is answered with a bearer token or with nothing at all,
+ * and every response carries the same security headers.
  */
 /** Anything under the API prefix is never cached; the page and its assets may be. */
 function extraFor(pathname: string): Headers {

@@ -124,6 +124,15 @@ function projectListing(path: string): Answer {
   };
 }
 
+/**
+ * The status route, which a project may legitimately never answer: every handler
+ * in this file that shadows `projectListing` says `404` here, so a test about the
+ * listing is not also a test about a status the handler never wrote.
+ */
+function noStatus(): Answer {
+  return { status: 404 };
+}
+
 afterEach(() => {
   setHidden(false);
   vi.unstubAllGlobals();
@@ -272,6 +281,9 @@ describe("the project list route", () => {
       if (rail !== undefined) {
         return rail;
       }
+      if (/\/status$/.test(path)) {
+        return noStatus();
+      }
       return second
         ? {
             status: 200,
@@ -310,6 +322,9 @@ describe("the project list route", () => {
       const rail = railAnswer(path);
       if (rail !== undefined) {
         return rail;
+      }
+      if (/\/status$/.test(path)) {
+        return noStatus();
       }
       return second
         ? {
@@ -721,6 +736,9 @@ describe("the focus across a redraw", () => {
       if (rail !== undefined) {
         return rail;
       }
+      if (/\/status$/.test(path)) {
+        return noStatus();
+      }
       return second
         ? { status: 200, body: projectLanes({ lanes: [] }) }
         : projectListing(path);
@@ -813,6 +831,7 @@ describe("the project route", () => {
       "/api/v1/projects",
       "/api/v1/attention",
       "/api/v1/projects/alpha/lanes",
+      "/api/v1/projects/alpha/status",
     ]);
     expect(textsOf(root(), '.wave-strip a[aria-current="page"]')).toStrictEqual(
       ["all lanes"],
@@ -860,10 +879,11 @@ describe("the project route", () => {
     await flush();
 
     expect(browser.pushes).toStrictEqual(["/p/alpha?all=1"]);
-    expect(fetchImpl.calls.slice(-3)).toStrictEqual([
+    expect(fetchImpl.calls.slice(-4)).toStrictEqual([
       "/api/v1/projects",
       "/api/v1/attention",
       "/api/v1/projects/alpha/lanes?all=1",
+      "/api/v1/projects/alpha/status",
     ]);
     expect(textsOf(root(), ".wave-strip li a")).toHaveLength(4);
     expect(textsOf(root(), ".wave-strip > a")).toStrictEqual([
@@ -928,6 +948,9 @@ describe("the project route", () => {
       if (rail !== undefined) {
         return rail;
       }
+      if (/\/status$/.test(path)) {
+        return noStatus();
+      }
       return second
         ? {
             status: 200,
@@ -965,6 +988,9 @@ describe("the project route", () => {
       const rail = railAnswer(path);
       if (rail !== undefined) {
         return rail;
+      }
+      if (/\/status$/.test(path)) {
+        return noStatus();
       }
       return second
         ? { status: 200, body: projectLanes({ lanes: [laneRow()] }) }
@@ -1006,9 +1032,11 @@ describe("the project route", () => {
     timers.runLast();
     await flush();
     expect(gate.pending()).toBe(1);
-    expect(gate.calls.slice(-1)).toStrictEqual([
-      "/api/v1/projects/alpha/lanes",
-    ]);
+    // The lanes read is the one this gate holds: the project's own status is
+    // asked for in the same pass and answers at once.
+    expect(
+      gate.calls.filter((path) => /\/lanes/.test(path)).slice(-1),
+    ).toStrictEqual(["/api/v1/projects/alpha/lanes"]);
 
     const callsBeforeClick = gate.calls.length;
     (root().querySelectorAll(".wave-strip li a")[2] as HTMLElement).click();
@@ -1018,7 +1046,8 @@ describe("the project route", () => {
     gate.release();
     await flush();
 
-    expect(gate.calls.slice(-1)).toStrictEqual([
+    expect(gate.calls.filter((path) => /\/lanes/.test(path))).toStrictEqual([
+      "/api/v1/projects/alpha/lanes",
       "/api/v1/projects/alpha/lanes",
     ]);
     gate.release();
@@ -1082,6 +1111,7 @@ describe("the project route", () => {
       "/api/v1/projects",
       "/api/v1/attention",
       "/api/v1/projects/alpha/lanes",
+      "/api/v1/projects/alpha/status",
     ]);
     // Nothing is shown and nothing is in scope, so the strip shows the way back
     // to all of them and the table says what is not there.
@@ -1121,7 +1151,7 @@ describe("the project route", () => {
     expect(root().querySelectorAll(".note")).toHaveLength(0);
 
     await flush();
-    expect(fetchImpl.calls).toHaveLength(6);
+    expect(fetchImpl.calls).toHaveLength(8);
     expect(textOf(root().querySelector(".note"))).toBe("offline, retrying");
     app.stop();
   });

@@ -8,9 +8,11 @@ import { shell } from "../../public/shell.js";
 import { renderFleet } from "../../public/views/fleet.js";
 import type { ProjectHandlers } from "../../public/views/project.js";
 import { renderProject } from "../../public/views/project.js";
+import { renderStatusPanel } from "../../public/views/status-panel.js";
 
 import type {
   ProjectLanesView,
+  StatusView,
   WaveView,
 } from "../../src/application/read-model.js";
 import {
@@ -23,6 +25,7 @@ import {
   NOW_MS,
   projectCard,
   projectLanes,
+  statusView,
   waveSummary,
   waveView,
 } from "./fixtures.js";
@@ -248,7 +251,9 @@ async function bootProject(
         ? { status: 200, body: [projectCard()] }
         : path === "/api/v1/attention"
           ? { status: 200, body: attentionView() }
-          : { status: 200, body },
+          : /\/\/status$|\/status$/.test(path)
+            ? { status: 404 }
+            : { status: 200, body },
     ),
     setTimer: timers.setTimer,
     clearTimer: timers.clearTimer,
@@ -661,6 +666,9 @@ async function bootDrawer(
           }),
         };
       }
+      if (/\/status$/.test(path)) {
+        return { status: 404 };
+      }
       return { status: 200, body: wave };
     }),
     setTimer: timers.setTimer,
@@ -839,6 +847,9 @@ describe("the copy digest against stored markup", () => {
         if (path === "/api/v1/attention") {
           return { status: 200, body: attentionView() };
         }
+        if (/\/status$/.test(path)) {
+          return { status: 404 };
+        }
         return {
           status: 200,
           body: projectLanes({
@@ -1013,4 +1024,146 @@ describe("the query string against stored markup", () => {
       }
     },
   );
+
+  it("keeps a payload in either of the status timestamps in the title alone", () => {
+    // `receivedAt` and `backlog.at` both reach the document through `stamp`, so
+    // a payload in either lands in that `title` and in the word "unknown" the
+    // unreadable date becomes — counted as the two timestamps above are counted,
+    // and never in the text a reader reads.
+    for (const field of ["receivedAt", "backlog.at"] as const) {
+      for (const payload of TEXT_PAYLOADS) {
+        const host = freshRoot();
+        host.append(
+          renderStatusPanel(
+            statusView({
+              receivedAt: field === "receivedAt" ? payload : NOW_ISO,
+              status: {
+                ...statusView().status,
+                backlog: {
+                  state: "recorded",
+                  at: field === "backlog.at" ? payload : NOW_ISO,
+                },
+              },
+            }),
+            NOW_MS,
+          ),
+        );
+        assertNoInjectedMarkup();
+        expect(host.querySelectorAll("img")).toHaveLength(0);
+        expect(host.querySelectorAll("script")).toHaveLength(0);
+        expectVerbatim(payload, 0, 1);
+      }
+    }
+  });
+});
+
+/**
+ * Every string of a status document, each carrying the payload: the backlog's
+ * branch and head, the plan its scope names, and one premise's lane, plan and
+ * reason. The premise's own `status` is left as a contract value here, exactly as
+ * a lane's event and pull-request state are: what is under test is what the view
+ * writes down, and the badge class a status chooses is a renderer-level test of
+ * its own.
+ */
+function statusWith(payload: string): StatusView {
+  return statusView({
+    status: {
+      schema: "waves-status/v1",
+      project: "alpha",
+      generatedAt: NOW_ISO,
+      intervalSeconds: 30,
+      prs: { skipped: 1 },
+      backlog: {
+        state: "recorded",
+        at: NOW_ISO,
+        scope: { kind: "partial", plans: [payload] },
+        git: { branch: payload, head: payload },
+        premises: [
+          { lane: payload, plan: payload, status: "holds", reason: payload },
+        ],
+      },
+    },
+  });
+}
+
+/**
+ * How many times the payload appears in the panel's text: the branch and the
+ * commit, the plan in the list and in the premise's own cell, the premise's lane
+ * and its reason. Six places, all of them text; the badge is the one attribute the
+ * panel writes from a value, and it comes out of a table of four literals.
+ */
+const STATUS_OCCURRENCES = 6;
+
+describe("the status panel against stored markup", () => {
+  it("renders every field of a status as text, and none as an attribute", () => {
+    for (const payload of TEXT_PAYLOADS) {
+      const host = freshRoot();
+      host.append(renderStatusPanel(statusWith(payload), NOW_MS));
+      assertNoInjectedMarkup();
+      expect(host.querySelectorAll("img")).toHaveLength(0);
+      expect(host.querySelectorAll("script")).toHaveLength(0);
+      expect(textsOf(host, ".panel.status .backlog p code")).toStrictEqual([
+        payload,
+        payload,
+      ]);
+      expect(textsOf(host, ".panel.status .plans li")).toStrictEqual([payload]);
+      expect(
+        textsOf(host, '.panel.status td[data-label="Lane"]'),
+      ).toStrictEqual([payload]);
+      expect(
+        textsOf(host, '.panel.status td[data-label="Plan"]'),
+      ).toStrictEqual([payload]);
+      expect(
+        textsOf(host, '.panel.status td[data-label="Reason"]'),
+      ).toStrictEqual([payload]);
+      // The badge is the one class in the panel that comes out of a fixed table,
+      // and a payload value reaches it as text and as nothing else.
+      const badge = oneOf(host, '.panel.status td[data-label="Status"] span');
+      expect(badge?.getAttribute("class")).toBe("badge premise-holds");
+      expectVerbatim(payload, STATUS_OCCURRENCES, 0);
+    }
+  });
+
+  it("draws the panel through the app, with the payload in every string", async () => {
+    for (const payload of TEXT_PAYLOADS) {
+      freshRoot();
+      const timers = timerStub();
+      const browser = browserGlobals("/p/alpha", "");
+      const app = createApp({
+        doc: document,
+        location: browser.location,
+        history: browser.history,
+        win: browser.win,
+        fetch: fetchStub((path) => {
+          if (path === "/api/v1/projects") {
+            return { status: 200, body: [projectCard()] };
+          }
+          if (path === "/api/v1/attention") {
+            return { status: 200, body: attentionView() };
+          }
+          if (/\/status$/.test(path)) {
+            return { status: 200, body: statusWith(payload) };
+          }
+          return { status: 200, body: projectLanes() };
+        }),
+        setTimer: timers.setTimer,
+        clearTimer: timers.clearTimer,
+        clock: () => NOW_MS,
+      } satisfies AppGlobals);
+      app.start();
+      await flush();
+
+      assertNoInjectedMarkup();
+      expect(root().querySelectorAll("img")).toHaveLength(0);
+      expect(root().querySelectorAll("script")).toHaveLength(0);
+      expect(root().querySelectorAll(".panel.status")).toHaveLength(1);
+      expect(
+        Array.from(root().querySelectorAll("[class]")).some((element) =>
+          (element.getAttribute("class") ?? "").includes(payload),
+        ),
+      ).toBe(false);
+      expectVerbatim(payload, STATUS_OCCURRENCES, 0);
+      app.stop();
+    }
+  });
 });

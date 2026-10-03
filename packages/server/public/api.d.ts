@@ -2,6 +2,7 @@ import type {
   AttentionView,
   ProjectLanesView,
   ProjectSummary,
+  StatusView,
   WaveView,
 } from "../src/application/read-model.js";
 
@@ -39,6 +40,14 @@ export interface Api {
    * and its direct test is what keeps this one honest until then.
    */
   wave(projectId: string, waveId: string): Promise<WaveView | undefined>;
+  /**
+   * What one project last said about itself: the pull-request rows its last
+   * listing could not read, and what its last `plan:verify` artifact said.
+   * `undefined` for a 404, which is the answer for a project that has pushed
+   * none rather than a failed load — the panel is optional where the other reads
+   * are not.
+   */
+  status(projectId: string): Promise<StatusView | undefined>;
 }
 
 export declare function createApi(fetchImpl: FetchLike): Api;

@@ -4,6 +4,18 @@
  * decides is only whether a response is a list the page can draw at all.
  */
 
+import { drawableStatusFacts } from "./status.js";
+
+/**
+ * The optional `status` of a summary, when it has one: absent for a project that
+ * has pushed no status, and a `status` the card cannot read makes the whole list
+ * undrawable — a card showing a backlog state it had to guess would be a card
+ * claiming something about a project the server never said.
+ */
+function statusOf(project) {
+  return project.status === undefined || drawableStatusFacts(project.status);
+}
+
 function present(project) {
   return (
     project !== null &&
@@ -12,7 +24,8 @@ function present(project) {
     typeof project.name === "string" &&
     typeof project.waves === "number" &&
     typeof project.lanes === "number" &&
-    typeof project.stale === "boolean"
+    typeof project.stale === "boolean" &&
+    statusOf(project)
   );
 }
 

@@ -87,6 +87,35 @@ function fact(term, value) {
   return [el("dt", { text: term }), el("dd", { children: [value] })];
 }
 
+/** What a card says about a project that has reported no backlog at all. */
+const NOTHING_REPORTED = "nothing reported";
+
+/**
+ * What the project last said about itself, as one fact: the state of its last
+ * `plan:verify` artifact, how many pull-request rows its last listing could not
+ * read, and when the whole document arrived.
+ *
+ * No stale badge here, and the reason is the document's own bound: the contract
+ * caps a status's staleness window at 300 s, and a project that pushes a status
+ * once per run would therefore read stale nearly every time a reader looked. The
+ * receive time says the same thing without a badge that is almost always on — and
+ * the API still answers `stale`, so a client that wants the rule has it.
+ */
+function statusFact(status, nowMs) {
+  const parts = [
+    text(
+      status.backlogState === undefined
+        ? NOTHING_REPORTED
+        : `backlog ${status.backlogState}`,
+    ),
+  ];
+  if (status.prsSkipped !== undefined && status.prsSkipped > 0) {
+    parts.push(text(` · ${status.prsSkipped} PR rows unread`));
+  }
+  parts.push(text(" · "), stamp(status.receivedAt, nowMs));
+  return el("span", { children: parts });
+}
+
 /**
  * What the page knows about one project. The wave and lane counts come from the
  * same summary the rail draws, and the attention count from the attention view,
@@ -97,17 +126,20 @@ function facts(project, attention, nowMs) {
     project.lastPush === undefined
       ? text("never")
       : stamp(project.lastPush, nowMs);
-  return el("dl", {
-    attrs: { class: "facts" },
-    children: [
-      ...fact("id", el("code", { text: project.id })),
-      ...fact("repo", repoLink(project.repo ?? NO_REPO, project.repo)),
-      ...fact("waves", text(waveCountText(project.waves))),
-      ...fact("lanes", text(project.lanes)),
-      ...fact("last push", pushed),
-      ...fact("attention", text(attentionOf(attention, project.id))),
-    ],
-  });
+  const rows = [
+    ...fact("id", el("code", { text: project.id })),
+    ...fact("repo", repoLink(project.repo ?? NO_REPO, project.repo)),
+    ...fact("waves", text(waveCountText(project.waves))),
+    ...fact("lanes", text(project.lanes)),
+    ...fact("last push", pushed),
+    ...fact("attention", text(attentionOf(attention, project.id))),
+  ];
+  // Absent for a project that has pushed no status: a row that said "nothing to
+  // report" for a document that was never sent would be a claim about silence.
+  if (project.status !== undefined) {
+    rows.push(...fact("status", statusFact(project.status, nowMs)));
+  }
+  return el("dl", { attrs: { class: "facts" }, children: rows });
 }
 
 function projectCard(project, attention, nowMs) {

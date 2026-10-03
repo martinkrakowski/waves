@@ -14,7 +14,7 @@ import {
   utf8Length,
 } from "../src/application/read-model.js";
 import { MemoryStore } from "../src/infrastructure/memory-store.js";
-import { project, snapshot, withLanes } from "./store-contract.js";
+import { project, snapshot, status, withLanes } from "./store-contract.js";
 
 type Lane = StoredSnapshot["envelope"]["lanes"][number];
 
@@ -408,6 +408,176 @@ describe("read model", () => {
 
     expect(projects[0]?.stale).toBe(false);
     expect(overdue[0]?.stale).toBe(true);
+  });
+
+  it("leaves the status key out of a project that has pushed none", async () => {
+    const store = new MemoryStore();
+    await store.putProject(project("alpha"));
+    await store.putSnapshot(snapshot("wv1"));
+
+    const projects = await model(store).listProjects();
+
+    expect(projects[0]?.status).toBeUndefined();
+    expect(Object.hasOwn(projects[0] as object, "status")).toBe(false);
+  });
+
+  it("carries the two status facts a card shows, and nothing more", async () => {
+    const store = new MemoryStore();
+    await store.putProject(project("alpha"));
+    await store.putStatus({
+      status: status("alpha"),
+      receivedAt: RECEIVED_AT,
+    });
+
+    const projects = await model(store).listProjects();
+
+    expect(projects[0]?.status).toEqual({
+      receivedAt: RECEIVED_AT,
+      stale: false,
+      prsSkipped: 2,
+      backlogState: "recorded",
+    });
+    expect(JSON.stringify(projects[0]?.status)).not.toContain("premises");
+  });
+
+  it("leaves a summary fact out when the document does not carry its field", async () => {
+    const store = new MemoryStore();
+    await store.putProject(project("alpha"));
+    await store.putProject(project("beta"));
+    // A document that never mentioned `prs` and one that never mentioned
+    // `backlog`: a `prsSkipped` of `0` would say no rows went unread, which is
+    // not what silence said.
+    await store.putStatus({
+      status: status("alpha", { prs: undefined }),
+      receivedAt: RECEIVED_AT,
+    });
+    await store.putStatus({
+      status: status("beta", { backlog: undefined }),
+      receivedAt: RECEIVED_AT,
+    });
+
+    const projects = await model(store).listProjects();
+
+    expect(projects[0]?.status).toEqual({
+      receivedAt: RECEIVED_AT,
+      stale: false,
+      backlogState: "recorded",
+    });
+    expect(projects[1]?.status).toEqual({
+      receivedAt: RECEIVED_AT,
+      stale: false,
+      prsSkipped: 2,
+    });
+  });
+
+  it("counts a skipped pull-request row of zero as a zero, not as silence", async () => {
+    const store = new MemoryStore();
+    await store.putProject(project("alpha"));
+    await store.putStatus({
+      status: status("alpha", { prs: { skipped: 0 }, backlog: undefined }),
+      receivedAt: RECEIVED_AT,
+    });
+
+    expect((await model(store).listProjects())[0]?.status).toEqual({
+      receivedAt: RECEIVED_AT,
+      stale: false,
+      prsSkipped: 0,
+    });
+  });
+
+  it("marks a summary status stale on its own interval", async () => {
+    const store = new MemoryStore();
+    await store.putProject(project("alpha"));
+    await store.putStatus({
+      status: status("alpha"),
+      receivedAt: RECEIVED_AT,
+    });
+
+    // An interval of 10 seconds goes stale after 30, exactly as a wave's does.
+    const inside = await model(store, RECEIVED_AT_MS + 10_000).listProjects();
+    const outside = await model(store, RECEIVED_AT_MS + 60_000).listProjects();
+
+    expect(inside[0]?.status?.stale).toBe(false);
+    expect(outside[0]?.status?.stale).toBe(true);
+  });
+
+  it("answers a project's status document, or undefined when there is none", async () => {
+    const store = new MemoryStore();
+    await store.putProject(project("alpha"));
+
+    expect(await model(store).getStatus("alpha")).toBeUndefined();
+
+    await store.putStatus({
+      status: status("alpha"),
+      receivedAt: RECEIVED_AT,
+    });
+
+    expect(await model(store).getStatus("alpha")).toEqual({
+      status: status("alpha"),
+      receivedAt: RECEIVED_AT,
+      stale: false,
+      staleAfterMs: BOUNDARY_MS,
+    });
+    expect(await model(store).getStatus("absent")).toBeUndefined();
+  });
+
+  it("lists every project though one stored status is not JSON", async () => {
+    class CorruptStatus extends MemoryStore {
+      override async getStatus(id: string) {
+        if (id === "beta") {
+          throw new SyntaxError("Unexpected end of JSON input");
+        }
+        return super.getStatus(id);
+      }
+    }
+    const store = new CorruptStatus();
+    await store.putProject(project("alpha"));
+    await store.putProject(project("beta"));
+    await store.putStatus({ status: status("alpha"), receivedAt: RECEIVED_AT });
+
+    const listed = await model(store).listProjects();
+
+    expect(listed.map((entry) => entry.id)).toEqual(["alpha", "beta"]);
+    expect(listed[0]?.status).toBeDefined();
+    expect(listed[1]?.status).toBeUndefined();
+  });
+
+  it("still fails the listing for a status read that is not a parse error", async () => {
+    class RefusedStatus extends MemoryStore {
+      override async getStatus(): Promise<undefined> {
+        throw new Error("EACCES");
+      }
+    }
+    const store = new RefusedStatus();
+    await store.putProject(project("alpha"));
+
+    await expect(model(store).listProjects()).rejects.toThrow("EACCES");
+  });
+
+  it("never serves a status its registry does not vouch for", async () => {
+    // A status write that finished after its project was deleted.
+    const store = new MemoryStore();
+    await store.putStatus({ status: status("alpha"), receivedAt: RECEIVED_AT });
+
+    expect(await model(store).getStatus("alpha")).toBeUndefined();
+  });
+
+  it("answers a status fresh inside its own window, and with the default past it", async () => {
+    const store = new MemoryStore();
+    await store.putProject(project("alpha"));
+    await store.putStatus({
+      status: status("alpha", { intervalSeconds: null }),
+      receivedAt: RECEIVED_AT,
+    });
+
+    const inside = await model(store, RECEIVED_AT_MS + 1000).getStatus("alpha");
+    const outside = await model(store, RECEIVED_AT_MS + 302_000).getStatus(
+      "alpha",
+    );
+
+    expect(inside?.stale).toBe(false);
+    expect(inside?.staleAfterMs).toBe(300_000);
+    expect(outside?.stale).toBe(true);
   });
 
   it("lists the waves of a project newest first", async () => {

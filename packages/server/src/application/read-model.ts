@@ -1,4 +1,5 @@
 import {
+  type BacklogState,
   type DiffStat,
   type Envelope,
   type Gate,
@@ -9,6 +10,7 @@ import {
   type LaneEvent,
   type LaneReported,
   type Project,
+  type ProjectStatus,
   type PullRequest,
   staleAfterMs,
   type StoredSnapshot,
@@ -20,7 +22,11 @@ import {
   inAttentionWindow,
   MAX_ATTENTION_LANES,
 } from "../domain/attention.js";
-import { type SnapshotHead, type StorePort } from "./ports/store.js";
+import {
+  type SnapshotHead,
+  type StorePort,
+  type StoredStatus,
+} from "./ports/store.js";
 
 export type Now = () => number;
 
@@ -108,6 +114,21 @@ export interface ProjectSummary {
    * overdue.
    */
   readonly stale: boolean;
+  /**
+   * The two facts a fleet card shows about the project's own status, and not the
+   * document itself: when it arrived, whether it has gone past the window its own
+   * `intervalSeconds` sets, and the two counts it carries. Absent when the
+   * project has pushed no status at all, and every optional key inside it absent
+   * when the document does not carry the field — `prsSkipped` is a `0` a reader
+   * would read as "no rows were unread", which is not what "no `prs` was sent"
+   * means.
+   */
+  readonly status?: {
+    readonly receivedAt: string;
+    readonly stale: boolean;
+    readonly prsSkipped?: number;
+    readonly backlogState?: BacklogState;
+  };
 }
 
 export interface WaveSummary extends SnapshotHead {
@@ -129,6 +150,19 @@ export interface EnvelopeView extends Omit<Envelope, "lanes"> {
 
 export interface WaveView {
   readonly envelope: EnvelopeView;
+  readonly receivedAt: string;
+  readonly stale: boolean;
+  readonly staleAfterMs: number;
+}
+
+/**
+ * A project's status document with the two facts a rule reads about it: the
+ * instant the service received it, and whether that is past the window its own
+ * `intervalSeconds` sets. Both are the same rule the wave view uses, with the
+ * same clock and the same `null` default — what differs is only the document.
+ */
+export interface StatusView {
+  readonly status: ProjectStatus;
   readonly receivedAt: string;
   readonly stale: boolean;
   readonly staleAfterMs: number;
@@ -242,6 +276,7 @@ export interface ReadModel {
   ): Promise<ProjectLanesView | undefined>;
   listAttention(): Promise<AttentionView>;
   getWave(projectId: string, wave: string): Promise<WaveView | undefined>;
+  getStatus(projectId: string): Promise<StatusView | undefined>;
 }
 
 function lastPushOf(heads: readonly SnapshotHead[]): string | undefined {
@@ -276,6 +311,34 @@ function newestHead(heads: readonly SnapshotHead[]): SnapshotHead | undefined {
 
 function aliveView(alive: boolean, stale: boolean): AliveView {
   return stale && alive ? "unknown" : alive;
+}
+
+/** Whether a stored status is past the window its own interval sets. */
+function statusStale(stored: StoredStatus, nowMs: number): boolean {
+  return isStale(
+    Date.parse(stored.receivedAt),
+    stored.status.intervalSeconds,
+    nowMs,
+  );
+}
+
+/**
+ * The two facts a fleet card shows about a project's status. Every optional key
+ * is present exactly when the document carries the field it comes from: a
+ * `prsSkipped` of `0` would say no rows went unread, which is not what a
+ * document that never mentioned `prs` says.
+ */
+function statusFacts(
+  stored: StoredStatus,
+  nowMs: number,
+): NonNullable<ProjectSummary["status"]> {
+  const { prs, backlog } = stored.status;
+  return {
+    receivedAt: stored.receivedAt,
+    stale: statusStale(stored, nowMs),
+    ...(prs === undefined ? {} : { prsSkipped: prs.skipped }),
+    ...(backlog === undefined ? {} : { backlogState: backlog.state }),
+  };
 }
 
 function laneView(lane: Lane, stale: boolean): LaneView {
@@ -594,6 +657,25 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
     return entry;
   };
 
+  /**
+   * A project's status for the fleet listing, or nothing when its stored file
+   * is not JSON: one corrupt file costs that card its status row, never the
+   * whole listing. Any other failure (a directory the store refuses, a read the
+   * kernel refused) is not about one file, and it still fails the listing.
+   */
+  const summaryStatus = async (
+    projectId: string,
+  ): Promise<StoredStatus | undefined> => {
+    try {
+      return await store.getStatus(projectId);
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        return undefined;
+      }
+      throw error;
+    }
+  };
+
   return {
     async listProjects(): Promise<readonly ProjectSummary[]> {
       const projects = await store.listProjects();
@@ -602,6 +684,9 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
       for (const project of projects) {
         const heads = await store.listSnapshotHeads(project.id);
         const newest = newestHead(heads);
+        // One status read per project, beside the heads: the card shows two facts
+        // about it, and a project that has pushed none has no key to show at all.
+        const status = await summaryStatus(project.id);
         summaries.push({
           id: project.id,
           name: project.name,
@@ -617,6 +702,9 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
               newest.intervalSeconds,
               nowMs,
             ),
+          ...(status === undefined
+            ? {}
+            : { status: statusFacts(status, nowMs) }),
         });
       }
       return summaries;
@@ -867,6 +955,31 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
         receivedAt: snapshot.receivedAt,
         stale,
         staleAfterMs: staleAfterMs(intervalSeconds),
+      };
+    },
+
+    /**
+     * One project's own status document, or undefined when it has pushed none
+     * or does not exist. Both are the same `404` at the route — a project the
+     * server has never heard of and one that has said nothing about itself are
+     * not two things a reader can be told apart. The project is looked up first,
+     * as the wave list does: a status write that finished after its project was
+     * deleted leaves a file the registry no longer vouches for, and it is never
+     * served.
+     */
+    async getStatus(projectId: string): Promise<StatusView | undefined> {
+      if ((await store.getProject(projectId)) === undefined) {
+        return undefined;
+      }
+      const stored = await store.getStatus(projectId);
+      if (stored === undefined) {
+        return undefined;
+      }
+      return {
+        status: stored.status,
+        receivedAt: stored.receivedAt,
+        stale: statusStale(stored, now()),
+        staleAfterMs: staleAfterMs(stored.status.intervalSeconds),
       };
     },
   };

@@ -4,6 +4,7 @@ import {
   type CreateOutcome,
   type SnapshotHead,
   type StorePort,
+  type StoredStatus,
   snapshotHead,
 } from "../application/ports/store.js";
 import { assertIds } from "./ids.js";
@@ -12,6 +13,8 @@ export class MemoryStore implements StorePort<Project, StoredSnapshot> {
   readonly #projects = new Map<string, Project>();
   readonly #waves = new Map<string, Map<string, StoredSnapshot>>();
   readonly #heads = new Map<string, Map<string, SnapshotHead>>();
+  /** One document per project, cloned in and out exactly as a snapshot is. */
+  readonly #statuses = new Map<string, StoredStatus>();
 
   async getProject(id: string): Promise<Project | undefined> {
     assertIds(id);
@@ -50,6 +53,8 @@ export class MemoryStore implements StorePort<Project, StoredSnapshot> {
       return "ceiling";
     }
     this.#projects.set(project.id, structuredClone(project));
+    // A status left by an earlier project of the same id is not this one's.
+    this.#statuses.delete(project.id);
     return "created";
   }
 
@@ -58,6 +63,7 @@ export class MemoryStore implements StorePort<Project, StoredSnapshot> {
     this.#projects.delete(id);
     this.#waves.delete(id);
     this.#heads.delete(id);
+    this.#statuses.delete(id);
   }
 
   async putSnapshot(snapshot: StoredSnapshot): Promise<void> {
@@ -109,5 +115,19 @@ export class MemoryStore implements StorePort<Project, StoredSnapshot> {
     assertIds(project, wave);
     this.#waves.get(project)?.delete(wave);
     this.#heads.get(project)?.delete(wave);
+  }
+
+  async putStatus(stored: StoredStatus): Promise<void> {
+    assertIds(stored.status.project);
+    this.#statuses.set(stored.status.project, structuredClone(stored));
+  }
+
+  async getStatus(project: string): Promise<StoredStatus | undefined> {
+    assertIds(project);
+    const stored = this.#statuses.get(project);
+    if (stored === undefined) {
+      return undefined;
+    }
+    return structuredClone(stored);
   }
 }

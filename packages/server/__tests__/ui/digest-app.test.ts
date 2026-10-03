@@ -49,6 +49,12 @@ function answering(): (path: string) => Answer {
     if (path === "/api/v1/attention") {
       return { status: 200, body: attentionView() };
     }
+    // The status is answered on its own path and only there: a catch-all that
+    // answered the project's listing to the status route would be drawing a
+    // listing where the panel belongs.
+    if (/\/status$/.test(path)) {
+      return { status: 404 };
+    }
     return { status: 200, body: listing() };
   };
 }

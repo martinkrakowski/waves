@@ -3,6 +3,7 @@ import type { Socket } from "node:net";
 
 import {
   validateEnvelope,
+  validateStatus,
   type Project,
   type StoredSnapshot,
   type ValidationIssue,
@@ -81,6 +82,15 @@ const PATH_MISMATCH: readonly ValidationIssue[] = [
     path: "/project",
     message: "expected the project and wave the path names",
   },
+];
+
+/**
+ * The status names one project and no wave, so its mismatch is its own issue: the
+ * same pointer as a push's, and a sentence that does not mention a wave the path
+ * never had.
+ */
+const STATUS_PATH_MISMATCH: readonly ValidationIssue[] = [
+  { path: "/project", message: "expected the project the path names" },
 ];
 
 export interface WriteDeps {
@@ -499,10 +509,61 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
   }
 
   /**
+   * A project's status document, in the same order of checks and with the same
+   * answer as a push, because it is the same write: the same project-token
+   * authentication, the same per-project allowance, the same body cap, the same
+   * decode, and the same two refusals after it — a document the contract refuses
+   * with its own issues, and one whose `project` is not the path's.
+   *
+   * The cap is a push's rather than a registration's because a status is a
+   * project-sized document like an envelope, not a body of three keys.
+   */
+  async function putStatus(
+    res: ServerResponse,
+    method: string,
+    socket: Socket,
+    req: IncomingMessage,
+    project: string,
+  ): Promise<number> {
+    const body = await readBody(req, res, PUT_BODY_CAP);
+    if (isRefusal(body)) {
+      return answer(res, method, socket, body);
+    }
+    const decoded = decode(body.bytes);
+    if ("reply" in decoded) {
+      return answer(res, method, socket, decoded);
+    }
+    const validated = validateStatus(decoded.value);
+    if (!validated.ok) {
+      return answer(
+        res,
+        method,
+        socket,
+        afterRead(jsonReply(422, { errors: validated.errors })),
+      );
+    }
+    if (validated.value.project !== project) {
+      return answer(
+        res,
+        method,
+        socket,
+        afterRead(jsonReply(422, { errors: STATUS_PATH_MISMATCH })),
+      );
+    }
+    const stored = await model.putStatus(project, validated.value);
+    return answer(
+      res,
+      method,
+      socket,
+      afterRead(jsonReply(200, { receivedAt: stored.receivedAt })),
+    );
+  }
+
+  /**
    * The write path, in the order the steps are documented. Everything refused
    * here is refused before the body is read, and therefore closes the
-   * connection; the only reads of a body are in `push` and `register`, both of
-   * which run after authentication has already answered.
+   * connection; the only reads of a body are in `push`, `putStatus` and
+   * `register`, all of which run after authentication has already answered.
    */
   return async (req, res, method, target, matched) => {
     const socket = req.socket;
@@ -602,9 +663,17 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
         return denied(res, method, socket, address, wave);
       }
     }
+    /**
+     * One allowance per project for both of the writes it makes, so a project's
+     * push and its status share it: a status is one push a second, not a second
+     * push a second, and a sender that spaces them or honours `Retry-After` is
+     * never refused for saying two things about itself at once.
+     */
     if (
       !rate.take(
-        route.kind === "push" || route.kind === "drop"
+        route.kind === "push" ||
+          route.kind === "drop" ||
+          route.kind === "putStatus"
           ? route.project
           : power === "enroll"
             ? ENROLL_LIMITER_KEY
@@ -645,6 +714,8 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
         );
       case "push":
         return push(res, method, socket, req, route.project, route.wave);
+      case "putStatus":
+        return putStatus(res, method, socket, req, route.project);
     }
   };
 }

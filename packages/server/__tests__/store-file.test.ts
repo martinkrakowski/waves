@@ -15,7 +15,12 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { FileStore } from "../src/index.js";
-import { project, runStoreContract, snapshot } from "./store-contract.js";
+import {
+  project,
+  runStoreContract,
+  snapshot,
+  status,
+} from "./store-contract.js";
 
 interface FileHarness {
   readonly store: FileStore;
@@ -48,6 +53,10 @@ describe("FileStore durability", () => {
     try {
       await store.putProject(project("alpha"));
       await store.putSnapshot(snapshot("wv1"));
+      await store.putStatus({
+        status: status("alpha"),
+        receivedAt: "2026-10-01T12:00:01Z",
+      });
 
       const reopened = new FileStore(dataDir);
 
@@ -57,6 +66,10 @@ describe("FileStore durability", () => {
       await expect(reopened.listSnapshots("alpha")).resolves.toEqual([
         snapshot("wv1"),
       ]);
+      await expect(reopened.getStatus("alpha")).resolves.toEqual({
+        status: status("alpha"),
+        receivedAt: "2026-10-01T12:00:01Z",
+      });
       await expect(reopened.listSnapshotHeads("alpha")).resolves.toEqual([
         {
           wave: "wv1",
@@ -116,6 +129,10 @@ describe("FileStore durability", () => {
     try {
       await store.putProject(project("alpha"));
       await store.putSnapshot(snapshot("wv1"));
+      await store.putStatus({
+        status: status("alpha"),
+        receivedAt: "2026-10-01T12:00:01Z",
+      });
 
       expect(statSync(join(dataDir, "projects.json")).mode & 0o777).toBe(0o600);
       expect(
@@ -125,7 +142,11 @@ describe("FileStore durability", () => {
         statSync(join(dataDir, "snapshots", "alpha", "wv1.head.json")).mode &
           0o777,
       ).toBe(0o600);
+      expect(statSync(join(dataDir, "status", "alpha.json")).mode & 0o777).toBe(
+        0o600,
+      );
       expect(statSync(join(dataDir, "snapshots")).mode & 0o777).toBe(0o700);
+      expect(statSync(join(dataDir, "status")).mode & 0o777).toBe(0o700);
       expect(statSync(join(dataDir, "snapshots", "alpha")).mode & 0o777).toBe(
         0o700,
       );
@@ -141,7 +162,36 @@ describe("FileStore durability", () => {
       await store.putSnapshot(snapshot("wv1"));
       await store.deleteProject("alpha");
 
+      // No `status/`: the delete does not create a directory to remove from, so
+      // a project that never pushed a status leaves the data directory as it
+      // found it.
       expect(everyEntry(dataDir)).toEqual(["projects.json", "snapshots"]);
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("removes a project's status file when the project goes", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.putProject(project("alpha"));
+      await store.putStatus({
+        status: status("alpha"),
+        receivedAt: "2026-10-01T12:00:01Z",
+      });
+      await store.putStatus({
+        status: status("beta"),
+        receivedAt: "2026-10-01T12:00:01Z",
+      });
+
+      await store.deleteProject("alpha");
+
+      expect(readdirSync(join(dataDir, "status"))).toEqual(["beta.json"]);
+      await expect(store.getStatus("alpha")).resolves.toBeUndefined();
+      await expect(store.getStatus("beta")).resolves.toEqual({
+        status: status("beta"),
+        receivedAt: "2026-10-01T12:00:01Z",
+      });
     } finally {
       await dispose();
     }
@@ -373,6 +423,64 @@ describe("FileStore hostile filesystem", () => {
       await expect(store.putSnapshot(snapshot("wv1"))).rejects.toThrow(
         "is not a directory",
       );
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("refuses a symlinked status directory on a write", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      const outside = join(dataDir, "outside");
+      mkdirSync(outside);
+      writeFileSync(join(outside, "canary"), "untouched");
+      symlinkSync(outside, join(dataDir, "status"));
+
+      await expect(
+        store.putStatus({
+          status: status("alpha"),
+          receivedAt: "2026-10-01T12:00:01Z",
+        }),
+      ).rejects.toThrow("is a symbolic link");
+      expect(readdirSync(outside)).toEqual(["canary"]);
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("refuses a symlinked status directory on a read and on a delete", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      const outside = join(dataDir, "outside");
+      mkdirSync(outside);
+      writeFileSync(join(outside, "canary"), "untouched");
+      symlinkSync(outside, join(dataDir, "status"));
+
+      await expect(store.getStatus("alpha")).rejects.toThrow(
+        "is a symbolic link",
+      );
+      await expect(store.deleteProject("alpha")).rejects.toThrow(
+        "is a symbolic link",
+      );
+      expect(readdirSync(outside)).toEqual(["canary"]);
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("refuses a delete as a whole when the status directory is refused", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.putProject(project("alpha"));
+      const outside = join(dataDir, "outside");
+      mkdirSync(outside);
+      symlinkSync(outside, join(dataDir, "status"));
+
+      await expect(store.deleteProject("alpha")).rejects.toThrow(
+        "is a symbolic link",
+      );
+      // Nothing changed, so a retry once the directory is fixed finds it.
+      await expect(store.getProject("alpha")).resolves.toBeDefined();
     } finally {
       await dispose();
     }

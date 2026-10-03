@@ -302,6 +302,18 @@ stale when the time since its receive is longer than
 `staleAfterMs(intervalSeconds)`, with the same `null` default of 300 s.
 `generatedAt` is stored and echoed, and no rule reads it.
 
+**And nothing on the page shows it.** The API answers `stale` and
+`staleAfterMs`, and the project summary answers `stale`, because those are the
+facts and a client may want the rule — but the page shows only when the document
+arrived. The reason is the bound above: a status's window is capped at 300 s, and
+a project that pushes a status once per run would be badged stale nearly every
+time a reader looked, so a badge about it would be a badge that is almost always
+on and never actionable. The received time is the fact behind the badge, and it
+is what is drawn instead — on the fleet card's `status` row and in the status
+panel, never as a warning (`statusFact`,
+`packages/server/public/views/fleet.js:104-117`; the panel's own note,
+`packages/server/public/views/status-panel.js:14-19`).
+
 A minimal valid status document, carrying neither key:
 
 ```json
@@ -385,7 +397,7 @@ stopped telling the server whether the process is still up
 ### 5.1 Read routes
 
 A request is decided in this order, and the order is what picks the status you
-see (`respond`, `packages/server/src/infrastructure/http-server.ts:182-258`):
+see (`respond`, `packages/server/src/infrastructure/http-server.ts:186-262`):
 
 1. A parser refusal (`431`, `408`, `400`) happens before the request exists.
 2. An HTTP/1.1 `Expect` with any value other than `100-continue` is a `417`
@@ -417,10 +429,11 @@ unauthenticated request to the lanes route with a bad query is a `401` and a
 | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GET /healthz`                                    | `{"ok":true}` — the process is up                                                                                                                 |
 | `GET /readyz`                                     | `{"ok":true}` — the store can be read; otherwise `503` `{"ok":false}`                                                                             |
-| `GET /api/v1/projects`                            | array of `{ id, name, repo?, registeredAt, waves, lanes, lastPush?, stale }`, see below                                                           |
+| `GET /api/v1/projects`                            | array of `{ id, name, repo?, registeredAt, waves, lanes, lastPush?, stale, status? }`, see below                                                  |
 | `GET /api/v1/projects/<id>/waves`                 | array of `{ wave, receivedAt, intervalSeconds, lanes, stale, retained }`, `lanes` a count, newest receive first                                   |
 | `GET /api/v1/projects/<id>/lanes`                 | `{ project: { id, name, repo? }, waves: [...], wavesOmitted, lanes: [...], truncated }`, see 5.1.1                                                |
 | `GET /api/v1/projects/<id>/waves/<wave>`          | `{ envelope, receivedAt, stale, staleAfterMs }`, where `envelope` is the stored envelope with `lanes[].derived.alive` possibly `"unknown"`        |
+| `GET /api/v1/projects/<id>/status`                | `{ status, receivedAt, stale, staleAfterMs }`, where `status` is the stored document of "The project status document"                             |
 | `GET /api/v1/attention`                           | `{ lanes: [{ project, wave, lane, seat?, reasons, receivedAt, stale, pr? }], projects: [{ id, attention }], truncated, wavesOmitted }`, see below |
 | `GET /`, `GET /p/<id>` and `GET /p/<id>/w/<wave>` | the status page (`public/index.html`)                                                                                                             |
 | `GET /<static file>`                              | a file from `public`, allow-listed extensions only                                                                                                |
@@ -431,6 +444,17 @@ project's **retained** waves summed from the wave heads the route already reads,
 staleness of the project's **newest** wave by the rule of section 4; a project
 with no waves is not stale and has no lanes. The token digest is never part of a
 response.
+
+`status` is the project's own status document reduced to the two facts a fleet
+card shows, never the document itself:
+`{ receivedAt, stale, prsSkipped?, backlogState? }`. It is **absent** when the
+project has pushed no status, and `prsSkipped` and `backlogState` are each
+present exactly when the document carries the field they come from — a
+`prsSkipped` of `0` a reader would take for a count, and a document that never
+mentioned `prs` did not report one. `stale` is the rule of section 4 applied to
+the status's own receive time and its own `intervalSeconds`
+(`ProjectSummary.status`, `packages/server/src/application/read-model.ts:117-131`;
+`getStatus`, `…/read-model.ts:947-958`).
 
 `GET /api/v1/attention` is the same view across every registered project. A lane
 is listed when it holds at least one of six reasons, and the reasons always come
@@ -481,10 +505,10 @@ so a push that lands between the heads and the snapshot is judged by the push
 (`listAttention`, `packages/server/src/application/read-model.ts:731-841`;
 `MAX_ATTENTION_WAVES`, `…/read-model.ts:80-89`).
 
-(`route`, `packages/server/src/infrastructure/http-routes.ts:116`;
-`replyFor`, `readyReply`, `packages/server/src/infrastructure/http-server.ts:98-145`;
-`ProjectSummary`, `WaveSummary`, `WaveView`,
-`packages/server/src/application/read-model.ts:91-135`;
+(`route`, `packages/server/src/infrastructure/http-routes.ts:124`;
+`replyFor`, `readyReply`, `packages/server/src/infrastructure/http-server.ts:98-149`;
+`ProjectSummary`, `StatusView`, `WaveSummary`, `WaveView`,
+`packages/server/src/application/read-model.ts:91-169`;
 `SnapshotHead`, `packages/server/src/application/ports/store.ts:8-13`)
 
 #### 5.1.1 `GET /api/v1/projects/<id>/lanes`
@@ -550,8 +574,8 @@ string: every other one ignores it, and the access log keeps logging the path
 alone. The check is step 8 of section 5.1, so an unauthenticated request with a
 bad query is a `401`, a `PATCH` with a bad query is a `405`, and a bad query on
 an unknown project is a `400` rather than a `404`. `HEAD` gets the same status as
-`GET` with no body (`queryOf`, `…/http-routes.ts:93-96`; `ALL_WAVES` and the
-check itself, `packages/server/src/infrastructure/http-server.ts:61`, `223-249`).
+`GET` with no body (`queryOf`, `…/http-routes.ts:108-110`; `ALL_WAVES` and the
+check itself, `packages/server/src/infrastructure/http-server.ts:61`, `233-253`).
 
 **The bounds and `truncated`.** A listing stops at whichever of three bounds it
 reaches first, and no further wave is read once one of them is spent — the wave
@@ -613,12 +637,13 @@ Status codes:
   that is not a route, or a static file that is not there. A `project` or
   `wave` segment that fails the id pattern is not a route at all, so it is a
   `404` and never reaches the store
-  (`packages/server/src/infrastructure/http-routes.ts:126-150`).
+  (`packages/server/src/infrastructure/http-routes.ts:134-158`).
 - `405` `{"error":"method not allowed"}` with the `Allow` of that path:
   `GET, HEAD, POST` on the project collection, `DELETE` on a single project,
-  `GET, HEAD, PUT, DELETE` on a wave, and `GET, HEAD` everywhere else —
-  `/api/v1/attention` and `/api/v1/projects/<id>/lanes` among that last group
-  (`ALLOWED`, `packages/server/src/infrastructure/http-routes.ts:29-41`).
+  `GET, HEAD, PUT` on a project's status, `GET, HEAD, PUT, DELETE` on a wave,
+  and `GET, HEAD` everywhere else — `/api/v1/attention` and
+  `/api/v1/projects/<id>/lanes` among that last group
+  (`ALLOWED`, `packages/server/src/infrastructure/http-routes.ts:31-43`).
 - `400` `{"error":"bad query"}` — only on `/api/v1/projects/<id>/lanes`, and only
   for a query string that is neither empty nor exactly `all=1` (section 5.1.1).
   It is answered after the token and the method, and it carries `no-store` like
@@ -628,18 +653,46 @@ Status codes:
   This is checked before authentication, so an oversized target is a `414`
   even without a token.
 - `431` `Request Header Fields Too Large` — a header block over 16 KiB
-  (`MAX_HEADER_BYTES`, `packages/server/src/infrastructure/http-server.ts:56`).
+  (`MAX_HEADER_BYTES`, `packages/server/src/infrastructure/http-server.ts:54`).
   The request never becomes a request, so the answer is written straight to the
   socket by hand and carries no body; `408` and `400` come from the same
   place for a timed-out or otherwise unparseable request
   (`parserRefusal`, `refuseParsedRequest`,
   `packages/server/src/infrastructure/http-security.ts:146-176`).
 - `500` `{"error":"internal"}` — anything that throws while building a reply
-  (`packages/server/src/infrastructure/http-server.ts:260-288`).
+  (`packages/server/src/infrastructure/http-server.ts:264-292`).
 - `401` `{"error":"unauthorized"}` with `WWW-Authenticate: Basic realm="waves",
 charset="UTF-8"` — only when a read token is configured and the path is
   neither `/healthz` nor `/readyz`
-  (`packages/server/src/infrastructure/http-server.ts:207-216`).
+  (`packages/server/src/infrastructure/http-server.ts:211-220`).
+
+#### 5.1.2 `GET /api/v1/projects/<id>/status`
+
+What one project last said about itself — the document of "The project status
+document", whole, with the two facts a rule reads about it:
+
+```
+{ status: { schema, project, generatedAt, intervalSeconds, prs?, backlog? },
+  receivedAt, stale, staleAfterMs }
+```
+
+`stale` and `staleAfterMs` are the rule of section 4 on the status's own receive
+time and its own `intervalSeconds` — the same two numbers, from the same clock,
+as the wave route answers for a wave, and the `null` default is the same 300 s.
+The document is echoed exactly as it was stored, `generatedAt` included.
+
+A project that has pushed no status and a project this server has never heard of
+are the **same** `404 {"error":"not found"}`, exactly as they are for a wave: a
+reader cannot be told which of them it is, and one answer for both is the cheaper
+of the two. There is no "empty status" document — a project that has nothing to
+report says so by pushing a document carrying neither `prs` nor `backlog`, which
+is a `200` and still refreshes the receive time. The viewer token of section 5.2
+and `HEAD` apply here as they do for every other read.
+
+(`/api/v1/projects/<id>/status`, `ALLOWED`,
+`packages/server/src/infrastructure/http-routes.ts:31-43`, `124`;
+`readModel.getStatus`, `packages/server/src/infrastructure/http-server.ts:133-136`;
+`getStatus`, `packages/server/src/application/read-model.ts:947-958`)
 
 ### 5.2 The optional viewer token
 
@@ -652,8 +705,8 @@ compared, in constant time over SHA-256 digests. The scheme is exactly `Basic`
 and the credentials are padded standard base64; anything else is a `401`
 (`authorised`, `packages/server/src/infrastructure/http-security.ts:112-118`).
 When the variable is absent the server serves the read routes to anyone. It
-plays no part in a write: a project that pushes holds its project token and no
-viewer token.
+plays no part in a write: a project that pushes a wave or a status holds its
+project token and no viewer token.
 
 ### 5.3 Headers, and no CORS
 
@@ -667,9 +720,9 @@ unless it is a `204` (`BASE_HEADERS` and `send`,
 under `/api/`, the `GET` and `HEAD` answers of `/readyz` and every answer of the
 write pipeline also carry
 `Cache-Control: no-store` (`isApiPath`,
-`packages/server/src/infrastructure/http-routes.ts:105`; `extraFor`,
-`packages/server/src/infrastructure/http-server.ts:157-159`, `195-204`;
-`answer`, `packages/server/src/infrastructure/http-write.ts:273-283`). The `405`
+`packages/server/src/infrastructure/http-routes.ts:113`; `extraFor`,
+`packages/server/src/infrastructure/http-server.ts:161-163`, `199-209`;
+`answer`, `packages/server/src/infrastructure/http-write.ts:292-302`). The `405`
 that an `OPTIONS` or `PATCH` gets on `/readyz` carries no `Cache-Control`; a
 `PUT`, `POST` or `DELETE` on it is the write pipeline's `405` and does.
 
@@ -686,12 +739,13 @@ read these routes nor write to them; call them from a server, not from a page.
 | route                                       | token                             | body                             | success                                        |
 | ------------------------------------------- | --------------------------------- | -------------------------------- | ---------------------------------------------- |
 | `PUT /api/v1/projects/<id>/waves/<wave>`    | project                           | the envelope of section 2        | `200` `{ receivedAt }`                         |
+| `PUT /api/v1/projects/<id>/status`          | project                           | the status document, below       | `200` `{ receivedAt }`                         |
 | `DELETE /api/v1/projects/<id>/waves/<wave>` | project                           | none                             | `204`, or `404` when there was no such wave    |
 | `POST /api/v1/projects`                     | admin, or enrollment for a new id | `{ id, name, repo? }`, see below | `201` `{ id, token }`                          |
 | `DELETE /api/v1/projects/<id>`              | admin                             | none                             | `204`, or `404` when there was no such project |
 
-(`writeRouteOf`, `packages/server/src/infrastructure/http-routes.ts:71-88`;
-`createWriteHandler`, `packages/server/src/infrastructure/http-write.ts:259`)
+(`writeRouteOf`, `packages/server/src/infrastructure/http-routes.ts:76-98`;
+`createWriteHandler`, `packages/server/src/infrastructure/http-write.ts:278`)
 
 A token is presented as `Authorization: Bearer <token>`: exactly that scheme,
 exactly one space, and 32 to 128 characters of `A-Z`, `a-z`, `0-9`, `_` and `-`
@@ -710,7 +764,7 @@ A file that does exist must hold a token in the grammar above once trimmed, or
 the server refuses to start
 (`readAdminToken`, `packages/server/src/infrastructure/admin-token.ts:59-61`;
 `adminRouteEnabled`, `packages/server/src/application/enrollment.ts:69-79`;
-`packages/server/src/infrastructure/http-write.ts:517-537`).
+`packages/server/src/infrastructure/http-write.ts:593-602`).
 
 The **enrollment token** is a second, optional secret, read the same way from
 the file `WAVES_ENROLL_TOKEN_FILE` names, with the same value rule
@@ -721,9 +775,9 @@ that does not exist yet. Everything else is refused: `?rotate=1` and
 `{"error":"enrollment token cannot do this"}`, charged to the address's failure
 window like a `401`; a push or a wave delete under it is `401`, as it is for any
 token that is not a project's. It never rotates a token, never removes a project
-and never touches a wave
+and never touches a wave or a status
 (`authorize`, `packages/server/src/application/enrollment.ts:37-52`;
-`refused`, `packages/server/src/infrastructure/http-write.ts:361-367`).
+`refused`, `packages/server/src/infrastructure/http-write.ts:380-386`).
 
 When both tokens are present and their files hold the same value the server
 **refuses to start** with exit `2`, because an enrollment copy of the admin token
@@ -747,7 +801,7 @@ configured token could ever authorize is `404` rather than locked:
 
 (`authorize` and `adminRouteEnabled`,
 `packages/server/src/application/enrollment.ts:37-79`; `kindOf`,
-`packages/server/src/infrastructure/http-write.ts:346-352`)
+`packages/server/src/infrastructure/http-write.ts:365-371`)
 
 A registration or a removal therefore compares the presented digest against
 **both** configured digests, in two statements with no early return, so the time
@@ -785,12 +839,13 @@ registered is a `409`, unless the request target is exactly
 `POST /api/v1/projects?rotate=1`, which mints a new token for it, invalidates
 the old one and keeps its `registeredAt`. A rotation body is a full
 registration body: its `name` and `repo` replace the stored ones. `rotate=1` on an id that is not
-registered registers it. Deleting a project removes its waves with it.
+registered registers it. Deleting a project removes its waves and its status with
+it.
 (`REGISTRATION_KEYS`, `registerProject`,
 `packages/server/src/application/write-model.ts:16`, `152-177`;
 `packages/contract/src/domain/project.ts:16-21`;
 `mintToken`, `packages/server/src/infrastructure/digest.ts:19`;
-`deleteProject`, `packages/server/src/infrastructure/file-store.ts:149-162`)
+`deleteProject`, `packages/server/src/infrastructure/file-store.ts:160-181`)
 
 Under the enrollment token a registration is one serialized store operation that
 answers `created`, `exists` or `ceiling`, so two concurrent enrollments of one
@@ -801,8 +856,8 @@ the failure window, and the admin token still registers. The ceiling is a
 constant rather than configuration, and it bounds how many, never what is in it
 (`ENROLL_CEILING`, `packages/server/src/application/write-model.ts:43`;
 `enrollProject`, `packages/server/src/application/write-model.ts:186-199`;
-`createProject`, `packages/server/src/application/ports/store.ts:30-41`;
-`FileStore.createProject`, `packages/server/src/infrastructure/file-store.ts:126-147`).
+`createProject`, `packages/server/src/application/ports/store.ts:44-60`;
+`FileStore.createProject`, `packages/server/src/infrastructure/file-store.ts:135-156`).
 
 Every registration logs one line through the same `log` as the access log when
 the enrollment token made it: `{"ts":"…","event":"enrolled","project":"<id>"}`,
@@ -812,7 +867,7 @@ naming the id and never a token or a digest.
 request line, the headers and — for the two `429`s — what the server remembers
 of earlier failures and writes, never from the body. They run in this order, and each refusal closes the
 connection without reading the body
-(`packages/server/src/infrastructure/http-write.ts:494-633`):
+(`packages/server/src/infrastructure/http-write.ts:568-720`):
 
 1. `404` `{"error":"not found"}` — the path is not a route. `405` with that
    path's `Allow` — it is one, and this method does not write to it.
@@ -821,7 +876,7 @@ connection without reading the body
    neither token is configured, `?rotate=1` and `DELETE /api/v1/projects/<id>`
    are `404` whenever the admin token is not, whatever the enrollment token is
    (`adminRouteEnabled`, `packages/server/src/application/enrollment.ts:69-79`;
-   `packages/server/src/infrastructure/http-write.ts:517-537`). This step comes
+   `packages/server/src/infrastructure/http-write.ts:593-602`). This step comes
    before step 3 because `rotate` is part of the question; the `400` itself does
    not.
 3. `400` `{"error":"bad query"}` — any non-empty query string, other than
@@ -835,7 +890,9 @@ connection without reading the body
    and one whose `Content-Length` is over the cap is `413`
    `{"error":"body too large"}`. The cap is 1 MiB = 1 048 576 bytes for a
    `PUT` and 16 KiB = 16 384 bytes for a `POST` (`PUT_BODY_CAP`,
-   `POST_BODY_CAP`, `packages/server/src/infrastructure/http-write.ts:50-51`).
+   `POST_BODY_CAP`, `packages/server/src/infrastructure/http-write.ts:51-52`).
+   A status is a `PUT` and takes the `PUT` cap, like a wave: it is a
+   project-sized document rather than a body of three keys.
 6. `429` `{"error":"too many failures"}` — this client address has failed
    authentication 10 times within 60 seconds. The window starts at the first
    failure and is not extended by the ones inside it (`FAILURE_LIMIT`,
@@ -853,17 +910,23 @@ connection without reading the body
    that into the admin power, the enrollment power, or the refusal above. Each
    `401` and `403` of this step counts as one failure against the address in
    step 6 (`digestOf`, `kindOf`, `refused`, `authenticateWave`, `denied`,
-   `packages/server/src/infrastructure/http-write.ts:286-297`, `324-367`,
-   `396-408`).
+   `packages/server/src/infrastructure/http-write.ts:305-317`, `343-427`).
+   The three project writes — a push, a status, a wave delete — are all answered
+   the same way, by `authenticateWave(digest, project)` against **every** stored
+   digest. The admin and the enrollment tokens are not project tokens and cannot
+   write any of them: they are `401`, exactly as for a push.
 8. `429` `{"error":"too many writes"}` with `Retry-After: 1` — one write per
    second per project, counting every authenticated attempt and not only the
-   accepted ones. The admin token's requests share one allowance, and the
-   enrollment token's have one of their own at the same rate, so a leaked
-   enrollment token cannot keep the admin token's cleanup at `429`
-   (`PROJECT_INTERVAL_MS`, `packages/server/src/application/limiters.ts:5`;
-   `ADMIN_LIMITER_KEY` and `ENROLL_LIMITER_KEY` in
-   `packages/server/src/infrastructure/http-write.ts`). Neither key can be a
-   project id.
+   accepted ones. A project's push, its status `PUT` and its wave delete all
+   draw from that one allowance, so a sender spaces its two kinds of write or
+   honours `Retry-After`; it does not get one allowance each. The admin token's
+   requests share one allowance of their own, and the enrollment token's have one
+   of their own at the same rate, so a leaked enrollment token cannot keep the
+   admin token's cleanup at `429` (`PROJECT_INTERVAL_MS`,
+   `packages/server/src/application/limiters.ts:5`; `ADMIN_LIMITER_KEY` and
+   `ENROLL_LIMITER_KEY` in `packages/server/src/infrastructure/http-write.ts`).
+   Neither key can be a project id, so a status can never spend the admin
+   token's or the enrollment token's.
 
 The client address in step 6 is the socket's, or with `WAVES_TRUST_PROXY=1` the
 last entry of `X-Forwarded-For`
@@ -873,7 +936,7 @@ Only then is the body read. A client that sent `Expect: 100-continue` over
 HTTP/1.1 gets its `100 Continue` here and not before, so a client that waits for
 it never sends a body to a refusal; a client that does not wait and is refused
 sees the connection reset mid-body (`continueIfExpected`,
-`packages/server/src/infrastructure/http-write.ts:248-257`;
+`packages/server/src/infrastructure/http-write.ts:267-276`;
 `SendOptions`, `packages/server/src/infrastructure/http-security.ts:47-66`).
 
 Over HTTP/1.1, an `Expect` header with any other value never reaches this
@@ -883,7 +946,7 @@ length is looked at, with `417` `{"error":"expectation failed"}`, the headers of
 section 5.3 and — on a path under `/api/` — `Cache-Control: no-store`. The
 connection is closed rather than left for a body nobody will read, and the
 answer is logged like any other (`checkExpectation`,
-`packages/server/src/infrastructure/http-server.ts:333-343`).
+`packages/server/src/infrastructure/http-server.ts:337-347`).
 
 After the body:
 
@@ -892,19 +955,44 @@ After the body:
   at the cap and the connection is closed.
 - `400` `{"error":"not utf-8"}` or `{"error":"bad json"}`.
 - `422` `{"errors":[{ path, message }]}` — the body fails `validateEnvelope`
-  (or, for a registration, the rules above); the issues are those of section 3.
-  An envelope whose `project` or `wave` differs from the path is a `422` with
-  the single issue `/project`, `expected the project and wave the path names`.
+  (or, for a status, `validateStatus`, or for a registration the rules above);
+  the issues are those of section 3. An envelope whose `project` or `wave`
+  differs from the path is a `422` with the single issue `/project`, `expected
+the project and wave the path names`. A status names one project and no wave,
+  so its mismatch is the same pointer with its own sentence: `/project`,
+  `expected the project the path names`.
 - `409` `{"error":"already registered"}` — a registration only.
 - `403` `{"error":"enrollment ceiling reached"}` — a registration under the
   enrollment token with 64 projects already in the registry, and nothing else.
 - `200` `{"receivedAt":"…"}` for a push: the server's own clock at the moment it
   stored the snapshot, which is the instant every rule of section 4 reads. A
   push replaces the wave's previous snapshot; the server keeps one per wave.
+- `200` `{"receivedAt":"…"}` for a status, by the same rule and the same clock.
+  A status replaces the project's previous one, so there is exactly one document
+  per project however many it pushes.
 
-(`readBody`, `replyFor`, `register`, `push`,
-`packages/server/src/infrastructure/http-write.ts:299-313`, `374-388`, `410-487`;
-`putWave`, `packages/server/src/application/write-model.ts:126-134`)
+(`readBody`, `replyFor`, `register`, `push`, `putStatus`,
+`packages/server/src/infrastructure/http-write.ts:318-332`, `393-407`,
+`429-561`;
+`putWave`, `putStatus`, `packages/server/src/application/write-model.ts:127-158`)
+
+**The status write.** `PUT /api/v1/projects/<id>/status` is the second project
+write, and every step above applies to it unchanged: same order, same
+project-token authentication, same per-project allowance, same `PUT` body cap,
+same decode, same two `422`s after it. It is stored at
+`<dataDir>/status/<project>.json`, a directory of its own beside `snapshots/`
+and **not** inside `snapshots/<project>/`, where a wave whose id is `status` — a
+wave id the contract accepts — would have overwritten the document, or the
+document the wave. Deleting a project removes the file with its waves, and does
+not create the directory to remove from it (`StoredStatus`,
+`packages/server/src/application/ports/store.ts:28-31`; `FileStore.putStatus`,
+`…/file-store.ts:264-275`). A path naming a project that is not registered is
+`401` for an unknown token and `403` `{"error":"wrong project"}` for another
+project's token, as step 7 says for a wave; a document naming a project other
+than the path's is the `422` above. A status write that finishes after its
+project was deleted leaves a file nothing serves: the read route answers `404`
+for a project the registry does not hold, and registering the id again removes
+the file.
 
 ## 6. TLS and trust
 
@@ -965,6 +1053,12 @@ curl --fail --silent --show-error \
   --cacert ~/.config/waves/ca.crt \
   --user "viewer:$WAVES_VIEWER_TOKEN" \
   https://waves.example.com/api/v1/projects/apollo/waves/wv6
+
+# A project that has pushed no status is a 404 here, like an unknown wave.
+curl --fail --silent --show-error \
+  --cacert ~/.config/waves/ca.crt \
+  --user "viewer:$WAVES_VIEWER_TOKEN" \
+  https://waves.example.com/api/v1/projects/apollo/status
 
 # Health and readiness are the two routes the viewer token does not guard.
 curl --fail --silent --show-error \

@@ -4,12 +4,18 @@ import type {
   WaveSummary,
 } from "../../src/application/read-model.js";
 import type { ViewQuery } from "../query.js";
+import type { Status } from "../status.js";
 
 export interface ProjectModel {
   readonly lanes: ProjectLanesView;
   /** The wave the path names, or undefined on the project's own page. */
   readonly wave: string | undefined;
   readonly query: ViewQuery;
+  /**
+   * What the project last said about itself, or undefined when it has pushed no
+   * status: the panel is drawn for a status and is not drawn at all without one.
+   */
+  readonly status?: Status;
   /** What the last copy of the digest said, or nothing when it said nothing. */
   readonly copied?: string;
 }

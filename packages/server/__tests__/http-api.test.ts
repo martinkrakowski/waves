@@ -5,10 +5,11 @@ import type { Project, StoredSnapshot } from "@hexagen-monaco/waves-contract";
 import type { StorePort } from "../src/application/ports/store.js";
 import { MemoryStore } from "../src/infrastructure/memory-store.js";
 import { cleanupHarnesses, startHarness } from "./http-harness.js";
-import { project, snapshot } from "./store-contract.js";
+import { project, snapshot, status } from "./store-contract.js";
 
 const TOKEN = "s3cret-read-token";
-const RECEIVED_AT_MS = Date.parse("2026-10-01T12:00:01Z");
+const RECEIVED_AT = "2026-10-01T12:00:01Z";
+const RECEIVED_AT_MS = Date.parse(RECEIVED_AT);
 const STALE_AFTER_MS = 30_000;
 
 const SECURITY_HEADERS: ReadonlyArray<readonly [string, string]> = [
@@ -106,6 +107,157 @@ const LANES_BODY = {
 };
 
 afterEach(cleanupHarnesses);
+
+describe("the project status route", () => {
+  const STATUS_PATH = "/api/v1/projects/alpha/status";
+
+  /** The seeded project, with a status document stored for it. */
+  async function withStatus(): Promise<StorePort<Project, StoredSnapshot>> {
+    const store = await seeded();
+    await store.putStatus({
+      status: status("alpha"),
+      receivedAt: RECEIVED_AT,
+    });
+    return store;
+  }
+
+  it("answers the document with the two facts a rule reads", async () => {
+    const started = await startHarness({ store: await withStatus() });
+
+    const response = await fetch(`${started.origin}${STATUS_PATH}`);
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expectSecurityHeaders(response.headers, true);
+    expect(JSON.parse(body)).toEqual({
+      status: status("alpha"),
+      receivedAt: RECEIVED_AT,
+      stale: true,
+      staleAfterMs: STALE_AFTER_MS,
+    });
+    expect(body).not.toContain("tokenSha256");
+  });
+
+  it("says fresh while the receive is inside the document's own interval", async () => {
+    const started = await startHarness({
+      store: await withStatus(),
+      now: () => RECEIVED_AT_MS + 1_000,
+    });
+
+    expect(
+      await (await fetch(`${started.origin}${STATUS_PATH}`)).json(),
+    ).toEqual(expect.objectContaining({ stale: false }));
+  });
+
+  it("uses the 300 s default when the document has no interval", async () => {
+    const store = await seeded();
+    await store.putStatus({
+      status: status("alpha", { intervalSeconds: null }),
+      receivedAt: RECEIVED_AT,
+    });
+    const started = await startHarness({ store });
+
+    expect(
+      await (await fetch(`${started.origin}${STATUS_PATH}`)).json(),
+    ).toEqual(expect.objectContaining({ staleAfterMs: 300_000 }));
+  });
+
+  it("404s a project that has pushed no status", async () => {
+    const started = await startHarness({ store: await seeded() });
+
+    const response = await fetch(`${started.origin}${STATUS_PATH}`);
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "not found" });
+  });
+
+  it("404s a project that does not exist, in the same shape", async () => {
+    const started = await startHarness({ store: await seeded() });
+
+    const known = await fetch(`${started.origin}${STATUS_PATH}`);
+    const unknown = await fetch(
+      `${started.origin}/api/v1/projects/absent/status`,
+    );
+
+    expect([known.status, unknown.status]).toEqual([404, 404]);
+    expect(await unknown.json()).toEqual(await known.json());
+  });
+
+  it("answers HEAD with the headers of the GET and no body", async () => {
+    const started = await startHarness({ store: await withStatus() });
+
+    const head = await fetch(`${started.origin}${STATUS_PATH}`, {
+      method: "HEAD",
+    });
+    const get = await fetch(`${started.origin}${STATUS_PATH}`);
+
+    expect(head.status).toBe(200);
+    expectSecurityHeaders(head.headers, true);
+    expect(head.headers.get("content-length")).toBe(
+      get.headers.get("content-length"),
+    );
+    expect(await head.text()).toBe("");
+  });
+
+  it("needs the viewer token like every other read", async () => {
+    const started = await startHarness({
+      store: await withStatus(),
+      readToken: TOKEN,
+    });
+
+    const bare = await fetch(`${started.origin}${STATUS_PATH}`);
+    const withToken = await fetch(`${started.origin}${STATUS_PATH}`, {
+      headers: {
+        authorization: `Basic ${Buffer.from(`reader:${TOKEN}`).toString("base64")}`,
+      },
+    });
+
+    expect(bare.status).toBe(401);
+    expect(bare.headers.get("www-authenticate")).toBe(
+      'Basic realm="waves", charset="UTF-8"',
+    );
+    expect(withToken.status).toBe(200);
+  });
+
+  it("answers 405 with its own Allow for the methods it does not take", async () => {
+    const started = await startHarness({ store: await withStatus() });
+
+    const post = await fetch(`${started.origin}${STATUS_PATH}`, {
+      method: "POST",
+    });
+    const patch = await fetch(`${started.origin}${STATUS_PATH}`, {
+      method: "PATCH",
+    });
+
+    for (const response of [post, patch]) {
+      expect(response.status).toBe(405);
+      expect(response.headers.get("allow")).toBe("GET, HEAD, PUT");
+      expectSecurityHeaders(response.headers, true);
+    }
+  });
+
+  it("carries the two status facts in the project list", async () => {
+    const store = await withStatus();
+    await store.putStatus({
+      status: status("alpha", {
+        prs: undefined,
+        backlog: { state: "unknown" },
+      }),
+      receivedAt: RECEIVED_AT,
+    });
+    const started = await startHarness({ store });
+
+    const summary = (await (
+      await fetch(`${started.origin}/api/v1/projects`)
+    ).json()) as Record<string, Record<string, unknown>>;
+
+    expect(summary[0]?.status).toEqual({
+      receivedAt: RECEIVED_AT,
+      stale: true,
+      backlogState: "unknown",
+    });
+  });
+});
 
 describe("the API surface", () => {
   it("answers health without touching the store", async () => {

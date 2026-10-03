@@ -17,6 +17,7 @@ import type {
   CreateOutcome,
   SnapshotHead,
   StorePort,
+  StoredStatus,
 } from "../application/ports/store.js";
 import { snapshotHead } from "../application/ports/store.js";
 import { assertIds } from "./ids.js";
@@ -25,6 +26,7 @@ const DATA_DIR_MODE = 0o700;
 const FILE_MODE = 0o600;
 const PROJECTS_FILE = "projects.json";
 const SNAPSHOTS_DIR = "snapshots";
+const STATUS_DIR = "status";
 const SNAPSHOT_SUFFIX = ".json";
 const HEAD_INFIX = ".head";
 
@@ -64,12 +66,16 @@ function ignore(): undefined {
 }
 
 /**
- * Keeps `projects.json` and `snapshots/<project>/<wave>.json` under one data
- * directory, writing every file atomically through a temporary file and a
- * rename, with 0600 files under 0700 directories. Every path that enters
- * `snapshots/` or `snapshots/<project>/` is checked with `lstat` on the read and
- * delete paths as well as the write path, so a symlinked directory is refused
- * everywhere rather than followed.
+ * Keeps `projects.json`, `snapshots/<project>/<wave>.json` and
+ * `status/<project>.json` under one data directory, writing every file atomically
+ * through a temporary file and a rename, with 0600 files under 0700 directories.
+ * Every path that enters `snapshots/`, `snapshots/<project>/` or `status/` is
+ * checked with `lstat` on the read and delete paths as well as the write path, so
+ * a symlinked directory is refused everywhere rather than followed.
+ *
+ * The status is a directory of its own rather than a file inside
+ * `snapshots/<project>/`, because `status` is a wave id the contract accepts: one
+ * wave would have overwritten the document, or the document the wave.
  *
  * Beside every snapshot it writes `snapshots/<project>/<wave>.head.json`, the
  * four fields a listing needs, in the same queued operation and with the same
@@ -142,6 +148,11 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
         this.#projectsPath(),
         serialiseProjects(projects),
       );
+      // A status written for an earlier project of the same id — a status write
+      // that finished after that project was deleted — is not this project's.
+      if (await this.#checkedStatusDir()) {
+        await rm(this.#statusPath(project.id), { force: true });
+      }
       return "created";
     });
   }
@@ -150,14 +161,25 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
     await this.#serialised(async () => {
       assertIds(id);
       await this.#checkedDataDir(true);
+      // Both directories are checked before anything changes, so a delete that
+      // refuses one of them refuses as a whole: the project stays registered and
+      // a retry finds it, rather than answering 404 for half a deletion.
+      await this.#assertSnapshotsPath(this.#projectDir(id));
+      // The status goes with the project, but the directory is not created to
+      // remove from it: a project that never pushed a status leaves no `status/`
+      // behind, and a delete that made one would put a directory in the data
+      // directory that nothing ever wrote a file into.
+      const statusDir = await this.#checkedStatusDir();
       const projects = await this.#readProjects();
       projects.delete(id);
       await this.#writeAtomic(
         this.#projectsPath(),
         serialiseProjects(projects),
       );
-      await this.#assertSnapshotsPath(this.#projectDir(id));
       await rm(this.#projectDir(id), { recursive: true, force: true });
+      if (statusDir) {
+        await rm(this.#statusPath(id), { force: true });
+      }
     });
   }
 
@@ -236,6 +258,37 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
     });
   }
 
+  /**
+   * Written the way `putSnapshot` writes: inside the queue, after the data
+   * directory has been checked for writing, through the same directory check and
+   * the same atomic write. One file per project, named for the project, in a
+   * directory of its own.
+   */
+  async putStatus(stored: StoredStatus): Promise<void> {
+    const project = stored.status.project;
+    await this.#serialised(async () => {
+      assertIds(project);
+      await this.#checkedDataDir(true);
+      await this.#directoryForWrite(this.#statusDir());
+      await this.#writeAtomic(
+        this.#statusPath(project),
+        JSON.stringify(stored, null, 2),
+      );
+    });
+  }
+
+  /** Read like `getSnapshot`: a project with no status is one with no file. */
+  async getStatus(project: string): Promise<StoredStatus | undefined> {
+    assertIds(project);
+    await this.#checkedDataDir(false);
+    await this.#checkedStatusDir();
+    const raw = await this.#readText(this.#statusPath(project));
+    if (raw === undefined) {
+      return undefined;
+    }
+    return JSON.parse(raw) as StoredStatus;
+  }
+
   #serialised<T>(operation: () => Promise<T>): Promise<T> {
     const run = this.#queue.then(operation);
     this.#queue = run.then(ignore, ignore);
@@ -264,10 +317,31 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
 
   async #assertSnapshotsPath(dir: string): Promise<void> {
     for (const path of [this.#snapshotsDir(), dir]) {
-      const info = await this.#lstatOrUndefined(path);
-      if (info !== undefined) {
-        assertRealDirectory(info, path);
-      }
+      await this.#assertRealDirectoryOrAbsent(path);
+    }
+  }
+
+  /**
+   * The status directory, checked with `lstat` and never created here: a read
+   * or a delete that created it would leave a directory behind for a project
+   * that has never pushed a status. `false` when there is nothing there, which
+   * is not a failure — a project that has pushed no status has no directory
+   * either.
+   */
+  async #checkedStatusDir(): Promise<boolean> {
+    const dir = this.#statusDir();
+    const info = await this.#lstatOrUndefined(dir);
+    if (info === undefined) {
+      return false;
+    }
+    assertRealDirectory(info, dir);
+    return true;
+  }
+
+  async #assertRealDirectoryOrAbsent(path: string): Promise<void> {
+    const info = await this.#lstatOrUndefined(path);
+    if (info !== undefined) {
+      assertRealDirectory(info, path);
     }
   }
 
@@ -341,6 +415,14 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
 
   #snapshotsDir(): string {
     return join(this.#dataDir, SNAPSHOTS_DIR);
+  }
+
+  #statusDir(): string {
+    return join(this.#dataDir, STATUS_DIR);
+  }
+
+  #statusPath(project: string): string {
+    return join(this.#statusDir(), `${project}${SNAPSHOT_SUFFIX}`);
   }
 
   #projectDir(project: string): string {
