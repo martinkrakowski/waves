@@ -521,6 +521,39 @@ describe("read model", () => {
     expect(await model(store).getStatus("absent")).toBeUndefined();
   });
 
+  it("lists every project though one stored status is not JSON", async () => {
+    class CorruptStatus extends MemoryStore {
+      override async getStatus(id: string) {
+        if (id === "beta") {
+          throw new SyntaxError("Unexpected end of JSON input");
+        }
+        return super.getStatus(id);
+      }
+    }
+    const store = new CorruptStatus();
+    await store.putProject(project("alpha"));
+    await store.putProject(project("beta"));
+    await store.putStatus({ status: status("alpha"), receivedAt: RECEIVED_AT });
+
+    const listed = await model(store).listProjects();
+
+    expect(listed.map((entry) => entry.id)).toEqual(["alpha", "beta"]);
+    expect(listed[0]?.status).toBeDefined();
+    expect(listed[1]?.status).toBeUndefined();
+  });
+
+  it("still fails the listing for a status read that is not a parse error", async () => {
+    class RefusedStatus extends MemoryStore {
+      override async getStatus(): Promise<undefined> {
+        throw new Error("EACCES");
+      }
+    }
+    const store = new RefusedStatus();
+    await store.putProject(project("alpha"));
+
+    await expect(model(store).listProjects()).rejects.toThrow("EACCES");
+  });
+
   it("never serves a status its registry does not vouch for", async () => {
     // A status write that finished after its project was deleted.
     const store = new MemoryStore();

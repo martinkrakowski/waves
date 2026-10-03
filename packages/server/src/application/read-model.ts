@@ -657,6 +657,25 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
     return entry;
   };
 
+  /**
+   * A project's status for the fleet listing, or nothing when its stored file
+   * is not JSON: one corrupt file costs that card its status row, never the
+   * whole listing. Any other failure (a directory the store refuses, a read the
+   * kernel refused) is not about one file, and it still fails the listing.
+   */
+  const summaryStatus = async (
+    projectId: string,
+  ): Promise<StoredStatus | undefined> => {
+    try {
+      return await store.getStatus(projectId);
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        return undefined;
+      }
+      throw error;
+    }
+  };
+
   return {
     async listProjects(): Promise<readonly ProjectSummary[]> {
       const projects = await store.listProjects();
@@ -667,7 +686,7 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
         const newest = newestHead(heads);
         // One status read per project, beside the heads: the card shows two facts
         // about it, and a project that has pushed none has no key to show at all.
-        const status = await store.getStatus(project.id);
+        const status = await summaryStatus(project.id);
         summaries.push({
           id: project.id,
           name: project.name,

@@ -468,6 +468,24 @@ describe("FileStore hostile filesystem", () => {
     }
   });
 
+  it("refuses a delete as a whole when the status directory is refused", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.putProject(project("alpha"));
+      const outside = join(dataDir, "outside");
+      mkdirSync(outside);
+      symlinkSync(outside, join(dataDir, "status"));
+
+      await expect(store.deleteProject("alpha")).rejects.toThrow(
+        "is a symbolic link",
+      );
+      // Nothing changed, so a retry once the directory is fixed finds it.
+      await expect(store.getProject("alpha")).resolves.toBeDefined();
+    } finally {
+      await dispose();
+    }
+  });
+
   it("surfaces a read error that is not ENOENT", async () => {
     const { store, dataDir, dispose } = harness();
     try {

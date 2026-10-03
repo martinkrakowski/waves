@@ -161,19 +161,22 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
     await this.#serialised(async () => {
       assertIds(id);
       await this.#checkedDataDir(true);
+      // Both directories are checked before anything changes, so a delete that
+      // refuses one of them refuses as a whole: the project stays registered and
+      // a retry finds it, rather than answering 404 for half a deletion.
+      await this.#assertSnapshotsPath(this.#projectDir(id));
+      // The status goes with the project, but the directory is not created to
+      // remove from it: a project that never pushed a status leaves no `status/`
+      // behind, and a delete that made one would put a directory in the data
+      // directory that nothing ever wrote a file into.
+      const statusDir = await this.#checkedStatusDir();
       const projects = await this.#readProjects();
       projects.delete(id);
       await this.#writeAtomic(
         this.#projectsPath(),
         serialiseProjects(projects),
       );
-      await this.#assertSnapshotsPath(this.#projectDir(id));
       await rm(this.#projectDir(id), { recursive: true, force: true });
-      // The status goes with the project, but the directory is not created to
-      // remove from it: a project that never pushed a status leaves no `status/`
-      // behind, and a delete that made one would put a directory in the data
-      // directory that nothing ever wrote a file into.
-      const statusDir = await this.#checkedStatusDir();
       if (statusDir) {
         await rm(this.#statusPath(id), { force: true });
       }
