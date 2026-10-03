@@ -101,6 +101,7 @@ const LANES_BODY = {
       reasons: ["silent"],
     },
   ],
+  wavesOmitted: 0,
   truncated: false,
 };
 
@@ -237,6 +238,7 @@ describe("the API surface", () => {
       ],
       projects: [{ id: "alpha", attention: 1 }],
       truncated: false,
+      wavesOmitted: 0,
     });
     expect(body).not.toContain("seat");
     expect(body).not.toContain("tokenSha256");

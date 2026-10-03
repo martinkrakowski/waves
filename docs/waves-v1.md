@@ -256,14 +256,14 @@ A wave goes stale when it has not been received for longer than
 The clock is always the server's, and the instant it uses is always the time the
 server **received** the snapshot — `receivedAt` — never the pusher's
 `generatedAt`. Every formula is fed `Date.parse(receivedAt)` and `now()` from
-the server (`createReadModel`, `packages/server/src/application/read-model.ts:480`,
-`564-779`; `Now`, `…/read-model.ts:25`). `generatedAt` is stored and echoed but
+the server (`createReadModel`, `packages/server/src/application/read-model.ts:512`,
+`595-852`; `Now`, `…/read-model.ts:25`). `generatedAt` is stored and echoed but
 no rule reads it.
 
 In the wave view, a stale wave keeps its lane data but a lane whose
 `derived.alive` is `true` is rendered as `"unknown"`, because the pusher has
 stopped telling the server whether the process is still up
-(`aliveView`, `…/read-model.ts:243-245`).
+(`aliveView`, `…/read-model.ts:275-277`).
 
 ## 5. HTTP API
 
@@ -298,17 +298,17 @@ the write pipeline and is answered by it. Because the query is step 8, an
 unauthenticated request to the lanes route with a bad query is a `401` and a
 `PATCH` with a bad query is a `405`, both before the query is looked at.
 
-| path                                              | 200 response                                                                                                                               |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `GET /healthz`                                    | `{"ok":true}` — the process is up                                                                                                          |
-| `GET /readyz`                                     | `{"ok":true}` — the store can be read; otherwise `503` `{"ok":false}`                                                                      |
-| `GET /api/v1/projects`                            | array of `{ id, name, repo?, registeredAt, waves, lanes, lastPush?, stale }`, see below                                                    |
-| `GET /api/v1/projects/<id>/waves`                 | array of `{ wave, receivedAt, intervalSeconds, lanes, stale, retained }`, `lanes` a count, newest receive first                            |
-| `GET /api/v1/projects/<id>/lanes`                 | `{ project: { id, name, repo? }, waves: [...], lanes: [...], truncated }`, see 5.1.1                                                       |
-| `GET /api/v1/projects/<id>/waves/<wave>`          | `{ envelope, receivedAt, stale, staleAfterMs }`, where `envelope` is the stored envelope with `lanes[].derived.alive` possibly `"unknown"` |
-| `GET /api/v1/attention`                           | `{ lanes: [{ project, wave, lane, seat?, reasons, receivedAt, stale, pr? }], projects: [{ id, attention }], truncated }`, see below        |
-| `GET /`, `GET /p/<id>` and `GET /p/<id>/w/<wave>` | the status page (`public/index.html`)                                                                                                      |
-| `GET /<static file>`                              | a file from `public`, allow-listed extensions only                                                                                         |
+| path                                              | 200 response                                                                                                                                      |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /healthz`                                    | `{"ok":true}` — the process is up                                                                                                                 |
+| `GET /readyz`                                     | `{"ok":true}` — the store can be read; otherwise `503` `{"ok":false}`                                                                             |
+| `GET /api/v1/projects`                            | array of `{ id, name, repo?, registeredAt, waves, lanes, lastPush?, stale }`, see below                                                           |
+| `GET /api/v1/projects/<id>/waves`                 | array of `{ wave, receivedAt, intervalSeconds, lanes, stale, retained }`, `lanes` a count, newest receive first                                   |
+| `GET /api/v1/projects/<id>/lanes`                 | `{ project: { id, name, repo? }, waves: [...], wavesOmitted, lanes: [...], truncated }`, see 5.1.1                                                |
+| `GET /api/v1/projects/<id>/waves/<wave>`          | `{ envelope, receivedAt, stale, staleAfterMs }`, where `envelope` is the stored envelope with `lanes[].derived.alive` possibly `"unknown"`        |
+| `GET /api/v1/attention`                           | `{ lanes: [{ project, wave, lane, seat?, reasons, receivedAt, stale, pr? }], projects: [{ id, attention }], truncated, wavesOmitted }`, see below |
+| `GET /`, `GET /p/<id>` and `GET /p/<id>/w/<wave>` | the status page (`public/index.html`)                                                                                                             |
+| `GET /<static file>`                              | a file from `public`, allow-listed extensions only                                                                                                |
 
 In a project summary `waves` is a count, `lanes` is the number of lanes in the
 project's **retained** waves summed from the wave heads the route already reads,
@@ -335,25 +335,39 @@ whatever else it is carrying (`attentionReasons`,
 `packages/server/src/domain/attention.ts:40-72`). Only the waves the server
 received in the last 72 hours take part, counted on the receive time as
 `nowMs - Date.parse(receivedAt) <= 72 * 60 * 60 * 1000` (`inAttentionWindow`,
-`ATTENTION_WINDOW_MS`, `…/domain/attention.ts:75-80`, `21`). The lanes are
-ordered by receive time descending and cut at 200 (`MAX_ATTENTION_LANES`,
-`…/domain/attention.ts:24`); the sort is stable, so lanes received within the
-same millisecond keep the order they were found in, and `truncated` says whether
-that cut anything. `projects` carries one entry per registered project, in the
-order the registry answers it, and `attention` counts that project's lanes
-**before** the cut — a project whose lanes the cap left out still says how many
-it wanted. The route reads the wave heads of every project and then the lanes of
-the waves still inside the window, through the same cache the project listing
-uses, and never `listSnapshots`: a fleet of projects is answered from one wave
-each. A wave's staleness here is read from the snapshot it answered with — its
-own receive time and its own interval — so a push that lands between the heads and
-the snapshot is judged by the push (`listAttention`,
-`packages/server/src/application/read-model.ts:693-755`).
+`ATTENTION_WINDOW_MS`, `…/domain/attention.ts:75-80`, `21`). Those heads are
+collected from every project and sorted newest receive first before any snapshot
+is read, and at most `MAX_ATTENTION_WAVES` (256) of them are read at all, so
+which waves a request reads is decided by receive time and never by the order the
+store answered its heads in. `wavesOmitted` is how many in-window waves that left
+out, and `truncated` is `true` whenever it is above zero: the list may then be
+missing lanes, and no other field says how many waves were behind them.
+
+The lanes are ordered by receive time descending and cut at 200
+(`MAX_ATTENTION_LANES`, `…/domain/attention.ts:24`); the sort is stable, so lanes
+received within the same millisecond keep the order they were found in.
+`projects` carries one entry per registered project, in the order the registry
+answers it, and `attention` counts that project's lanes **before** the lane cut —
+a project whose lanes the cap left out still says how many it wanted. The count
+covers the waves that were **read**, so a project none of whose waves was read is
+still there, with `0`.
+
+The route reads the wave heads of every project and then the lanes of the waves
+still inside the window, through the same cache the project listing uses, and
+never `listSnapshots`: a fleet of projects is answered from one wave each.
+`MAX_ATTENTION_WAVES` is below the cache's own wave bound (`MAX_CACHED_WAVES`,
+512), so the wave bound alone can never make one request evict the entry it is
+about to read next; the row bound (`MAX_CACHED_ROWS`) still can, when the waves
+are large ones, which is what the cache is for. A wave's staleness here is read
+from the snapshot it answered with — its own receive time and its own interval —
+so a push that lands between the heads and the snapshot is judged by the push
+(`listAttention`, `packages/server/src/application/read-model.ts:730-822`;
+`MAX_ATTENTION_WAVES`, `…/read-model.ts:80-90`).
 
 (`route`, `packages/server/src/infrastructure/http-routes.ts:116`;
 `replyFor`, `readyReply`, `packages/server/src/infrastructure/http-server.ts:98-145`;
 `ProjectSummary`, `WaveSummary`, `WaveView`,
-`packages/server/src/application/read-model.ts:69-113`;
+`packages/server/src/application/read-model.ts:91-135`;
 `SnapshotHead`, `packages/server/src/application/ports/store.ts:8-13`)
 
 #### 5.1.1 `GET /api/v1/projects/<id>/lanes`
@@ -364,6 +378,7 @@ its waves needs no request per wave:
 ```
 { project: { id, name, repo? },
   waves:  [ { wave, receivedAt, intervalSeconds, lanes, stale, retained } ],
+  wavesOmitted,
   lanes:  [ { wave, id, seat?,
               reported?: { stage, event, ts, pr?, round? },
               derived: { alive, exit?, gate?, pr?, diff?, planReview?, risk?,
@@ -372,10 +387,24 @@ its waves needs no request per wave:
   truncated }
 ```
 
-`waves` is exactly what `GET /api/v1/projects/<id>/waves` answers, in the same
-order, so the wave strip beside the table needs no second request. `lanes` holds
-the rows of the waves this request covers, newest wave first and each wave's own
-order within it, and a row's `wave` names the wave it came from.
+`waves` is the newest `MAX_LISTED_WAVES` (1 000) of what
+`GET /api/v1/projects/<id>/waves` answers, in the same order, so the wave strip
+beside the table needs no second request. `lanes` holds the rows of the waves this
+request covers, newest wave first and each wave's own order within it, and a row's
+`wave` names the wave it came from.
+
+**The wave list is cut; the rows are not.** `waves` holds at most the newest 1 000
+heads, because nothing deletes a wave past the retention and a project that pushes
+a new wave id every ten minutes reaches a thousand of them in a week; at about 190
+bytes a head that bounds the strip near 190 KiB. Retention is a function of the
+receive time alone (`isRetained`, section 4), so in this newest-first list every
+retained head already precedes every unretained one: the bound never keeps a wave
+past retention in place of a retained one. `wavesOmitted` is how many heads are
+missing. The **rows** are not cut with the list — the row loop walks every head
+the store holds and its own bounds below stop it, so a wave too old to be listed
+may still have its lanes in `lanes`, and `truncated` means exactly what it did
+before this bound existed (`MAX_LISTED_WAVES`,
+`packages/server/src/application/read-model.ts:59-68`).
 
 **What a row never carries.** `reported.detail`; the text of
 `derived.log.tail`, which is sent as a boolean that says whether a tail was
@@ -391,9 +420,9 @@ present holding nothing: `project.repo`, `seat`, `reported`, `reported.pr`,
 this.
 
 **Scope.** By default only the project's **retained** waves are listed
-(section 4); a wave past the retention is still in `waves`, with
-`retained: false`, and contributes no rows. `?all=1` lists every wave the store
-holds.
+(section 4); a wave past the retention is still in `waves` while the bound has
+room for it, with `retained: false`, and contributes no rows. `?all=1` lists every
+wave the store holds.
 
 **The query.** The part of the target after the first `?` must be empty — no `?`
 at all, or a bare trailing `?` — or exactly `all=1`. Anything else is a `400`
@@ -425,8 +454,8 @@ are not listed without reading it:
 it was left in the wave a bound was spent in or in any later wave the heads say
 has lanes (`MAX_PROJECT_LANES`, `MAX_PROJECT_LANES_BYTES`,
 `ROW_OVERHEAD_BYTES`, `MAX_WAVES_PER_READ`,
-`packages/server/src/application/read-model.ts:30`, `41`, `48`, `57`; `listLanes`,
-`…/read-model.ts:611-684`).
+`packages/server/src/application/read-model.ts:30`, `41`, `48`, `57`;
+`listLanes`, `…/read-model.ts:644-728`).
 
 **Cost and size.** The route reads the project's wave heads and then the full
 snapshot of each wave it lists, and never `listSnapshots`. The read model keeps
@@ -452,9 +481,9 @@ with `"`, 6.5 MB filled with `中` and 11.4 MB filled with a lone surrogate; the
 byte bound answers 832, 627 and 360 rows of the 2 000 instead, in about 2.0 MB
 each. Each row's cost is measured once, when its cache entry is built, by
 `utf8Length` over the row's own JSON (`utf8Length`, `opensPairAt`,
-`packages/server/src/application/read-model.ts:343-383`; the cache bounds,
+`packages/server/src/application/read-model.ts:384-415`; the cache bounds,
 `MAX_CACHED_WAVES`, `MAX_CACHED_ROWS`, `remember`, `cachedWave`,
-`…/read-model.ts:66-67`, `511-561`).
+`…/read-model.ts:77-78`, `543-593`).
 
 `404` `{"error":"not found"}` for an unknown project, as on the other project
 routes, and `405` with `Allow: GET, HEAD` for any other method.

@@ -381,10 +381,10 @@ Every lane is merged and deployed; the live image is `2fcd47c`.
 - K7 was not in the plan. It was the owner's request after K5b: the rail's project list became a drop-down in the top bar, the rail went, and a footer carries the legend, "read-only" and the status note. A three-wave mark sits beside the word `waves`.
 - The drawer's `<dialog>` is made by `app.js` through `el()` and placed beside `#root`, not written into `index.html`, so every element on the page is still made by `dom.js`.
 
-**Recorded and not fixed.** Each is Low, and none was worth a fix round.
+**Recorded and not fixed** — each is Low, and none was worth a fix round then.
 
-- **Lanes route.** Its response's `waves` list is unbounded: about 9.7 MiB at 52 000 heads.
-- **Attention route.** It has no per-request bound on waves, and its cache thrashes past 512 waves. These two need a lane of their own.
+- **Lanes route.** Its response's `waves` list was unbounded: about 9.7 MiB at 52 000 heads. **Fixed** by lane K8 — at most `MAX_LISTED_WAVES` (1 000) heads, with `wavesOmitted` saying how many were left out; the rows are not cut with them.
+- **Attention route.** It had no per-request bound on waves, and its cache thrashed past 512 waves. **Fixed** by lane K8 — at most `MAX_ATTENTION_WAVES` (256) waves read per request, newest first, with `wavesOmitted` saying how many in-window waves were not read.
 - **Focus.**
   - It jumps after a reason chip is activated.
   - Arrowing through a closed `select` pushes one history entry per step.

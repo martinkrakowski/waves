@@ -63,6 +63,7 @@ export function projectLanes(
   return {
     project: { id: "alpha", name: "Alpha" },
     waves: [waveSummary()],
+    wavesOmitted: 0,
     lanes: [laneRow()],
     truncated: false,
     ...overrides,
@@ -153,6 +154,7 @@ export function attentionView(
     lanes: [],
     projects: [],
     truncated: false,
+    wavesOmitted: 0,
     ...overrides,
   };
 }

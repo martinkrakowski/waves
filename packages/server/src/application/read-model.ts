@@ -57,6 +57,17 @@ export const ROW_OVERHEAD_BYTES = 256;
 export const MAX_WAVES_PER_READ = 200;
 
 /**
+ * The most wave heads one project's listing answers with, whatever the project
+ * holds. A project that pushes a new wave id every ten minutes reaches a
+ * thousand of them in a week, and the page's wave strip is unreadable long
+ * before that; at about 190 bytes a head this bounds the strip near 190 KiB. The
+ * rows are not cut with it — the row loop walks every head, as it always has,
+ * and its own bounds stop it — so this bounds what the wave strip carries and
+ * nothing else in the answer.
+ */
+export const MAX_LISTED_WAVES = 1_000;
+
+/**
  * How many waves' computed rows one read model holds at once, and how many rows
  * they may add up to. The wave count is generous on purpose: a poll that asks
  * for more waves than this would evict each of them just before it asked for it,
@@ -65,6 +76,17 @@ export const MAX_WAVES_PER_READ = 200;
  */
 export const MAX_CACHED_WAVES = 512;
 export const MAX_CACHED_ROWS = 10_000;
+
+/**
+ * The most waves the cross-project view reads in one request, a fact about the
+ * cache rather than about the view: it is below `MAX_CACHED_WAVES`, so the wave
+ * bound alone can never make one request evict the entry it is about to ask for
+ * next. The row bound still can, when the waves are large ones, which is what the
+ * cache is for. Every wave received inside the attention window is collected and
+ * sorted before any of them is read, so the waves that are read are the newest
+ * ones whatever order the store answered its heads in.
+ */
+export const MAX_ATTENTION_WAVES = 256;
 
 export interface ProjectSummary {
   readonly id: string;
@@ -136,6 +158,14 @@ export interface AttentionView {
     readonly attention: number;
   }[];
   readonly truncated: boolean;
+  /**
+   * The waves inside the attention window that this request did not read, which
+   * `truncated` is then `true` for: the list may be missing lanes a reader would
+   * otherwise see, and no other field of this view says how many. While it is
+   * above zero each project's `attention` count covers the waves that were read
+   * only, so a project none of whose waves was read still appears, with `0`.
+   */
+  readonly wavesOmitted: number;
 }
 
 /**
@@ -190,6 +220,8 @@ export interface ProjectLanesView {
     readonly repo?: string;
   };
   readonly waves: readonly WaveSummary[];
+  /** The heads `MAX_LISTED_WAVES` left out of `waves`, which is the one it cut. */
+  readonly wavesOmitted: number;
   readonly lanes: readonly LaneRow[];
   readonly truncated: boolean;
 }
@@ -601,12 +633,13 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
     },
 
     /**
-     * Every lane of one project's waves in the order the wave route already
-     * answers its waves: newest wave first, and each wave's own order inside it.
-     * `all` widens the scope from the waves the store is meant to be holding to
-     * every wave it holds. The rows are the cache's, so a poll that finds nothing
-     * new parses nothing, and the read stops at whichever bound it reaches first
-     * rather than reading the waves whose rows it would have to throw away.
+     * Every lane of one project's waves in the order the wave route answers its
+     * waves, newest wave first, and each wave's own order inside it — as far as
+     * `MAX_LISTED_WAVES` heads carry that list. `all` widens the scope from the
+     * waves the store is meant to be holding to every wave it holds. The rows are
+     * the cache's, so a poll that finds nothing new parses nothing, and the read
+     * stops at whichever bound it reaches first rather than reading the waves
+     * whose rows it would have to throw away.
      */
     async listLanes(
       projectId: string,
@@ -617,10 +650,16 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
         return undefined;
       }
       const nowMs = now();
-      const waves = waveSummaries(
+      const heads = waveSummaries(
         await store.listSnapshotHeads(projectId),
         nowMs,
       );
+      // Which heads are LISTED and which are READ for rows are separate
+      // questions, and only the first is cut here: the rows loop below walks
+      // every head, as it always has, and its own bounds stop it. So the rows and
+      // `truncated` are exactly what they were, and a wave too old to be listed
+      // can still have its lanes in the table.
+      const waves = heads.slice(0, MAX_LISTED_WAVES);
       const rows: LaneRow[] = [];
       let bytes = 0;
       let read = 0;
@@ -628,7 +667,7 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
       // Set when a bound has stopped the rows. No later wave can add one either,
       // and each of them that holds lanes means rows that are not listed.
       let stopped = false;
-      for (const summary of waves) {
+      for (const summary of heads) {
         if (!all && !summary.retained) {
           continue;
         }
@@ -678,6 +717,12 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
           ...(project.repo === undefined ? {} : { repo: project.repo }),
         },
         waves,
+        // Retention is a function of the receive time alone (`isRetained`), so in
+        // a newest-first list every retained head already precedes every
+        // unretained one: cutting at the bound keeps every retained head ahead of
+        // every wave past retention, which is the one a reader cares least about,
+        // with nothing left to reorder.
+        wavesOmitted: heads.length - waves.length,
         lanes: rows,
         truncated,
       };
@@ -689,57 +734,74 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
      * of the waves still inside the attention window, through the same cache the
      * project listing uses, and never `listSnapshots`: a fleet of projects is
      * answered from one wave each.
+     *
+     * The heads inside the window are collected and sorted before any snapshot is
+     * read, so which waves the request reads is decided by receive time rather
+     * than by the order the store answered its heads in, and it reads at most
+     * `MAX_ATTENTION_WAVES` of them. Everything the answer says about a project
+     * is then counted from the waves that were read.
      */
     async listAttention(): Promise<AttentionView> {
       const nowMs = now();
       const projects = await store.listProjects();
-      const matched: AttentionLane[] = [];
-      const perProject: { readonly id: string; readonly attention: number }[] =
-        [];
+      const inWindow: {
+        readonly project: string;
+        readonly head: SnapshotHead;
+      }[] = [];
       for (const project of projects) {
-        let count = 0;
         const heads = await store.listSnapshotHeads(project.id);
         for (const head of heads) {
-          if (!inAttentionWindow(Date.parse(head.receivedAt), nowMs)) {
-            continue;
-          }
-          const entry = await cachedWave(project.id, head);
-          if (entry === undefined) {
-            // The wave went away between the heads and the snapshot: another
-            // push for the same wave, or a deletion. Either way it is not there
-            // to be listed, and there is nothing to fail this answer over.
-            continue;
-          }
-          const stale = isStale(
-            Date.parse(entry.receivedAt),
-            entry.intervalSeconds,
-            nowMs,
-          );
-          for (const lane of entry.lanes) {
-            const reasons = stale ? lane.staleReasons : lane.freshReasons;
-            if (reasons.length === 0) {
-              continue;
-            }
-            count += 1;
-            matched.push(
-              attentionLane(
-                project.id,
-                head,
-                lane,
-                reasons,
-                entry.receivedAt,
-                stale,
-              ),
-            );
+          if (inAttentionWindow(Date.parse(head.receivedAt), nowMs)) {
+            inWindow.push({ project: project.id, head });
           }
         }
-        // The count is what the project asked for, not what the cap below lets
-        // through: a reader is told how much the list it is holding is not.
-        perProject.push({ id: project.id, attention: count });
+      }
+      // Newest receive first, and `Array.prototype.sort` is stable, so waves that
+      // arrived within the same millisecond keep the order they were found in:
+      // project order, then wave order.
+      inWindow.sort(
+        (left, right) =>
+          Date.parse(right.head.receivedAt) - Date.parse(left.head.receivedAt),
+      );
+      const toRead = inWindow.slice(0, MAX_ATTENTION_WAVES);
+      // Every registered project answers, in the order the registry answered it,
+      // and a project none of whose waves was read is one of them with `0`.
+      const counts = new Map<string, number>();
+      const matched: AttentionLane[] = [];
+      for (const { project, head } of toRead) {
+        const entry = await cachedWave(project, head);
+        if (entry === undefined) {
+          // The wave went away between the heads and the snapshot: another push
+          // for the same wave, or a deletion. Either way it is not there to be
+          // listed, and there is nothing to fail this answer over.
+          continue;
+        }
+        const stale = isStale(
+          Date.parse(entry.receivedAt),
+          entry.intervalSeconds,
+          nowMs,
+        );
+        for (const lane of entry.lanes) {
+          const reasons = stale ? lane.staleReasons : lane.freshReasons;
+          if (reasons.length === 0) {
+            continue;
+          }
+          counts.set(project, (counts.get(project) ?? 0) + 1);
+          matched.push(
+            attentionLane(
+              project,
+              head,
+              lane,
+              reasons,
+              entry.receivedAt,
+              stale,
+            ),
+          );
+        }
       }
       // `Array.prototype.sort` is stable, so lanes that arrived within the same
-      // millisecond keep the order they were found in: project order, then wave
-      // order, then the order the wave itself lists its lanes in.
+      // millisecond keep the order they were found in: wave order, then the order
+      // the wave itself lists its lanes in.
       const lanes = matched
         .slice()
         .sort(
@@ -747,10 +809,20 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
             Date.parse(right.receivedAt) - Date.parse(left.receivedAt),
         )
         .slice(0, MAX_ATTENTION_LANES);
+      // The count is what the project asked for, not what the lane cap below lets
+      // through: a reader is told how much the list it is holding is not. A
+      // project whose waves were none of them read has no count at all and
+      // answers zero.
+      const perProject = projects.map((project) => ({
+        id: project.id,
+        attention: counts.get(project.id) ?? 0,
+      }));
+      const wavesOmitted = inWindow.length - toRead.length;
       return {
         lanes,
         projects: perProject,
-        truncated: matched.length > lanes.length,
+        truncated: wavesOmitted > 0 || matched.length > lanes.length,
+        wavesOmitted,
       };
     },
 

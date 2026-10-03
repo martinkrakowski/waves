@@ -411,7 +411,8 @@ function waveItem(model, head, nowMs) {
  * retention are left out until the reader asks for them, which is what the
  * toggle below the list is for: it is a link to the same page with the query
  * that asks for them, so the choice survives a copy of the address and a
- * refresh.
+ * refresh. The heads the route's own bound left out are said under the list,
+ * because the strip is the only place a reader can see that they are not there.
  */
 function waveStrip(model, nowMs) {
   const view = model.lanes;
@@ -442,6 +443,24 @@ function waveStrip(model, nowMs) {
     attrs: { "aria-label": "Waves", class: "wave-strip" },
     children,
   });
+}
+
+/**
+ * What the route's bound left out of the wave strip, said below it and only when
+ * it left something out: a count of zero is an answer the reader already has.
+ */
+function omittedWaves(model) {
+  const omitted = model.lanes.wavesOmitted;
+  if (omitted === 0) {
+    return [];
+  }
+  const one = omitted === 1;
+  return [
+    el("p", {
+      attrs: { class: "note-inline" },
+      text: `${omitted} older wave${one ? " is" : "s are"} not listed.`,
+    }),
+  ];
 }
 
 /** One number, with the name it counts, in a box of its own. */
@@ -1035,13 +1054,14 @@ export function renderProject(model, nowMs, handlers) {
     children.push(
       el("p", { attrs: { class: "empty" }, text: NO_SUCH_WAVE }),
       waveStrip(model, nowMs),
+      ...omittedWaves(model),
     );
     return el("section", {
       attrs: { class: "view project" },
       children,
     });
   }
-  children.push(waveStrip(model, nowMs));
+  children.push(waveStrip(model, nowMs), ...omittedWaves(model));
   const scope = scopeOf(view, model.wave);
   children.push(laneCounters(scope));
   const stale = staleWavesOf(view, model.wave, model.query.all);
