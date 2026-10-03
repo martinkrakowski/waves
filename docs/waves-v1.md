@@ -429,7 +429,7 @@ unauthenticated request to the lanes route with a bad query is a `401` and a
 | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GET /healthz`                                    | `{"ok":true}` — the process is up                                                                                                                 |
 | `GET /readyz`                                     | `{"ok":true}` — the store can be read; otherwise `503` `{"ok":false}`                                                                             |
-| `GET /api/v1/projects`                            | array of `{ id, name, repo?, registeredAt, waves, lanes, lastPush?, stale, status? }`, see below                                                  |
+| `GET /api/v1/projects`                            | array of `{ id, name, repo?, registeredAt, waves, lanes, lastPush?, stale, recentWaves, status? }`, see below                                     |
 | `GET /api/v1/projects/<id>/waves`                 | array of `{ wave, receivedAt, intervalSeconds, lanes, stale, retained }`, `lanes` a count, newest receive first                                   |
 | `GET /api/v1/projects/<id>/lanes`                 | `{ project: { id, name, repo? }, waves: [...], wavesOmitted, lanes: [...], truncated }`, see 5.1.1                                                |
 | `GET /api/v1/projects/<id>/waves/<wave>`          | `{ envelope, receivedAt, stale, staleAfterMs }`, where `envelope` is the stored envelope with `lanes[].derived.alive` possibly `"unknown"`        |
@@ -439,11 +439,69 @@ unauthenticated request to the lanes route with a bad query is a `401` and a
 | `GET /<static file>`                              | a file from `public`, allow-listed extensions only                                                                                                |
 
 In a project summary `waves` is a count, `lanes` is the number of lanes in the
-project's **retained** waves summed from the wave heads the route already reads,
-`lastPush` is the newest `receivedAt` in the project, and `stale` is the
-staleness of the project's **newest** wave by the rule of section 4; a project
-with no waves is not stale and has no lanes. The token digest is never part of a
-response.
+project's **retained** waves summed from the wave heads, `lastPush` is the newest
+`receivedAt` in the project, and `stale` is the staleness of the project's
+**newest** wave by the rule of section 4; a project with no waves is not stale
+and has no lanes. The token digest is never part of a response.
+
+`recentWaves` is the project's newest at most `MAX_RECENT_WAVES` (12) **retained**
+waves, newest receive first, and it is never absent: a project with no retained
+wave answers `[]`. Each entry is
+`{ wave, receivedAt, lanes, state, stale, merged }`:
+
+- `wave` and `receivedAt` name the wave and when this server received it.
+- `lanes` is how many lanes the wave holds, and `merged` how many of them have a
+  pull request whose state is `merged`. A closed pull request is answered and is
+  not counted here, and `merged` is never greater than `lanes`.
+- `stale` is the rule of section 4 applied to **this wave's** own receive time
+  and its own `intervalSeconds`, the same way `WaveSummary.stale` and the
+  attention view report a wave's staleness. It is a separate boolean from
+  `state`, because every finished wave goes stale when its pushes stop.
+- `state` is what the wave's lanes say about the wave, decided in this order and
+  no other (`waveState`, `packages/server/src/domain/wave-state.ts:52-72`):
+
+| state     | holds when                                                                                                                                                  |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `failed`  | some lane whose pull request is neither merged nor closed is not alive, and either reported `event: "failed"` or has an `exit` that is defined and non-zero |
+| `done`    | there is at least one lane and every lane's pull request is `merged` or `closed`                                                                            |
+| `running` | the wave is not stale and some lane is alive (the raw `derived.alive`, before staleness resolves it to `"unknown"`)                                         |
+| `settled` | everything else, including a wave with no lanes at all                                                                                                      |
+
+A `failed` wave is therefore one with a lane that asked and is not being asked
+any more: a merged or closed pull request is answered whatever the lane left
+behind, and `attentionReasons` makes the same exclusion (section 5.1). The `!alive`
+requirement holds for a **reported** failure as well as for an exit, which is one
+deliberate difference from the `failed` reason: a lane that is still alive has
+not finished failing, so the wave is `running` instead. `running` says a lane is
+alive in a wave that has not gone past its own interval, so an alive lane in a
+stale wave is `settled` — the pusher has stopped saying. The state summarises
+what the lanes said, not what the work is.
+
+**The summary reads wave files.** It used to read heads and never wave files,
+which is why `lanes` was summed from the heads it had already read. It no longer
+is: the recent waves are read through the same cache the project listing and
+`GET /api/v1/attention` use (`cachedWave`,
+`packages/server/src/application/read-model.ts:725-746`), so a poll over a fleet
+of N projects parses at most 12 × N snapshots when it is cold and **none** when
+it is warm — the second poll finds the same heads describing the same waves and
+answers from the cache. A wave the cache answers `undefined` for — one that went
+away between the heads and the snapshot — is skipped rather than listed empty,
+because there is nothing there to describe.
+
+The bound is a fact about the cache as much as about the answer: 12 × N stays
+inside `MAX_CACHED_WAVES` (512) while the rows it holds stay under
+`MAX_CACHED_ROWS` (10 000) for about 42 projects. Past that a `?all=1` listing of
+one large project can evict fleet entries, which then cost one parse each on the
+next poll. A wave's `receivedAt`, `lanes` and `stale` are read from the entry
+rather than from the head the wave was chosen by, as `listAttention` already does
+— a push can land between the heads and the snapshot, and a `lanes` from the head
+beside a `merged` from the snapshot would break `merged <= lanes`. Retention and
+the order come from the same `waveSummaries` every other listing uses, so the
+waves listed are the newest retained ones whatever order the store answered its
+heads in, and a wave past the retention is never read at all (`recentWaves`,
+`…/read-model.ts:786-802`; `recentWave`, `…/read-model.ts:647-671`; `MAX_RECENT_WAVES`,
+`…/read-model.ts:91-101`; `RecentWave`, `…/read-model.ts:114-133`; `listProjects`,
+`…/read-model.ts:805-837`).
 
 `status` is the project's own status document reduced to the two facts a fleet
 card shows, never the document itself:
@@ -453,8 +511,8 @@ present exactly when the document carries the field they come from — a
 `prsSkipped` of `0` a reader would take for a count, and a document that never
 mentioned `prs` did not report one. `stale` is the rule of section 4 applied to
 the status's own receive time and its own `intervalSeconds`
-(`ProjectSummary.status`, `packages/server/src/application/read-model.ts:117-131`;
-`getStatus`, `…/read-model.ts:947-958`).
+(`ProjectSummary.status`, `packages/server/src/application/read-model.ts:163-177`;
+`getStatus`, `…/read-model.ts:1096-1107`).
 
 `GET /api/v1/attention` is the same view across every registered project. A lane
 is listed when it holds at least one of six reasons, and the reasons always come
