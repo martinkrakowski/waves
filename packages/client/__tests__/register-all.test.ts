@@ -226,7 +226,7 @@ describe("register-all", () => {
     expect(result.code).toBe(1);
     expect(result.requests).toHaveLength(1);
     expect(result.err).toEqual([
-      "the server refused the enrollment token for this run, stopping: 401 Unauthorized\n  the admin token was refused",
+      `${ONE}: the server refused the enrollment token for this run, stopping: 401 Unauthorized\n  the admin token was refused`,
     ]);
     expect(result.out).toEqual([
       "0 skipped, 0 registered, 0 conflicts, 1 failed",
@@ -249,7 +249,7 @@ describe("register-all", () => {
     expect(result.code).toBe(1);
     expect(result.requests).toHaveLength(1);
     expect(result.err).toEqual([
-      "the server refused the enrollment token for this run, stopping: 403 Forbidden\n  enrollment ceiling reached",
+      `${ONE}: the server refused the enrollment token for this run, stopping: 403 Forbidden\n  enrollment ceiling reached`,
     ]);
   });
 
@@ -294,7 +294,7 @@ describe("register-all", () => {
     expect(result.code).toBe(1);
     expect(result.requests).toHaveLength(1);
     expect(result.err).toEqual([
-      "the server asked to wait 61s, stopping: 429 Too Many Requests",
+      `${ONE}: the server asked to wait 61s, stopping: 429 Too Many Requests`,
     ]);
     expect(result.out).toEqual([
       "0 skipped, 0 registered, 0 conflicts, 1 failed",
@@ -547,7 +547,7 @@ describe("register-all", () => {
     expect(result.out).toEqual([]);
   });
 
-  it("wants a token it can read before it reads the list's entries", async () => {
+  it("reads the list before it asks for a token it can read", async () => {
     const built = harness({
       files: {
         [LIST_PATH]: { text: list({ id: ONE, name: "One" }), mode: 0o644 },

@@ -303,7 +303,7 @@ describe("a token never leaves the file it was written to", () => {
     );
     expect(refused.code).toBe(1);
     expect(refused.lines).toContain(
-      "the server refused the enrollment token for this run, stopping: 401 Unauthorized\n  the admin token was refused",
+      "waves-leak-none: the server refused the enrollment token for this run, stopping: 401 Unauthorized\n  the admin token was refused",
     );
     expectNoSecrets(refused);
   });

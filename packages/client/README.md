@@ -83,7 +83,7 @@ TLS verification is always on. Plain `http://` is accepted for loopback hosts wi
 
 ## Exit codes
 
-`0` success, `1` a server or network failure (after at most two retries for a request that never reached the server, and a bounded wait on 429), `2` a usage, configuration or local-validation error. A `register-all` run exits `2` for anything wrong with its list or its credential — having sent nothing — and `1` when a request failed or the run stopped; conflicts alone leave it at `0`.
+`0` success, `1` a server or network failure (after at most two retries for a network error and, for `push`, a 5xx, and a bounded wait on 429; `register` and `register-all` never retry a 5xx, because the request may already have minted a project), `2` a usage, configuration or local-validation error. A `register-all` run exits `2` for anything wrong with its list or its credential — having sent nothing — and `1` when a request failed or the run stopped; conflicts alone leave it at `0`.
 
 ## Licence
 

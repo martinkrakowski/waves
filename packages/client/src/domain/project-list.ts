@@ -1,3 +1,4 @@
+import { safeText } from "./reply.js";
 import { isProjectId } from "@hexagen-monaco/waves-contract";
 
 import { carriesCredentials } from "./endpoint.js";
@@ -93,7 +94,9 @@ function readEntry(value: unknown, index: number, ids: Set<string>): EntryRead {
   const errors: string[] = [];
   for (const key of Object.keys(value)) {
     if (!ENTRY_KEYS.includes(key)) {
-      errors.push(`entry ${index}: ${key} is not a key a project has`);
+      errors.push(
+        `entry ${index}: ${safeText(key)} is not a key a project has`,
+      );
     }
   }
   const rawId = own(value, "id");

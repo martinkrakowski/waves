@@ -153,7 +153,7 @@ function report(
     counts.failed += 1;
     if (result.status === 401 || result.status === 403) {
       deps.err(
-        `the server refused the enrollment token for this run, stopping: ${result.status} ${reasonPhrase(result.status)}${serverFailure(result.body)}`,
+        `${id}: the server refused the enrollment token for this run, stopping: ${result.status} ${reasonPhrase(result.status)}${serverFailure(result.body)}`,
       );
       return false;
     }
@@ -166,7 +166,7 @@ function report(
     counts.failed += 1;
     if (result.seconds !== undefined) {
       deps.err(
-        `the server asked to wait ${result.seconds}s, stopping: 429 ${reasonPhrase(429)}`,
+        `${id}: the server asked to wait ${result.seconds}s, stopping: 429 ${reasonPhrase(429)}`,
       );
       return false;
     }
