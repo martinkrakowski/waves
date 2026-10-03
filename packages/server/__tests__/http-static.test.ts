@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -8,7 +9,7 @@ import { readStaticFile } from "../src/infrastructure/http-static.js";
 import { cleanupHarnesses, startHarness } from "./http-harness.js";
 
 const CSP =
-  "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
+  "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
 
 function statusOf(raw: string): number {
   return Number(raw.split(" ")[1]);
@@ -62,6 +63,23 @@ describe("the placeholder page", () => {
     );
     expect(style.headers.get("content-type")).toBe("text/css; charset=utf-8");
     expect(await script.text()).toContain("use strict");
+  });
+
+  it("serves a font from the page's own directory with a font type", async () => {
+    const started = await startHarness({
+      publicDir: fileURLToPath(new URL("../public", import.meta.url)),
+    });
+
+    const response = await fetch(
+      `${started.origin}/fonts/inter-latin-wght.woff2`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("font/woff2");
+    expect(response.headers.get("content-security-policy")).toBe(CSP);
+    expect(response.headers.get("cache-control")).toBeNull();
+    const body = Buffer.from(await response.arrayBuffer());
+    expect(body.subarray(0, 4).toString("latin1")).toBe("wOF2");
   });
 
   it("answers HEAD for the page with no body", async () => {

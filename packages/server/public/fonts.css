@@ -1,0 +1,32 @@
+/*
+ * Every family the page has, and only the families the page has. The files are
+ * this service's own (`font-src 'self'`), one variable woff2 each, so a reader
+ * never reaches a font host: `swap` means the fallback is shown while the file
+ * arrives rather than an invisible page.
+ *
+ * Which of these a rule asks for is `--sans` and `--mono` in `tokens.css`.
+ */
+
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/inter-latin-wght.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Space Grotesk";
+  src: url("/fonts/space-grotesk-latin-wght.woff2") format("woff2");
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/jetbrains-mono-latin-wght.woff2") format("woff2");
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
