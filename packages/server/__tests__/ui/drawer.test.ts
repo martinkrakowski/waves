@@ -236,10 +236,14 @@ const CLOSERS: Readonly<Record<string, (node: HTMLDialogElement) => void>> = {
   "a cancel event": (node) =>
     node.dispatchEvent(new Event("cancel", { cancelable: true })),
   "an Escape keydown": (node) => escape(node),
-  "a click on the dialog itself": (node) =>
+  "a click on the dialog itself": (node) => {
+    node.dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
+    );
     node.dispatchEvent(
       new MouseEvent("click", { bubbles: true, cancelable: true }),
-    ),
+    );
+  },
 };
 
 function close(node: HTMLElement): void {
@@ -407,6 +411,28 @@ describe("closing the drawer", () => {
       new MouseEvent("click", { bubbles: true, cancelable: true }),
     );
     (dialog().querySelector("pre") as HTMLElement).dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    );
+
+    expect(dialog().open).toBe(true);
+    expect(browser.pushes).toStrictEqual([]);
+    app.stop();
+  });
+
+  it("stays open for a press inside it released over the backdrop", async () => {
+    const { app, browser } = harness({
+      pathname: "/p/alpha/w/w-3",
+      search: "?lane=wv-a",
+    });
+    app.start();
+    await flush();
+
+    // Selecting text in the tail and letting go outside: the browser answers
+    // with a click on the dialog, the nearest node both ends share.
+    (dialog().querySelector("#drawer-title") as HTMLElement).dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
+    );
+    dialog().dispatchEvent(
       new MouseEvent("click", { bubbles: true, cancelable: true }),
     );
 

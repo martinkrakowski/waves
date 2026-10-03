@@ -285,6 +285,23 @@ describe("a note about a copy", () => {
     app.stop();
   });
 
+  it("is not written by a copy that settles after the reader left and came back", async () => {
+    const clipboard = clipboardOf("writes");
+    const { app } = await booted({ clipboard });
+
+    button().click();
+    app.navigate("/p/alpha?seat=s2");
+    await flush();
+    app.navigate("/p/alpha");
+    await flush();
+    clipboard.release();
+    await flush();
+
+    // The same address, but not the same visit: this page copied nothing.
+    expect(said()).toBe("");
+    app.stop();
+  });
+
   it("is cleared even when the copy that is settling will never arrive", async () => {
     const clipboard = clipboardOf("refuses");
     const { app } = await booted({ clipboard });

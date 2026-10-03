@@ -95,6 +95,14 @@ export function createApp(deps) {
    * about, and a note left standing would claim a copy this page did not do.
    */
   let copied = "";
+  /**
+   * Which copy may still speak: bumped by every copy and every navigation, so a
+   * copy that settles late — after another copy, or after the reader left and
+   * came back to the same address — says nothing about a page it did not copy.
+   */
+  let copyCount = 0;
+  /** Whether the press that started the current click landed on the backdrop. */
+  let pressedOnBackdrop = false;
   let generation = 0;
   /**
    * The last project list the API gave us and the rail could show. It has its
@@ -303,9 +311,9 @@ export function createApp(deps) {
     return `${location.origin}${location.pathname}${location.search}`;
   }
 
-  /** What the copy did, said beside the button — unless the reader has moved on. */
-  function said(text, forUrl) {
-    if (forUrl !== address()) {
+  /** What the copy did, said beside the button — unless a later copy or a navigation came since. */
+  function said(text, mine) {
+    if (mine !== copyCount) {
       return;
     }
     copied = text;
@@ -327,6 +335,8 @@ export function createApp(deps) {
   function onCopy() {
     const lanes = data.lanes;
     const scope = scopeOf(lanes, route.wave);
+    copyCount += 1;
+    const mine = copyCount;
     const url = address();
     const text = digestOf({
       project: route.id,
@@ -339,21 +349,21 @@ export function createApp(deps) {
       url,
     });
     if (clipboard === undefined) {
-      said("Copy failed", url);
+      said("Copy failed", mine);
       return;
     }
     try {
       void clipboard.writeText(text).then(
         () => {
-          said("Digest copied", url);
+          said("Digest copied", mine);
         },
         () => {
-          said("Copy failed", url);
+          said("Copy failed", mine);
         },
       );
     } catch {
       // A clipboard that throws rather than refusing is the same answer.
-      said("Copy failed", url);
+      said("Copy failed", mine);
     }
   }
 
@@ -656,14 +666,23 @@ export function createApp(deps) {
     }
   }
 
+  /** Where the press began: a click is a backdrop click only if both ends were. */
+  function onDrawerPress(event) {
+    pressedOnBackdrop = event.target === dialog;
+  }
+
   /**
    * A click on the dialog itself is a click on the backdrop: the padding is on
-   * the drawer, so a click inside it has some other target and is left alone.
+   * the drawer, so a click inside it has some other target and is left alone. A
+   * press that began inside the drawer — selecting text in the tail, say — and
+   * was released over the backdrop is answered by the browser as a click on the
+   * dialog too, so the press is asked about as well.
    */
   function onDrawerClick(event) {
-    if (event.target === dialog) {
+    if (event.target === dialog && pressedOnBackdrop) {
       closeDrawer();
     }
+    pressedOnBackdrop = false;
   }
 
   /**
@@ -826,6 +845,7 @@ export function createApp(deps) {
     // One line for both branches below: whatever the address became, the note is
     // about a view that is no longer on screen.
     copied = "";
+    copyCount += 1;
     if (data !== undefined && sameProject(was, route) && wasAll === query.all) {
       draw();
       return;
@@ -1019,6 +1039,7 @@ export function createApp(deps) {
       root.after(dialog);
       dialog.addEventListener("cancel", onDrawerCancel);
       dialog.addEventListener("keydown", onDrawerKey);
+      dialog.addEventListener("mousedown", onDrawerPress);
       dialog.addEventListener("click", onDrawerClick);
       dialog.addEventListener("close", onDrawerClose);
     }
@@ -1045,6 +1066,7 @@ export function createApp(deps) {
       // change, and this close is the app's own rather than the browser's.
       dialog.removeEventListener("cancel", onDrawerCancel);
       dialog.removeEventListener("keydown", onDrawerKey);
+      dialog.removeEventListener("mousedown", onDrawerPress);
       dialog.removeEventListener("click", onDrawerClick);
       dialog.removeEventListener("close", onDrawerClose);
       if (dialog.open) {

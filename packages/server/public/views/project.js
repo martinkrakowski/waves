@@ -759,13 +759,6 @@ function searchFilter(chosen, handlers) {
 }
 
 /**
- * The filters, over the rows in scope and not over the rows the filter leaves:
- * a chip's count is what it is about to show, so it cannot be the count of what
- * is on screen already. The count at the end is the one number the filter does
- * move, and it is a status region so that narrowing the table is something a
- * reader is told rather than something they have to notice.
- */
-/**
  * The copy button and what it last said. It carries `data-key="digest"`, so the
  * app's own focus code finds it again by that key after the redraw the copy
  * causes — otherwise the reader's focus would be dropped at the top of the page
@@ -790,6 +783,13 @@ function copyDigest(model, handlers) {
   ];
 }
 
+/**
+ * The filters, over the rows in scope and not over the rows the filter leaves:
+ * a chip's count is what it is about to show, so it cannot be the count of what
+ * is on screen already. The count at the end is the one number the filter does
+ * move, and it is a status region so that narrowing the table is something a
+ * reader is told rather than something they have to notice.
+ */
 function toolbar(model, scope, handlers) {
   const shown = filterRows(scope, model.query).length;
   return el("div", {
