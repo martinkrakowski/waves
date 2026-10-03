@@ -1647,9 +1647,13 @@ describe("the attention view", () => {
           of,
           `wv${index}`,
           new Date(RECEIVED_AT_MS - index * 1_000).toISOString(),
-          // One lane in every other wave, so the lanes that match stay under the
-          // lane cap and only the wave bound can make this answer truncated.
-          index % 2 === 1 ? [laneOf(`wv${index}-a`)] : [],
+          // A lane that wants a reader in every other wave and a settled one in the
+          // rest: every wave holds a lane, so each takes a read slot, and the
+          // lanes that match stay under the lane cap, so only the wave bound can
+          // make this answer truncated.
+          index % 2 === 1
+            ? [laneOf(`wv${index}-a`)]
+            : [laneOf(`wv${index}-a`, { derived: { alive: false, exit: 0 } })],
         ),
       );
     }
@@ -1714,6 +1718,25 @@ describe("the attention view", () => {
       attention: 1,
     });
     expect(view.wavesOmitted).toBe(11);
+  });
+
+  it("gives no read slot to a wave with no lanes", async () => {
+    const store = new WaryStore("wv-absent");
+    // Many newer empty waves, then one older wave with a lane: the empty ones
+    // cannot match anything, so they neither crowd it out nor count as omitted.
+    await filled(store, "alpha", MAX_ATTENTION_WAVES + 20, () => []);
+    await store.putSnapshot(
+      pushed("alpha", "old", new Date(RECEIVED_AT_MS - 60_000).toISOString(), [
+        laneOf("old-a"),
+      ]),
+    );
+
+    const view = await model(store).listAttention();
+
+    expect(store.asked).toEqual(["old"]);
+    expect(view.wavesOmitted).toBe(0);
+    expect(view.truncated).toBe(false);
+    expect(view.lanes.map((entry) => entry.lane)).toEqual(["old-a"]);
   });
 
   it("omits no wave while the window holds fewer than the bound", async () => {

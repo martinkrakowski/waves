@@ -227,6 +227,18 @@ describe("the wave strip", () => {
     expect(host.querySelectorAll(".wave-strip > a")).toHaveLength(0);
   });
 
+  it("offers the toggle when the route left older waves out, though every listed one is retained", () => {
+    const host = renderProjectView({
+      lanes: projectLanes({
+        waves: [waveSummary({ wave: "w-3" })],
+        wavesOmitted: 5,
+      }),
+    });
+    expect(oneOf(host, ".wave-strip > a")?.textContent).toBe(
+      "show waves past retention",
+    );
+  });
+
   it("asks for the waves past retention, and offers to hide them again", () => {
     const hidden = renderProjectView({ lanes: LISTING });
     const toggle = oneOf(hidden, ".wave-strip > a");

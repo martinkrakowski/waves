@@ -426,7 +426,12 @@ function waveStrip(model, nowMs) {
       ],
     }),
   ];
-  if (view.waves.some((head) => head.retained === false)) {
+  // The heads the route left out are older than every listed one, so they may
+  // be the waves past retention; the toggle stays offered while any was left out.
+  if (
+    view.waves.some((head) => head.retained === false) ||
+    view.wavesOmitted > 0
+  ) {
     children.push(
       internalLink(
         model.query.all

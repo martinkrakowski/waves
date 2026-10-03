@@ -755,6 +755,11 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
       for (const project of projects) {
         const heads = await store.listSnapshotHeads(project.id);
         for (const head of heads) {
+          // A wave with no lanes can match no lane, so it takes no read slot and
+          // is not counted as left out.
+          if (head.lanes === 0) {
+            continue;
+          }
           const ms = Date.parse(head.receivedAt);
           if (inAttentionWindow(ms, nowMs)) {
             inWindow.push({ project: project.id, head, ms });
