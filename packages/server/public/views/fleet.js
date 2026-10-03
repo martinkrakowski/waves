@@ -59,24 +59,75 @@ const WAVE_FIELD = [
 ];
 
 /**
+ * **The phase of an ambient animation**, as the twelve class names `fleet.css`
+ * phases the field's three loops and the running segments' sheen with.
+ *
+ * `draw()` replaces every node on the ten-second pass and on every navigation,
+ * so an animation drawn at 0% each time starts again at 0% each time and the page
+ * jumps four times a minute. An inline `animation-delay` would say otherwise and
+ * is not available: the CSP's `style-src` is `'self'` and `style` is not in
+ * `dom.js`'s attribute table. So the phase goes into the markup as a class, and
+ * each delay in the stylesheet is a twelfth of that animation's period. Every
+ * period here is a whole number of seconds, so each twelfth is a real delay a
+ * stylesheet can write, and twelve of them is exactly one period again.
+ *
+ * The twelve classes differ from each other by more than a thousandth of a
+ * second, so two redraws a second apart land on different phases, and two
+ * redraws in the same twelfth differ by nothing at all — which is the whole of
+ * what is wanted, since a jump of a twelfth of a cycle is not one anybody can
+ * see.
+ */
+const PHASES = [
+  "phase-0",
+  "phase-1",
+  "phase-2",
+  "phase-3",
+  "phase-4",
+  "phase-5",
+  "phase-6",
+  "phase-7",
+  "phase-8",
+  "phase-9",
+  "phase-10",
+  "phase-11",
+];
+
+/** One twelfth of the longest loop on this page, in ms: the field's 37s wave. */
+const TWELFTH_MS = 37_000 / 12;
+
+/**
+ * Which of the twelve phases a draw at `nowMs` begins at. The clock is the app's
+ * own — the same `clock()` every stamp on the page is written from — so two
+ * readers, and one reader's own ten passes, agree about where in the cycle the
+ * page is.
+ */
+export function phaseOf(nowMs) {
+  return PHASES[Math.floor((nowMs % (TWELFTH_MS * 12)) / TWELFTH_MS)];
+}
+
+/**
+ * One count and the noun it counts, singular for one and plural for every other
+ * number — including zero, which is a count of none and reads as one. Every
+ * phrase this page builds around a count goes through here, so "1 needs" is
+ * never written beside "0 need" anywhere on it.
+ */
+function counted(count, singular, plural) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+/**
  * The live counts in one line, over the whole fleet and before any filter: the
- * stat cards below break the same three numbers down. Every one of them is
- * singular for one, because "1 projects" is a page that has not been read.
+ * stat cards below break the same three numbers down.
  */
 function heroCounts(counts) {
-  const projects =
-    counts.projects === 1 ? "1 project" : `${counts.projects} projects`;
-  const running =
-    counts.running === 1 ? "1 wave running" : `${counts.running} waves running`;
-  const asking =
-    counts.asking === 1
-      ? "1 lane asking for attention"
-      : `${counts.asking} lanes asking for attention`;
+  const projects = counted(counts.projects, "project", "projects");
+  const running = `${counted(counts.running, "wave", "waves")} running`;
+  const asking = `${counted(counts.asking, "lane asking", "lanes asking")} for attention`;
   return `${projects} · ${running} · ${asking}`;
 }
 
 /** The field itself: three paths, and nothing of the answer in either. */
-function waveField() {
+function waveField(phase) {
   const svg = document.createElementNS(SVG_NS, "svg");
   svg.setAttribute("class", "wave-field");
   svg.setAttribute("viewBox", "0 0 120 36");
@@ -87,7 +138,7 @@ function waveField() {
   svg.setAttribute("focusable", "false");
   for (const [className, d] of WAVE_FIELD) {
     const path = document.createElementNS(SVG_NS, "path");
-    path.setAttribute("class", className);
+    path.setAttribute("class", `${className} ${phase}`);
     path.setAttribute("d", d);
     svg.append(path);
   }
@@ -97,16 +148,18 @@ function waveField() {
 /**
  * The hero: what this page is, its one line of live counts, and the field below
  * it. Compact on purpose (W38) — a console that is polled every ten seconds
- * cannot afford a hero that pushes the fleet below the fold.
+ * cannot afford a hero that pushes the fleet below the fold — and the field is
+ * in the flow under the counts rather than drawn over them, so no width of the
+ * window can put a wave through a line of text.
  */
-function hero(counts) {
+function hero(counts, phase) {
   return el("header", {
     attrs: { class: "fleet-hero" },
     children: [
       el("p", { attrs: { class: "eyebrow" }, text: EYEBROW }),
       el("h1", { text: HEADLINE }),
       el("p", { attrs: { class: "hero-counts" }, text: heroCounts(counts) }),
-      waveField(),
+      waveField(phase),
     ],
   });
 }
@@ -285,7 +338,7 @@ function search(model, handlers) {
  * "no project matches" is about the reader's own choice, and a fleet that was
  * filtered away must not read as a service that has lost its projects.
  */
-function projectsPanel(model, nowMs, handlers) {
+function projectsPanel(model, nowMs, handlers, phase) {
   const children = [el("h2", { text: "Projects" }), filters(model, handlers)];
   const shown = model.projects.filter(
     (project) =>
@@ -302,7 +355,7 @@ function projectsPanel(model, nowMs, handlers) {
     );
   } else {
     for (const project of shown) {
-      children.push(projectRow(project, model, nowMs));
+      children.push(projectRow(project, model, nowMs, phase));
     }
   }
   return el("section", {
@@ -390,15 +443,16 @@ export function renderFleet(model, nowMs, handlers) {
   // Counted once, so that the hero's line and the cards under it are two
   // readings of one answer rather than two passes that could disagree.
   const counts = totals(model.projects, model.attention);
+  const phase = phaseOf(nowMs);
   return el("section", {
     attrs: { class: "view fleet" },
     children: [
-      hero(counts),
+      hero(counts, phase),
       stats(counts),
       el("div", {
         attrs: { class: "fleet-grid" },
         children: [
-          projectsPanel(model, nowMs, handlers),
+          projectsPanel(model, nowMs, handlers, phase),
           attentionPanel(model.attention, nowMs),
         ],
       }),

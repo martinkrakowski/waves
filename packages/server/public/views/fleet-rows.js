@@ -77,10 +77,16 @@ export function rowIdOf(node) {
 }
 
 /** One wave in the bar: a colour, and the whole of what it says in a word. */
-function segment(wave) {
+function segment(wave, phase) {
   const classes = [SEGMENT[wave.state]];
   if (wave.stale === true) {
     classes.push("stale");
+  }
+  // A running segment is the only segment that moves, so it is the only one that
+  // carries the phase (see `phaseOf`): the sheen would otherwise restart at 0%
+  // on every pass and every navigation.
+  if (wave.state === "running") {
+    classes.push(phase);
   }
   return el("li", {
     attrs: { class: classes.join(" ") },
@@ -99,7 +105,7 @@ function segment(wave) {
  * each segment says its own state in text for a reader who cannot see the
  * colour, and a `role="img"` would swallow exactly that.
  */
-function waveBar(project) {
+function waveBar(project, phase) {
   if (project.recentWaves.length === 0) {
     return [
       el("p", {
@@ -115,7 +121,9 @@ function waveBar(project) {
         "aria-label": "Recent waves, oldest first",
       },
       // The listing answers newest first; a bar is read left to right.
-      children: [...project.recentWaves].reverse().map((wave) => segment(wave)),
+      children: [...project.recentWaves]
+        .reverse()
+        .map((wave) => segment(wave, phase)),
     }),
   ];
 }
@@ -168,7 +176,11 @@ function caption(project, nowMs) {
  */
 function ring(project) {
   const { lanes, merged } = ringOf(project);
-  const share = merged / lanes;
+  // The shape check holds every wave to `merged <= lanes`, so a share above one
+  // is a server that answered a different question. Capping it draws a full ring
+  // rather than a dash longer than the circle it is drawn on, which a
+  // `stroke-dasharray` silently repeats as a second arc.
+  const share = Math.min(1, merged / lanes);
   const dash = RING_AROUND * share;
   // Both numbers of the dash are this page's own arithmetic over counts it did
   // not derive, and an SVG attribute is the last place a `NaN` should still be
@@ -209,6 +221,18 @@ function circle(className) {
 }
 
 /**
+ * How many lanes are asking for this project, said as one row flag and as one
+ * word of grammar: "1 needs attention" and "2 need attention". Zero draws no flag
+ * at all, which is the answer the dot's own tab already carries.
+ */
+function attentionFlag(asking) {
+  return el("span", {
+    attrs: { class: "flag" },
+    text: asking === 1 ? "1 needs attention" : `${asking} need attention`,
+  });
+}
+
+/**
  * Everything the row's closed line shows: which tab it is in, what is asking for
  * it, whether it has stopped pushing, its waves, how far along they are, how
  * many lanes it has and how much of that work is merged.
@@ -217,7 +241,7 @@ function circle(className) {
  * button, and a link inside a button is interactive content inside a control
  * (W39). They sit above it in `rowHead`, outside the row's own disclosure.
  */
-function summaryBody(project, model, nowMs) {
+function summaryBody(project, model, nowMs, phase) {
   const tab = tabOf(project, model.attention);
   const asking = attentionOf(model.attention, project.id);
   const children = [
@@ -227,12 +251,7 @@ function summaryBody(project, model, nowMs) {
     }),
   ];
   if (asking > 0) {
-    children.push(
-      el("span", {
-        attrs: { class: "flag" },
-        text: `${asking} need attention`,
-      }),
-    );
+    children.push(attentionFlag(asking));
   }
   if (project.stale === true) {
     children.push(
@@ -240,7 +259,7 @@ function summaryBody(project, model, nowMs) {
     );
   }
   children.push(
-    ...waveBar(project),
+    ...waveBar(project, phase),
     caption(project, nowMs),
     el("span", {
       attrs: { class: "lane-count" },
@@ -355,9 +374,9 @@ function statusRow(project, nowMs) {
  * to open, so it keeps every number the row shows and draws them as a static
  * summary instead of a control: a project a reader can read and cannot click.
  */
-export function projectRow(project, model, nowMs) {
+export function projectRow(project, model, nowMs, phase) {
   const head = rowHead(project);
-  const body = summaryBody(project, model, nowMs);
+  const body = summaryBody(project, model, nowMs, phase);
   if (!isProjectId(project.id)) {
     return el("article", {
       attrs: { class: "project" },

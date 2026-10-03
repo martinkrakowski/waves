@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AttentionView } from "../../src/application/read-model.js";
 import type { ProjectCard } from "../../public/api.js";
 import type { FleetHandlers, FleetModel } from "../../public/views/fleet.js";
-import { renderFleet } from "../../public/views/fleet.js";
+import { phaseOf, renderFleet } from "../../public/views/fleet.js";
 import { rowIdOf } from "../../public/views/fleet-rows.js";
 
 import {
@@ -28,8 +28,11 @@ function noHandlers(): FleetHandlers {
   return { onSearch: vi.fn() };
 }
 
-/** Draws the page and hands back the host it was drawn into. */
-function draw(model: Partial<FleetModel> = {}): HTMLElement {
+/** Draws the page at `nowMs` and hands back the host it was drawn into. */
+function draw(
+  model: Partial<FleetModel> = {},
+  nowMs: number = NOW_MS,
+): HTMLElement {
   const host = freshRoot();
   const full: FleetModel = {
     projects: [projectCard()],
@@ -38,7 +41,7 @@ function draw(model: Partial<FleetModel> = {}): HTMLElement {
     open: new Set<string>(),
     ...model,
   };
-  host.append(renderFleet(full, NOW_MS, noHandlers()));
+  host.append(renderFleet(full, nowMs, noHandlers()));
   assertNoInjectedMarkup();
   return host;
 }
@@ -86,24 +89,121 @@ describe("the hero", () => {
     expect(field?.getAttribute("focusable")).toBe("false");
     expect(field?.getAttribute("viewBox")).toBe("0 0 120 36");
     const paths = Array.from(field?.querySelectorAll("path") ?? []);
-    expect(paths.map((path) => path.getAttribute("class"))).toStrictEqual([
-      "wave-a",
-      "wave-b",
-      "wave-c",
-    ]);
+    expect(
+      paths.map((path) => path.getAttribute("class")?.split(" ")[0]),
+    ).toStrictEqual(["wave-a", "wave-b", "wave-c"]);
     for (const path of paths) {
       expect(path.getAttribute("d")).toMatch(/^M-6 /);
+      // Each carries the phase of the draw, and nothing else about the answer.
+      expect(path.getAttribute("class")).toMatch(/^(wave-[abc]) phase-\d+$/);
     }
   });
 
-  it("says one the way one is written", () => {
-    const host = draw({
-      projects: [projectCard({ recentWaves: [recentWave()] })],
+  it("says each of its three counts as one and as many", () => {
+    const line = (
+      projects: number,
+      running: number,
+      asking: number,
+    ): string[] => {
+      const waves = Array.from({ length: running }, (_, at) =>
+        recentWave({ wave: `w-${at + 1}`, state: "running" }),
+      );
+      return textsOf(
+        draw({
+          projects: Array.from({ length: projects }, (_, at) =>
+            projectCard({
+              id: `p${at}`,
+              name: `P${at}`,
+              recentWaves: at === 0 ? waves : [],
+            }),
+          ),
+          attention: attentionView({
+            projects: [{ id: "p0", attention: asking }],
+          }),
+        }),
+        ".hero-counts",
+      );
+    };
+    // One project, one running wave, one lane asking.
+    const one = draw({
+      projects: [
+        projectCard({ recentWaves: [recentWave({ state: "running" })] }),
+      ],
       attention: attentionView({ projects: [{ id: "alpha", attention: 1 }] }),
     });
-    expect(textsOf(host, ".hero-counts")).toStrictEqual([
+    expect(textsOf(one, ".hero-counts")).toStrictEqual([
       "1 project · 1 wave running · 1 lane asking for attention",
     ]);
+    // Many of each, and none is the singular by accident.
+    expect(line(2, 1, 3)).toStrictEqual([
+      "2 projects · 1 wave running · 3 lanes asking for attention",
+    ]);
+    // Zero reads as a count of none, which is plural: "0 lanes", never "0 lane".
+    expect(line(0, 0, 0)).toStrictEqual([
+      "0 projects · 0 waves running · 0 lanes asking for attention",
+    ]);
+  });
+});
+
+describe("the phase of an ambient animation", () => {
+  /** One twelfth of the 37s loop the twelve classes are a twelfth of. */
+  const TWELFTH_MS = 37_000 / 12;
+
+  it("is one of twelve literals, and it comes from the clock", () => {
+    expect(phaseOf(0)).toBe("phase-0");
+    // Anywhere inside the first twelfth is the first twelfth.
+    expect(phaseOf(1)).toBe("phase-0");
+    expect(phaseOf(TWELFTH_MS)).toBe("phase-1");
+    // Mid-cycle.
+    expect(phaseOf(18_500)).toBe("phase-6");
+    expect(phaseOf(21_584)).toBe("phase-7");
+    expect(phaseOf(24_667)).toBe("phase-8");
+    // Just before the wrap, and the wrap itself.
+    expect(phaseOf(37_000 - 1)).toBe("phase-11");
+    expect(phaseOf(37_000)).toBe("phase-0");
+    // And on through the clock's own larger cycles, which is what a wall clock
+    // reads rather than a page's age.
+    expect(phaseOf(1_000_000_000)).toBe("phase-0");
+    for (let at = 0; at < 37_000; at += 977) {
+      expect(phaseOf(at)).toMatch(/^phase-(?:[0-9]|1[01])$/);
+    }
+  });
+
+  it("phases the field and every running segment from the same draw", () => {
+    const projects = [
+      projectCard({
+        recentWaves: [
+          recentWave({ wave: "w-3", state: "running" }),
+          recentWave({ wave: "w-2", state: "done" }),
+        ],
+      }),
+    ];
+    // The same clock, the same class everywhere: one draw is one moment in the
+    // cycle, not three.
+    const host = draw({ projects }, 18_500);
+    expect(
+      Array.from(host.querySelectorAll(".wave-field path")).map((path) =>
+        path.getAttribute("class"),
+      ),
+    ).toStrictEqual(["wave-a phase-6", "wave-b phase-6", "wave-c phase-6"]);
+    expect(
+      Array.from(host.querySelectorAll(".wave-bar .seg")).map((seg) =>
+        seg.getAttribute("class"),
+      ),
+    ).toStrictEqual(["seg done", "seg running phase-6"]);
+
+    // A later draw moves on, and a settled segment never carries a phase at all
+    // because it is not moving. 21_584 is a millisecond past the boundary the
+    // class changes at.
+    const later = draw({ projects }, 21_584);
+    expect(later.querySelector(".wave-field path")?.getAttribute("class")).toBe(
+      "wave-a phase-7",
+    );
+    expect(
+      Array.from(later.querySelectorAll(".wave-bar .seg")).map((seg) =>
+        seg.getAttribute("class"),
+      ),
+    ).toStrictEqual(["seg done", "seg running phase-7"]);
   });
 });
 
@@ -541,13 +641,21 @@ describe("a row", () => {
     ).toBe("row:alpha");
   });
 
-  it("flags a project asking for attention, in a word", () => {
-    const host = draw({
-      projects: [ALPHA],
-      attention: attentionView({ projects: [{ id: "alpha", attention: 2 }] }),
-    });
-    expect(textsOf(host, ".flag")).toStrictEqual(["2 need attention"]);
-    expect(textsOf(draw(), ".flag")).toStrictEqual([]);
+  it("flags a project asking for attention, and says it as a word", () => {
+    const asked = (attention: number): string[] =>
+      textsOf(
+        draw({
+          projects: [ALPHA],
+          attention: attentionView({
+            projects: [{ id: "alpha", attention }],
+          }),
+        }),
+        ".flag",
+      );
+    // "needs" for one and "need" for two: a flag that agrees with its number.
+    expect(asked(1)).toStrictEqual(["1 needs attention"]);
+    expect(asked(2)).toStrictEqual(["2 need attention"]);
+    expect(asked(0)).toStrictEqual([]);
   });
 
   it("badges a stale project, and badges nothing on a fresh one", () => {
@@ -594,12 +702,13 @@ describe("a row", () => {
 });
 
 describe("the wave bar", () => {
-  /** The states of a row's segments, left to right. */
+  /** The states of a row's segments, left to right, without the phase class. */
   function segments(host: HTMLElement): string[] {
-    return textsOf(host, ".wave-bar .seg").map((_, at) => {
-      const li = host.querySelectorAll(".wave-bar .seg")[at] as HTMLElement;
-      return li.getAttribute("class") ?? "";
-    });
+    return Array.from(host.querySelectorAll(".wave-bar .seg")).map((seg) =>
+      Array.from(seg.classList)
+        .filter((name) => !name.startsWith("phase-"))
+        .join(" "),
+    );
   }
 
   it("puts the oldest wave on the left and the newest on the right", () => {
@@ -716,16 +825,33 @@ describe("the merged ring", () => {
   });
 
   it("draws no ring for waves that hold no lane between them", () => {
+    // No retained wave at all.
     const empty = draw({ projects: [projectCard({ recentWaves: [] })] });
     expect(empty.querySelectorAll(".ring")).toHaveLength(0);
     expect(textsOf(empty, ".ring-label")).toStrictEqual([]);
-    // Nor when the waves hold a lane the page cannot count a share of: the two
-    // numbers of a dash are this page's own arithmetic, and neither is drawn
-    // until both of them are finite.
-    const broken = draw({
-      projects: [projectCard(sharing(2, 0))],
+    // Nor when the waves hold lanes but none of them merged: the share is NaN,
+    // and neither number of a dash may reach the document as one.
+    const nothing = draw({
+      projects: [
+        projectCard({
+          recentWaves: [recentWave({ lanes: 0, merged: 0, state: "settled" })],
+        }),
+      ],
     });
-    expect(broken.querySelectorAll(".ring")).toHaveLength(0);
+    expect(nothing.querySelectorAll(".ring")).toHaveLength(0);
+  });
+
+  it("caps a share above one at a whole ring, rather than at a long arc", () => {
+    // The shape check holds every wave to `merged <= lanes`, so this is a server
+    // that answered a different question — and a dash longer than the circle it
+    // is drawn on comes back from the browser as a second arc.
+    const over = draw({ projects: [projectCard(sharing(2, 0))] });
+    expect(dash(over)).toBe("56.55 56.55");
+    expect(textsOf(over, ".ring-label")).toStrictEqual(["100% merged"]);
+
+    const overOne = draw({ projects: [projectCard(sharing(7, 3))] });
+    expect(dash(overOne)).toBe("56.55 56.55");
+    expect(textsOf(overOne, ".ring-label")).toStrictEqual(["100% merged"]);
   });
 
   it("is built as an SVG out of literals, and hidden from assistive tech", () => {
@@ -789,6 +915,28 @@ describe("the waves inside an opened row", () => {
     expect(textsOf(host, ".wave-chips li")[0]).toBe(
       "w-3running2 lanes · 1 mergedjust now",
     );
+  });
+
+  it("says a wave's own two counts, singular for one and plural for the rest", () => {
+    const counts = (lanes: number, merged: number): string =>
+      textsOf(
+        draw({
+          projects: [
+            projectCard({
+              recentWaves: [recentWave({ lanes, merged, state: "done" })],
+            }),
+          ],
+        }),
+        ".wave-chips li",
+      )[0] ?? "";
+    // "1 lane" and "2 lanes": the two counts beside a wave's name.
+    expect(counts(1, 0)).toContain("1 lane · 0 merged");
+    expect(counts(2, 0)).toContain("2 lanes · 0 merged");
+    // And a row's own lane count beside them, which is a different number again.
+    const laneCount = (lanes: number): string[] =>
+      textsOf(draw({ projects: [projectCard({ lanes })] }), ".lane-count");
+    expect(laneCount(1)).toStrictEqual(["1 lane"]);
+    expect(laneCount(4)).toStrictEqual(["4 lanes"]);
   });
 
   it("badges a stale wave and stamps every one of them", () => {

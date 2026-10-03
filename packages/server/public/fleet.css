@@ -12,11 +12,15 @@
  */
 
 /* The hero, its line of live counts and the field that drifts under them. */
+/* The hero: the eyebrow, the headline, the live counts and the field, with the
+   field in the flow under the counts so that no width of the window can put a
+   wave through a line of text. The bound is 180px, and it is a real one: the only
+   thing over the top of it is the field's bottom edge, which is cut off anyway. */
 .view.fleet .fleet-hero {
   margin: 0 0 1.4rem;
   max-height: 11.25rem;
   overflow: hidden;
-  padding-bottom: 1.5rem;
+  padding-bottom: 0.75rem;
   position: relative;
 }
 
@@ -46,19 +50,21 @@
 }
 
 /*
- * The field: three literals of `d`, stretched to the width of the hero and cut
- * off at the bottom edge. The paths tile every sixty units, so drifting one
- * period is a loop with no seam in it, and the drift is the only thing that
- * moves on this page.
+ * The field: three literals of `d`, stretched to the width of the hero, in a
+ * strip of its own below the counts so that no line of text is ever drawn over.
+ * The paths tile every sixty units, so drifting one period is a loop with no
+ * seam in it.
  */
 .view.fleet .wave-field {
-  bottom: -0.75rem;
+  bottom: 0;
+  display: block;
   fill: none;
-  height: 4.5rem;
+  height: 3rem;
   left: 0;
+  margin-top: 0.5rem;
   opacity: 0.55;
   pointer-events: none;
-  position: absolute;
+  position: static;
   stroke-width: 1.2;
   width: 100%;
 }
@@ -86,6 +92,173 @@
   to {
     transform: translateX(-60px);
   }
+}
+
+/*
+ * **The phase of an ambient animation** (`views/fleet.js`, `phaseOf`).
+ *
+ * `draw()` replaces every node in `#root` on the ten-second pass and on every
+ * navigation, so an animation drawn at 0% every time starts again at 0% every
+ * time and the page visibly jumps four times a minute. An inline `style` is not
+ * available to say otherwise: the CSP's `style-src` is `'self'` and `style` is
+ * not in `dom.js`'s attribute table. So the phase is written into the markup as
+ * one of twelve class names, and the delay each one carries is that twelfth of
+ * the cycle, negated — a redraw lands within a twelfth of a cycle of where the
+ * animation already was, which for the longest loop on this page is under three
+ * seconds of drift nobody can name.
+ *
+ * Every period here is a whole number of seconds, so `-(k / 12)` is exactly
+ * representable and the arithmetic in `phaseOf` is exact too. The classes are
+ * paired with the animation they phase, and the specificity is raised with the
+ * repeated selector, because a `delay` next to an `animation` shorthand in one
+ * rule loses to the shorthand otherwise: `.view.fleet .wave-a.phase-3` is two
+ * classes against one, and a redraw's phase cannot be overruled by a later rule
+ * that happens to say `animation`.
+ */
+
+/* The field's three loops: 19s, 27s and 37s, one delay for each twelfth. */
+.view.fleet .wave-a.phase-0 {
+  animation-delay: 0s;
+}
+
+.view.fleet .wave-a.phase-1 {
+  animation-delay: -1.583s;
+}
+
+.view.fleet .wave-a.phase-2 {
+  animation-delay: -3.167s;
+}
+
+.view.fleet .wave-a.phase-3 {
+  animation-delay: -4.75s;
+}
+
+.view.fleet .wave-a.phase-4 {
+  animation-delay: -6.333s;
+}
+
+.view.fleet .wave-a.phase-5 {
+  animation-delay: -7.917s;
+}
+
+.view.fleet .wave-a.phase-6 {
+  animation-delay: -9.5s;
+}
+
+.view.fleet .wave-a.phase-7 {
+  animation-delay: -11.083s;
+}
+
+.view.fleet .wave-a.phase-8 {
+  animation-delay: -12.667s;
+}
+
+.view.fleet .wave-a.phase-9 {
+  animation-delay: -14.25s;
+}
+
+.view.fleet .wave-a.phase-10 {
+  animation-delay: -15.833s;
+}
+
+.view.fleet .wave-a.phase-11 {
+  animation-delay: -17.417s;
+}
+
+.view.fleet .wave-b.phase-0 {
+  animation-delay: 0s;
+}
+
+.view.fleet .wave-b.phase-1 {
+  animation-delay: -2.25s;
+}
+
+.view.fleet .wave-b.phase-2 {
+  animation-delay: -4.5s;
+}
+
+.view.fleet .wave-b.phase-3 {
+  animation-delay: -6.75s;
+}
+
+.view.fleet .wave-b.phase-4 {
+  animation-delay: -9s;
+}
+
+.view.fleet .wave-b.phase-5 {
+  animation-delay: -11.25s;
+}
+
+.view.fleet .wave-b.phase-6 {
+  animation-delay: -13.5s;
+}
+
+.view.fleet .wave-b.phase-7 {
+  animation-delay: -15.75s;
+}
+
+.view.fleet .wave-b.phase-8 {
+  animation-delay: -18s;
+}
+
+.view.fleet .wave-b.phase-9 {
+  animation-delay: -20.25s;
+}
+
+.view.fleet .wave-b.phase-10 {
+  animation-delay: -22.5s;
+}
+
+.view.fleet .wave-b.phase-11 {
+  animation-delay: -24.75s;
+}
+
+.view.fleet .wave-c.phase-0 {
+  animation-delay: 0s;
+}
+
+.view.fleet .wave-c.phase-1 {
+  animation-delay: -3.083s;
+}
+
+.view.fleet .wave-c.phase-2 {
+  animation-delay: -6.167s;
+}
+
+.view.fleet .wave-c.phase-3 {
+  animation-delay: -9.25s;
+}
+
+.view.fleet .wave-c.phase-4 {
+  animation-delay: -12.333s;
+}
+
+.view.fleet .wave-c.phase-5 {
+  animation-delay: -15.417s;
+}
+
+.view.fleet .wave-c.phase-6 {
+  animation-delay: -18.5s;
+}
+
+.view.fleet .wave-c.phase-7 {
+  animation-delay: -21.583s;
+}
+
+.view.fleet .wave-c.phase-8 {
+  animation-delay: -24.667s;
+}
+
+.view.fleet .wave-c.phase-9 {
+  animation-delay: -27.75s;
+}
+
+.view.fleet .wave-c.phase-10 {
+  animation-delay: -30.833s;
+}
+
+.view.fleet .wave-c.phase-11 {
+  animation-delay: -33.917s;
 }
 
 .lede {
@@ -451,7 +624,7 @@
 .view.fleet .seg.running {
   background-color: var(--cyan);
   /* The sheen, drawn over the segment's own colour rather than instead of it. */
-  animation: fleet-sheen 2.8s linear infinite;
+  animation: fleet-sheen 4s linear infinite;
   background-image: linear-gradient(
     100deg,
     transparent 25%,
@@ -469,6 +642,59 @@
   to {
     background-position: -20% 0;
   }
+}
+
+/*
+ * The sheen's own phase, the same twelve classes over its 4s loop. Read together
+ * with the field's block above: every ambient animation on this page is phased
+ * from `nowMs` the same way, and every period is a whole number of seconds.
+ */
+.view.fleet .seg.running.phase-0 {
+  animation-delay: 0s;
+}
+
+.view.fleet .seg.running.phase-1 {
+  animation-delay: -0.333s;
+}
+
+.view.fleet .seg.running.phase-2 {
+  animation-delay: -0.667s;
+}
+
+.view.fleet .seg.running.phase-3 {
+  animation-delay: -1s;
+}
+
+.view.fleet .seg.running.phase-4 {
+  animation-delay: -1.333s;
+}
+
+.view.fleet .seg.running.phase-5 {
+  animation-delay: -1.667s;
+}
+
+.view.fleet .seg.running.phase-6 {
+  animation-delay: -2s;
+}
+
+.view.fleet .seg.running.phase-7 {
+  animation-delay: -2.333s;
+}
+
+.view.fleet .seg.running.phase-8 {
+  animation-delay: -2.667s;
+}
+
+.view.fleet .seg.running.phase-9 {
+  animation-delay: -3s;
+}
+
+.view.fleet .seg.running.phase-10 {
+  animation-delay: -3.333s;
+}
+
+.view.fleet .seg.running.phase-11 {
+  animation-delay: -3.667s;
 }
 
 .view.fleet .seg.done {
@@ -617,21 +843,6 @@
   margin: 0;
 }
 
-/*
- * The standard clip: the text is in the document and read aloud, and it takes no
- * room on the page. Every segment's state and every row's tab is said in one of
- * these, which is what lets a colour be only a colour.
- */
-.view.fleet .sr {
-  clip: rect(0 0 0 0);
-  clip-path: inset(50%);
-  height: 1px;
-  overflow: hidden;
-  position: absolute;
-  white-space: nowrap;
-  width: 1px;
-}
-
 /* On a phone the filters stack and the row's own line breaks where it must. */
 @media (max-width: 44rem) {
   .view.fleet .fleet-filters {
@@ -642,6 +853,12 @@
   .view.fleet .fleet-search input {
     min-width: 0;
     width: 100%;
+  }
+
+  /* The counts wrap to two lines here, and the field gives up the height they
+     need rather than letting the hero's own bound cut them. */
+  .view.fleet .wave-field {
+    height: 2.25rem;
   }
 
   .view.fleet .wave-bar,
@@ -663,7 +880,55 @@
   .view.fleet .wave-a,
   .view.fleet .wave-b,
   .view.fleet .wave-c,
-  .view.fleet .seg.running {
+  .view.fleet .wave-a.phase-0,
+  .view.fleet .wave-a.phase-1,
+  .view.fleet .wave-a.phase-2,
+  .view.fleet .wave-a.phase-3,
+  .view.fleet .wave-a.phase-4,
+  .view.fleet .wave-a.phase-5,
+  .view.fleet .wave-a.phase-6,
+  .view.fleet .wave-a.phase-7,
+  .view.fleet .wave-a.phase-8,
+  .view.fleet .wave-a.phase-9,
+  .view.fleet .wave-a.phase-10,
+  .view.fleet .wave-a.phase-11,
+  .view.fleet .wave-b.phase-0,
+  .view.fleet .wave-b.phase-1,
+  .view.fleet .wave-b.phase-2,
+  .view.fleet .wave-b.phase-3,
+  .view.fleet .wave-b.phase-4,
+  .view.fleet .wave-b.phase-5,
+  .view.fleet .wave-b.phase-6,
+  .view.fleet .wave-b.phase-7,
+  .view.fleet .wave-b.phase-8,
+  .view.fleet .wave-b.phase-9,
+  .view.fleet .wave-b.phase-10,
+  .view.fleet .wave-b.phase-11,
+  .view.fleet .wave-c.phase-0,
+  .view.fleet .wave-c.phase-1,
+  .view.fleet .wave-c.phase-2,
+  .view.fleet .wave-c.phase-3,
+  .view.fleet .wave-c.phase-4,
+  .view.fleet .wave-c.phase-5,
+  .view.fleet .wave-c.phase-6,
+  .view.fleet .wave-c.phase-7,
+  .view.fleet .wave-c.phase-8,
+  .view.fleet .wave-c.phase-9,
+  .view.fleet .wave-c.phase-10,
+  .view.fleet .wave-c.phase-11,
+  .view.fleet .seg.running,
+  .view.fleet .seg.running.phase-0,
+  .view.fleet .seg.running.phase-1,
+  .view.fleet .seg.running.phase-2,
+  .view.fleet .seg.running.phase-3,
+  .view.fleet .seg.running.phase-4,
+  .view.fleet .seg.running.phase-5,
+  .view.fleet .seg.running.phase-6,
+  .view.fleet .seg.running.phase-7,
+  .view.fleet .seg.running.phase-8,
+  .view.fleet .seg.running.phase-9,
+  .view.fleet .seg.running.phase-10,
+  .view.fleet .seg.running.phase-11 {
     animation: none;
   }
 

@@ -14,6 +14,13 @@ export interface FleetHandlers {
   onSearch(text: string): void;
 }
 
+/**
+ * Which of the twelve phase classes an ambient animation is drawn at, as the
+ * clock says. `fleet.css` holds the delays those classes carry; see the block
+ * above the field's own rules.
+ */
+export declare function phaseOf(nowMs: number): string;
+
 export declare function renderFleet(
   model: FleetModel,
   nowMs: number,
