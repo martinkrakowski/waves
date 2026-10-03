@@ -173,6 +173,99 @@
   border-top: none;
 }
 
+/* The status panel, which is about the project rather than about any lane. Its
+   own rules sit together because the five premise badges and the premises table
+   are the only things here a pusher's words reach. */
+.panel.status {
+  margin-top: 0.75rem;
+}
+
+.panel.status h3 {
+  color: var(--muted);
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  margin: 0.5rem 0 0.25rem;
+  text-transform: uppercase;
+}
+
+.panel.status .backlog p {
+  margin: 0.25rem 0;
+  overflow-wrap: anywhere;
+}
+
+.panel.status .plans {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  list-style: none;
+  margin: 0.35rem 0;
+  padding: 0;
+}
+
+.panel.status .plans li {
+  background: var(--bg-sink);
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+  padding: 0.15rem 0.5rem;
+}
+
+.panel.status .premises {
+  border-collapse: collapse;
+  margin-top: 0.5rem;
+  width: 100%;
+}
+
+.panel.status .premises th {
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  padding: 0.3rem 0.5rem;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.panel.status .premises td {
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+  padding: 0.35rem 0.5rem;
+  vertical-align: top;
+}
+
+.panel.status .premises td > * {
+  margin-right: 0.4rem;
+}
+
+/* The four premise states, and the one a value outside them is drawn as. Each is
+   a colour and never the only sign: the cell carries the state in words too. */
+.panel.status .badge {
+  border: 1px solid currentcolor;
+  border-radius: 0.75rem;
+  font-size: 0.75rem;
+  padding: 0 0.45rem;
+  white-space: nowrap;
+}
+
+.panel.status .premise-holds {
+  color: var(--teal);
+}
+
+.panel.status .premise-stale,
+.panel.status .premise-timed-out {
+  color: var(--amber);
+}
+
+.panel.status .premise-error {
+  color: var(--red);
+}
+
+.panel.status .premise-unknown {
+  color: var(--muted);
+}
+
 .panel.seats li {
   align-items: center;
   display: grid;

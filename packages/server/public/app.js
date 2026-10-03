@@ -7,6 +7,7 @@ import { drawableProjects } from "./projects.js";
 import { isProjectId, isWaveId } from "./patterns.js";
 import { parseQuery } from "./query.js";
 import { shell } from "./shell.js";
+import { drawableStatus } from "./status.js";
 import { renderDrawer } from "./views/drawer.js";
 import { renderFleet } from "./views/fleet.js";
 import {
@@ -180,6 +181,25 @@ export function createApp(deps) {
   }
 
   /**
+   * What the project last said about itself, which the project page draws as a
+   * panel. A 404 is "it has pushed none", not a failure: the status is the one
+   * read on this page that a project may legitimately never make, and a page that
+   * said "offline" because a project was quiet would be wrong about the project.
+   * Any other failure is a failed load, exactly as the listing's is, and a status
+   * the panel could not draw is one too.
+   */
+  async function loadStatus(projectId) {
+    const status = await api.status(projectId);
+    if (status === undefined) {
+      return undefined;
+    }
+    if (!drawableStatus(status)) {
+      throw new Error("the project status is not a project status");
+    }
+    return status;
+  }
+
+  /**
    * One pass, for the route and the query this call started with. The snapshot
    * is taken before the first `await` and is the only thing read after it:
    * `read()` rewrites `route` and `query` on every navigation, so a pass that
@@ -216,15 +236,18 @@ export function createApp(deps) {
       }
       return { kind: "projects", projects, attention };
     }
-    // Three calls in one Promise.all, in the order the page needs them: the
-    // menu's two, then every lane of every wave of the project the route names.
-    // A project page is one request: the wave strip and the lane table are two
-    // views of the same answer, and a second request would be a second chance
-    // for the two to disagree.
-    const [projects, attention, lanes] = await Promise.all([
+    // Four calls in one Promise.all, in the order the page needs them: the menu's
+    // two, then every lane of every wave of the project the route names, then
+    // what that project last said about itself. The first three are one subject:
+    // the wave strip and the lane table are two views of the same listing, and a
+    // second request would be a second chance for the two to disagree. The status
+    // is about the project rather than about any wave of it, so it is a fourth
+    // read — beside the listing, in the same pass, rather than after it.
+    const [projects, attention, lanes, status] = await Promise.all([
       loadProjects(),
       loadAttention(),
       api.lanes(at.id, asked.all),
+      loadStatus(at.id),
     ]);
     if (mine !== generation) {
       return undefined;
@@ -238,7 +261,17 @@ export function createApp(deps) {
     if (lanes.project.id !== at.id) {
       throw new Error("the project listing is another project's");
     }
-    return { kind: "project", project: at.id, projects, attention, lanes };
+    if (status !== undefined && status.status.project !== at.id) {
+      throw new Error("the project status is another project's");
+    }
+    return {
+      kind: "project",
+      project: at.id,
+      projects,
+      attention,
+      lanes,
+      status,
+    };
   }
 
   function body() {
@@ -261,7 +294,13 @@ export function createApp(deps) {
     }
     if (data.kind === "project") {
       return renderProject(
-        { lanes: data.lanes, wave: route.wave, query, copied },
+        {
+          lanes: data.lanes,
+          status: data.status,
+          wave: route.wave,
+          query,
+          copied,
+        },
         clock(),
         projectHandlers(),
       );

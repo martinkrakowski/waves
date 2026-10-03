@@ -5,6 +5,7 @@ import type {
   LaneRow,
   LaneView,
   ProjectLanesView,
+  StatusView,
   WaveSummary,
   WaveView,
 } from "../../src/application/read-model.js";
@@ -12,6 +13,23 @@ import type { ProjectCard } from "../../public/api.js";
 
 export const NOW_MS = Date.parse("2026-04-01T12:00:00.000Z");
 export const NOW_ISO = new Date(NOW_MS).toISOString();
+
+/**
+ * The two facts a project summary carries about its own status. `prsSkipped` is
+ * present here because the fixture document carries a `prs`; a test that wants the
+ * silence says so by not giving it.
+ */
+export function statusFacts(
+  overrides: Partial<NonNullable<ProjectCard["status"]>> = {},
+): NonNullable<ProjectCard["status"]> {
+  return {
+    receivedAt: NOW_ISO,
+    stale: false,
+    prsSkipped: 2,
+    backlogState: "recorded",
+    ...overrides,
+  };
+}
 
 export function projectCard(overrides: Partial<ProjectCard> = {}): ProjectCard {
   return {
@@ -146,7 +164,41 @@ export function attentionLane(
   };
 }
 
-/** The whole fleet asking for attention, before anything is asking. */
+/** What `/api/v1/projects/alpha/status` answers, before anything is wrong. */
+export function statusView(overrides: Partial<StatusView> = {}): StatusView {
+  return {
+    status: {
+      schema: "waves-status/v1",
+      project: "alpha",
+      generatedAt: NOW_ISO,
+      intervalSeconds: 30,
+      prs: { skipped: 2 },
+      backlog: {
+        state: "recorded",
+        at: "2026-04-01T11:40:00.000Z",
+        scope: { kind: "full", plans: ["plan:verify"] },
+        git: { branch: "main", head: "0a1b2c3d4e5f60718293a4b5c6d7e8f9" },
+        premises: [
+          { lane: "C1", plan: "plan:verify", status: "holds" },
+          {
+            lane: "C2",
+            plan: "plan:verify",
+            status: "timed-out",
+            reason: "no push since 06:00",
+          },
+        ],
+      },
+    },
+    receivedAt: NOW_ISO,
+    stale: false,
+    staleAfterMs: 90_000,
+    ...overrides,
+  };
+}
+
+/**
+ * The whole fleet asking for attention, before anything is asking.
+ */
 export function attentionView(
   overrides: Partial<AttentionView> = {},
 ): AttentionView {

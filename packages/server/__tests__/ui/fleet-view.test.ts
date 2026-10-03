@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import type { AttentionView } from "../../src/application/read-model.js";
+import type { ProjectCard } from "../../public/api.js";
 import type { FleetModel } from "../../public/views/fleet.js";
 import { renderFleet } from "../../public/views/fleet.js";
 
 import {
   attentionLane,
   attentionView,
+  NOW_ISO,
   NOW_MS,
   projectCard,
+  statusFacts,
 } from "./fixtures.js";
 import {
   assertNoInjectedMarkup,
@@ -272,6 +275,74 @@ describe("the projects panel", () => {
     // Alpha is the only project the view has a count for; Beta has none.
     expect(textsOf(first as Element, ".facts dd")[5]).toBe("4");
     expect(textsOf(second, ".facts dd")[5]).toBe("0");
+  });
+});
+
+describe("a card's status row", () => {
+  /** The terms and values of the row the card drew for a project. */
+  function statusRow(
+    overrides: Partial<NonNullable<ProjectCard["status"]>> = {},
+  ): { terms: string[]; value: string; title: string | null } {
+    const host = draw({
+      projects: [projectCard({ status: statusFacts(overrides) })],
+    });
+    const dd = host.querySelectorAll(".facts dd");
+    const row = dd[dd.length - 1] as HTMLElement;
+    return {
+      terms: textsOf(host, ".facts dt"),
+      value: textOf(row),
+      title: row.querySelector("span[title]")?.getAttribute("title") ?? null,
+    };
+  }
+
+  it("leaves the row out entirely for a project with no status", () => {
+    const host = draw({ projects: [ALPHA] });
+
+    expect(textsOf(host, ".facts dt")).not.toContain("status");
+    expect(textsOf(host, ".facts dd")).toHaveLength(6);
+  });
+
+  it("says the backlog state, the unread rows and when it arrived", () => {
+    const row = statusRow();
+
+    expect(row.terms.at(-1)).toBe("status");
+    expect(row.value).toBe("backlog recorded · 2 PR rows unread · just now");
+    expect(row.title).toBe(NOW_ISO);
+  });
+
+  it("says nothing reported for a document that carried no backlog", () => {
+    expect(
+      statusRow({ backlogState: undefined, prsSkipped: undefined }).value,
+    ).toBe("nothing reported · just now");
+  });
+
+  it("leaves the unread rows out when the summary sent none", () => {
+    expect(statusRow({ prsSkipped: undefined }).value).toBe(
+      "backlog recorded · just now",
+    );
+  });
+
+  it("leaves them out at zero, which is a count rather than a warning", () => {
+    expect(statusRow({ prsSkipped: 0 }).value).toBe(
+      "backlog recorded · just now",
+    );
+  });
+
+  it("badges nothing stale, whatever the summary says about staleness", () => {
+    // The window is the document's own and is capped at 300 s, so a project that
+    // pushes a status once a run would be badged stale nearly every time a reader
+    // looked. The receive time is shown instead, and `stale` stays in the API.
+    const host = draw({
+      projects: [
+        projectCard({ status: statusFacts({ stale: true }) }),
+        projectCard({ id: "beta", name: "Beta" }),
+      ],
+    });
+
+    expect(textsOf(host, ".facts dd span.badge.stale")).toStrictEqual([]);
+    expect(host.querySelectorAll(".facts dd .badge")).toHaveLength(0);
+    // The card's own freshness pill is still there: that one is about the waves.
+    expect(textsOf(host, ".pill")).toStrictEqual(["fresh", "fresh"]);
   });
 });
 

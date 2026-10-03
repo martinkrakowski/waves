@@ -8,6 +8,7 @@ import {
   reportedText,
 } from "../format.js";
 import { formatQuery } from "../query.js";
+import { renderStatusPanel } from "./status-panel.js";
 import { visibleWaves } from "../wave.js";
 
 /**
@@ -474,6 +475,22 @@ function kpi(label, value, warn) {
     attrs: { class: warn ? "kpi warn" : "kpi" },
     children: [el("dt", { text: label }), el("dd", { text: String(value) })],
   });
+}
+
+/**
+ * What the project itself last said about it: the pull-request rows a listing
+ * could not read and the last `plan:verify` artifact. It sits under the counters
+ * because that is where a reader looks for a project's own numbers, and it is not
+ * a column of the lane table because none of it is about a lane — a filter
+ * narrows the table and leaves this alone, exactly as it leaves the counters.
+ *
+ * A project that pushed no status has nothing here, and the panel draws nothing
+ * at all rather than a panel saying so.
+ */
+function statusPanel(model, nowMs) {
+  return model.status === undefined
+    ? []
+    : [renderStatusPanel(model.status, nowMs)];
 }
 
 /**
@@ -1069,6 +1086,7 @@ export function renderProject(model, nowMs, handlers) {
   children.push(waveStrip(model, nowMs), ...omittedWaves(model));
   const scope = scopeOf(view, model.wave);
   children.push(laneCounters(scope));
+  children.push(...statusPanel(model, nowMs));
   const stale = staleWavesOf(view, model.wave, model.query.all);
   if (stale.length > 0) {
     children.push(staleBanner(model, nowMs, stale));

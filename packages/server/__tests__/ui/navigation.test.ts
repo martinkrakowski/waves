@@ -543,6 +543,7 @@ describe("a navigation that lands while a pass is in flight", () => {
     ).toStrictEqual([
       "/api/v1/attention",
       "/api/v1/projects/alpha/lanes",
+      "/api/v1/projects/alpha/status",
       "/api/v1/attention",
     ]);
     app.stop();
@@ -645,6 +646,7 @@ describe("choosing a wave", () => {
       "/api/v1/projects",
       "/api/v1/attention",
       "/api/v1/projects/alpha/lanes",
+      "/api/v1/projects/alpha/status",
     ]);
     expect(textsOf(root(), '.crumbs [aria-current="page"]')).toStrictEqual([
       "w-2",
@@ -706,6 +708,11 @@ describe("what a change of the address asks for", () => {
     }
     if (path === "/api/v1/attention") {
       return { status: 200, body: attentionView() };
+    }
+    // No status: a listing is not a status, and the panel would rather be absent
+    // than drawn from something the page cannot read.
+    if (/\/status$/.test(path)) {
+      return { status: 404 };
     }
     return {
       status: 200,
