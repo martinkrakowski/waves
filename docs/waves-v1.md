@@ -481,7 +481,7 @@ what the lanes said, not what the work is.
 which is why `lanes` was summed from the heads it had already read. It no longer
 is: the recent waves are read through the same cache the project listing and
 `GET /api/v1/attention` use (`cachedWave`,
-`packages/server/src/application/read-model.ts:725-746`), so a poll over a fleet
+`packages/server/src/application/read-model.ts:725-754`), so a poll over a fleet
 of N projects parses at most 12 × N snapshots when it is cold and **none** when
 it is warm — the second poll finds the same heads describing the same waves and
 answers from the cache. A wave the cache answers `undefined` for — one that went
@@ -512,7 +512,7 @@ present exactly when the document carries the field they come from — a
 mentioned `prs` did not report one. `stale` is the rule of section 4 applied to
 the status's own receive time and its own `intervalSeconds`
 (`ProjectSummary.status`, `packages/server/src/application/read-model.ts:163-177`;
-`getStatus`, `…/read-model.ts:1096-1107`).
+`getStatus`, `…/read-model.ts:1096-1110`).
 
 `GET /api/v1/attention` is the same view across every registered project. A lane
 is listed when it holds at least one of six reasons, and the reasons always come
