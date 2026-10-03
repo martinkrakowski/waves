@@ -2,7 +2,9 @@ import { expect } from "vitest";
 
 import {
   validateEnvelope,
+  validateStatus,
   type Envelope,
+  type ProjectStatus,
   type ValidationIssue,
   type ValidationResult,
 } from "../src/index.js";
@@ -114,6 +116,85 @@ export function expectValidEnvelope(input: unknown): Envelope {
   if (!result.ok) {
     throw new Error(
       `expected a valid envelope, got ${JSON.stringify(result.errors)}`,
+    );
+  }
+  return result.value;
+}
+
+/** The minimal document of the "The project status document" docs section. */
+export function minimalStatus(): Record<string, unknown> {
+  return {
+    schema: "waves-status/v1",
+    project: "apollo",
+    generatedAt: "2026-10-03T08:00:00Z",
+    intervalSeconds: null,
+  };
+}
+
+export function withBacklog(
+  patch: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    ...minimalStatus(),
+    backlog: { state: "recorded", ...patch },
+  };
+}
+
+export function withPremise(
+  patch: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    ...withBacklog(),
+    backlog: {
+      state: "recorded",
+      premises: [{ lane: "C1", plan: "plan-c", status: "holds", ...patch }],
+    },
+  };
+}
+
+/** The full document of the "The project status document" docs section. */
+export function fullStatus(): Record<string, unknown> {
+  return {
+    schema: "waves-status/v1",
+    project: "apollo",
+    generatedAt: "2026-10-03T08:00:00.250Z",
+    intervalSeconds: 300,
+    prs: { skipped: 2 },
+    backlog: {
+      state: "recorded",
+      at: "2026-10-03T07:55:00Z",
+      scope: { kind: "full", plans: ["plan:verify"] },
+      git: {
+        branch: "main",
+        head: "0a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+      },
+      premises: [
+        { lane: "C1", plan: "plan:verify", status: "holds" },
+        {
+          lane: "C2",
+          plan: "plan:verify",
+          status: "timed-out",
+          reason: "no push since 06:00",
+        },
+      ],
+    },
+  };
+}
+
+export function expectStatusPaths(
+  input: unknown,
+  expected: readonly string[],
+): readonly ValidationIssue[] {
+  const result = validateStatus(input);
+  expect(errorsOf(result).map((error) => error.path)).toEqual(expected);
+  return errorsOf(result);
+}
+
+export function expectValidStatus(input: unknown): ProjectStatus {
+  const result = validateStatus(input);
+  if (!result.ok) {
+    throw new Error(
+      `expected a valid status, got ${JSON.stringify(result.errors)}`,
     );
   }
   return result.value;

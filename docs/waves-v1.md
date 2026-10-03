@@ -15,7 +15,8 @@ break a build.
 
 ## 2. The envelope
 
-`validateEnvelope` is the whole gate. It is exported from
+`validateEnvelope` is the whole gate for a wave (a project's status has its own,
+`validateStatus`; see "The project status document"). It is exported from
 `@hexagen-monaco/waves-contract` and is pure: give it a parsed JSON value, get
 either `{ ok: true, value }` or `{ ok: false, errors }`.
 (`packages/contract/src/domain/envelope.ts`, `packages/contract/src/index.ts`)
@@ -39,7 +40,7 @@ exactly `ENVELOPE_KEYS`
 `project` and `wave` patterns are `PROJECT_ID_PATTERN` and `WAVE_ID_PATTERN` in
 `packages/contract/src/domain/ids.ts:7`, `9`; `lane.id` uses the wave pattern.
 `intervalSeconds` is required as a key but `null` is a legal value
-(`readIntervalSeconds`, `packages/contract/src/domain/envelope.ts:135`).
+(`readIntervalSeconds`, `packages/contract/src/domain/fields.ts:28`).
 
 ### 2.2 A lane
 
@@ -79,15 +80,15 @@ a string of at most 4096 bytes in which tab and newline are allowed. Omitting a
 key inside a nested object that is present is an error, because the reader
 validates each field rather than defaulting it — except the explicitly optional
 ones above.
-(`packages/contract/src/domain/envelope.ts:51-67`, `233-421`)
+(`packages/contract/src/domain/envelope.ts:51-67`, `201-389`)
 
 ### 2.3 Count caps
 
-- `lanes` at most 200 (`MAX_LANES`, `packages/contract/src/domain/envelope.ts:71`).
-- `disagreements` at most 20 per lane (`MAX_DISAGREEMENTS`, `…/envelope.ts:76`).
-- `detail` at most 256 keys in total, nested (`MAX_DETAIL_KEYS`, `…/envelope.ts:79`).
+- `lanes` at most 200 (`MAX_LANES`, `packages/contract/src/domain/envelope.ts:69`).
+- `disagreements` at most 20 per lane (`MAX_DISAGREEMENTS`, `…/envelope.ts:74`).
+- `detail` at most 256 keys in total, nested (`MAX_DETAIL_KEYS`, `…/envelope.ts:77`).
 - `detail` at most 8 levels deep, counting the `detail` object itself as level 1
-  (`MAX_DETAIL_DEPTH`, `…/envelope.ts:78`).
+  (`MAX_DETAIL_DEPTH`, `…/envelope.ts:76`).
 
 ### 2.4 `reported`
 
@@ -119,21 +120,21 @@ though the pattern matches. (`packages/contract/src/domain/validation.ts:20`,
   1 048 576 bytes, else one error at the root (`MAX_INPUT_BYTES`,
   `packages/contract/src/domain/validation.ts:17`).
 - `reported.detail` must be at most 8 KiB = 8192 bytes re-serialised
-  (`MAX_DETAIL_BYTES`, `packages/contract/src/domain/envelope.ts:73`).
+  (`MAX_DETAIL_BYTES`, `packages/contract/src/domain/envelope.ts:71`).
 - `derived.log.tail` must be at most 4 KiB = 4096 bytes, measured as bytes and
-  not characters (`MAX_TAIL_BYTES`, `…/envelope.ts:74`).
+  not characters (`MAX_TAIL_BYTES`, `…/envelope.ts:72`).
 - Any character below `0x20`, and `0x7f`, is a control character and is refused
   in every string the validator reads — keys of `detail` included, where the
   message is `a key contains a control character`. Tab and newline survive only
   where the rule allows line breaks: `log.tail` and `detail` string values.
-  (`packages/contract/src/domain/validation.ts:58-81`, `…/envelope.ts:184-186`)
+  (`packages/contract/src/domain/validation.ts:58-81`, `…/envelope.ts:152-154`)
 - The keys `__proto__`, `constructor` and `prototype` are refused anywhere
   inside `detail`, at any depth (`FORBIDDEN_DETAIL_KEYS`,
-  `packages/contract/src/domain/envelope.ts:81`).
+  `packages/contract/src/domain/envelope.ts:79`).
 - `detail` may hold any JSON value — strings, numbers, booleans, `null`,
   arrays, objects. The only rules on it are the byte cap, the depth cap, the key
   budget, the control-character rule and the reserved keys.
-  (`detailProblem`, `packages/contract/src/domain/envelope.ts:157-231`)
+  (`detailProblem`, `packages/contract/src/domain/envelope.ts:125-199`)
 
 ### 2.7 A minimal valid envelope
 
@@ -225,6 +226,120 @@ though the pattern matches. (`packages/contract/src/domain/validation.ts:20`,
       "disagreements": []
     }
   ]
+}
+```
+
+## The project status document
+
+A project may also push what it knows about **itself**: how many pull-request rows
+a listing could not read, and what its last `plan:verify` artifact said. Both are
+facts about a project at a moment, not about a wave, so they live in a second
+document with its own schema, `waves-status/v1`, and its own validator
+`validateStatus` — the same shape as the envelope's gate, pure, and exported from
+the package. The wave envelope does not carry either key.
+(`packages/contract/src/domain/status.ts`, `packages/contract/src/index.ts`)
+
+| field             | type              | required | bounds                                                        |
+| ----------------- | ----------------- | -------- | ------------------------------------------------------------- |
+| `schema`          | string            | yes      | exactly `"waves-status/v1"` (`STATUS_SCHEMA`, `…/model.ts:5`) |
+| `project`         | string            | yes      | the project id of section 2.1                                 |
+| `generatedAt`     | string            | yes      | strict ISO-8601 UTC, see 2.5                                  |
+| `intervalSeconds` | integer or `null` | yes      | 1 to 300 inclusive, or `null` for the 300 s default           |
+| `prs`             | object            | no       | `{ skipped }`, see below                                      |
+| `backlog`         | object            | no       | see below                                                     |
+
+Closed at every level, exactly as the envelope is: an unknown key anywhere is an
+error (`STATUS_KEYS`, `packages/contract/src/domain/status.ts:17`).
+
+`intervalSeconds` is not in the shape the plan sketched. It is here because
+staleness applies to a project status as it applies to a wave (section 4), and
+that needs an interval; it is the same reader the envelope uses
+(`readIntervalSeconds`, `packages/contract/src/domain/fields.ts:28`).
+
+**A document with neither `prs` nor `backlog` is valid.** It says "nothing to
+report" and still refreshes the status's freshness, which is how a project says
+it is alive and has no news.
+
+`prs` is closed, keys exactly `skipped`: the rows a pull-request listing returned
+that no parser could read. One listing per collection, so it is one number for
+the run, an integer in 0 to 100 000 (`MAX_SKIPPED`,
+`packages/contract/src/domain/status.ts:28`).
+
+`backlog` is closed, keys exactly `state`, `at`, `scope`, `git`, `premises`
+(`BACKLOG_KEYS`, `packages/contract/src/domain/status-backlog.ts:20`):
+
+| field      | type   | required | bounds                              |
+| ---------- | ------ | -------- | ----------------------------------- |
+| `state`    | string | yes      | `recorded` \| `absent` \| `unknown` |
+| `at`       | string | no       | strict ISO-8601 UTC, see 2.5        |
+| `scope`    | object | no       | `{ kind, plans }`, see below        |
+| `git`      | object | no       | `{ branch, head }`, see below       |
+| `premises` | array  | no       | at most 200 entries, see below      |
+
+`scope` is closed: `kind` is `full` | `partial`, and `plans` is at most
+64 entries of 1 to 120 characters (`MAX_PLANS`, `MAX_PLAN_CHARS`,
+`packages/contract/src/domain/status-backlog.ts:39-40`). `git` is closed:
+`branch` is 1 to 255 characters — git's own limit for a ref component is wider,
+255 is what a page can show — and `head` matches `^[0-9a-f]{7,64}$`, so a full
+or abbreviated object id and nothing else (`MAX_BRANCH_CHARS`, `HEAD_PATTERN`,
+`packages/contract/src/domain/status-backlog.ts:42`, `48`).
+
+`premises` is closed, keys exactly `lane`, `plan`, `status`, `reason`. `lane`
+and `plan` are 1 to 120 characters, `status` is `holds` | `stale` | `timed-out` |
+`error`, and `reason` is an optional 1 to 500 characters. At most 200 entries
+(`MAX_PREMISES`, `MAX_PREMISE_CHARS`, `MAX_REASON_CHARS`,
+`packages/contract/src/domain/status-backlog.ts:44-46`).
+
+Every string of the document is bounded in characters and free of control
+characters, and none of them allows a line break: there is no field here that
+holds log output, so no rule sets `lineBreaks`. The whole document re-serialised
+must be at most 1 MiB, else one error at the root, as for the envelope
+(`normalise`, `packages/contract/src/domain/status.ts:90`).
+
+**Staleness.** The clock is the server's and the instant it uses is when the
+server received the document, exactly as section 4 for a wave: the status is
+stale when the time since its receive is longer than
+`staleAfterMs(intervalSeconds)`, with the same `null` default of 300 s.
+`generatedAt` is stored and echoed, and no rule reads it.
+
+A minimal valid status document, carrying neither key:
+
+```json
+{
+  "schema": "waves-status/v1",
+  "project": "apollo",
+  "generatedAt": "2026-10-03T08:00:00Z",
+  "intervalSeconds": null
+}
+```
+
+A full valid status document:
+
+```json
+{
+  "schema": "waves-status/v1",
+  "project": "apollo",
+  "generatedAt": "2026-10-03T08:00:00.250Z",
+  "intervalSeconds": 300,
+  "prs": { "skipped": 2 },
+  "backlog": {
+    "state": "recorded",
+    "at": "2026-10-03T07:55:00Z",
+    "scope": { "kind": "full", "plans": ["plan:verify"] },
+    "git": {
+      "branch": "main",
+      "head": "0a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"
+    },
+    "premises": [
+      { "lane": "C1", "plan": "plan:verify", "status": "holds" },
+      {
+        "lane": "C2",
+        "plan": "plan:verify",
+        "status": "timed-out",
+        "reason": "no push since 06:00"
+      }
+    ]
+  }
 }
 ```
 
@@ -616,7 +731,16 @@ token anyone presented. That is the cost of the `404` rule and it is accepted.
 
 **Registration.** The body is a closed object of `id` (the project id pattern of
 section 2.1), `name` (1 to 80 characters) and an optional `repo` (an `https` URL
-of at most 200 characters); any other key is a `422`. The `201` carries the
+of at most 200 characters); any other key is a `422`. A `repo` is refused unless
+every character in it is one a URL holds unescaped —
+`A-Z a-z 0-9 - . _ ~ : / ? # [ ] @ ! $ & ' ( ) * + , ; = %` — so a placeholder
+such as `https://github.com/<owner>/<repo>` is a `422` rather than a stored URL
+(`REPO_CHARACTER_PATTERN`, `packages/contract/src/domain/project.ts:34`,
+`53`; the
+message is `expected only the characters a URL holds unescaped`). A bare `%` is
+in the set, so `b%ZZ` and a trailing `%` pass it, and `new URL` accepts them
+too, so both are stored; an internationalised host is refused, because its
+letters are not in the set. The `201` carries the
 project's token — 32 random bytes as base64url, 43 characters — and that answer
 is the only time the token exists in clear text anywhere. An id that is already
 registered is a `409`, unless the request target is exactly
@@ -763,15 +887,24 @@ HTTP on its port and never asks for a client certificate
 
 Every envelope declares `schema: "waves/v1"` and the validator refuses
 anything else (`SCHEMA`, `packages/contract/src/domain/model.ts:3`;
-`packages/contract/src/domain/envelope.ts:552`).
+`packages/contract/src/domain/envelope.ts:520`).
 
 The closed-object rule is what makes a version meaningful. Under `v1` a new
 **optional** field is an additive minor change: old readers refuse to accept it
 today, so a reader has to be upgraded first, and the server will only treat it
 as additive once the closed key list actually gains the key. Anything else —
 removing a field, renaming one, narrowing a bound, changing a type, making an
-optional field required — needs `waves/v2` and a new `SCHEMA`. Planned additive
-fields for a future minor revision are `prs` and `backlog`.
+optional field required — needs `waves/v2` and a new `SCHEMA`. `prs` and
+`backlog` are not planned envelope fields: they are keys of the second document,
+"The project status document", and the wave envelope does not carry them.
+
+A registration body is **not** under `schema: "waves/v1"` — it carries no
+schema at all — so the project rule is versioned by the package rather than by
+the envelope schema, and a minor version may tighten it.
+
+Contract **0.2.0** adds the project status document and tightens `repo`: a new
+document, a new export and a stricter character rule, which is what a minor
+version of this package is for.
 
 ## 8. A curl example
 

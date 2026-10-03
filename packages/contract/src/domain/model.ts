@@ -2,6 +2,8 @@ import type { LaneId, ProjectId, WaveId } from "./ids.js";
 
 export const SCHEMA = "waves/v1";
 
+export const STATUS_SCHEMA = "waves-status/v1";
+
 export type LaneEvent = "started" | "settled" | "failed";
 
 export type PullRequestState = "open" | "merged" | "closed";
@@ -87,4 +89,46 @@ export interface Project {
 export interface StoredSnapshot {
   envelope: Envelope;
   receivedAt: string;
+}
+
+export interface PrsStatus {
+  skipped: number;
+}
+
+export type BacklogState = "recorded" | "absent" | "unknown";
+
+export type PremiseStatus = "holds" | "stale" | "timed-out" | "error";
+
+export interface BacklogScope {
+  kind: "full" | "partial";
+  plans: string[];
+}
+
+export interface BacklogGit {
+  branch: string;
+  head: string;
+}
+
+export interface Premise {
+  lane: string;
+  plan: string;
+  status: PremiseStatus;
+  reason?: string;
+}
+
+export interface Backlog {
+  state: BacklogState;
+  at?: string;
+  scope?: BacklogScope;
+  git?: BacklogGit;
+  premises?: Premise[];
+}
+
+export interface ProjectStatus {
+  schema: typeof STATUS_SCHEMA;
+  project: ProjectId;
+  generatedAt: string;
+  intervalSeconds: number | null;
+  prs?: PrsStatus;
+  backlog?: Backlog;
 }

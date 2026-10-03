@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { validateProject, type ValidationIssue } from "../src/index.js";
 
+import { BELL } from "./support.js";
+
 const TOKEN = "a".repeat(64);
 
 function project(patch: Record<string, unknown> = {}): Record<string, unknown> {
@@ -77,8 +79,64 @@ describe("validateProject", () => {
 
   it("requires an https repository", () => {
     expectPaths(project({ repo: "http://example.com/alpha.git" }), ["/repo"]);
-    expectPaths(project({ repo: "not a url" }), ["/repo"]);
+    expectPaths(project({ repo: "https://" }), ["/repo"]);
+    expectPaths(project({ repo: "github.com/a/b" }), ["/repo"]);
     expectPaths(project({ repo: 7 }), ["/repo"]);
+  });
+
+  it("refuses a repository with a character a URL must escape", () => {
+    // The placeholder a first register-all passes: <owner> is not a URL.
+    const placeholder = validateProject(
+      project({ repo: "https://github.com/<owner>/<repo>" }),
+    );
+    expect(placeholder.ok).toBe(false);
+    expect(placeholder.ok ? [] : placeholder.errors).toEqual([
+      {
+        path: "/repo",
+        message: "expected only the characters a URL holds unescaped",
+      },
+    ]);
+    expectPaths(project({ repo: "https://github.com/a/b c" }), ["/repo"]);
+    expectPaths(project({ repo: "https://github.com/a\\b" }), ["/repo"]);
+    expectPaths(project({ repo: 'https://github.com/a"b' }), ["/repo"]);
+    expectPaths(project({ repo: "https://github.com/a{b" }), ["/repo"]);
+    expectPaths(project({ repo: "https://github.com/a|b" }), ["/repo"]);
+    expectPaths(project({ repo: "https://github.com/a^b" }), ["/repo"]);
+    expectPaths(project({ repo: "https://github.com/a`b" }), ["/repo"]);
+  });
+
+  it("refuses a control character in a repository before its characters are read", () => {
+    expectPaths(project({ repo: `https://github.com/a${BELL}b` }), ["/repo"]);
+  });
+
+  it("accepts the two repositories registered today", () => {
+    // The store does not validate its registry on a read, so a repository that
+    // fails this rule would be stored and then refused on every registration
+    // that repeats it: registerProject validates the body before the store is
+    // asked whether the project exists.
+    expectValid(
+      project({ repo: "https://github.com/martinkrakowski/campaign-foundry" }),
+    );
+    expectValid(
+      project({
+        repo: "https://github.com/martinkrakowski/krakowski-cloud-solutions-client-portal",
+      }),
+    );
+  });
+
+  it("accepts the characters a URL holds unescaped", () => {
+    expectValid(project({ repo: "https://github.com/a%2Fb" }));
+    expectValid(project({ repo: "https://github.com/a~b" }));
+    expectValid(project({ repo: "https://github.com/a/b#frag" }));
+    expectValid(project({ repo: "https://github.com/a/b?q=1" }));
+    expectValid(project({ repo: "https://github.com/a/b%ZZ" }));
+    expectValid(project({ repo: "https://github.com/a/b%" }));
+    expectValid(project({ repo: "https://[2001:db8::1]/a" }));
+    expectValid(project({ repo: "https://github.com/a:b@c;d=e&f" }));
+  });
+
+  it("refuses a repository whose host is not ASCII", () => {
+    expectPaths(project({ repo: "https://exämple.com/a" }), ["/repo"]);
   });
 
   it("accepts a repository of 200 characters", () => {
