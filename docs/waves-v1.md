@@ -341,7 +341,7 @@ is read, and at most `MAX_ATTENTION_WAVES` (256) of them are read at all, so
 which waves a request reads is decided by receive time and never by the order the
 store answered its heads in. Each project's newest wave in the window comes
 before any project's second, so one busy project cannot fill the bound on its
-own and leave the others at zero. `wavesOmitted` is how many in-window waves that left
+own and leave the others at zero. `wavesOmitted` is how many in-window waves holding at least one lane that left
 out, and `truncated` is `true` whenever it is above zero: the list may then be
 missing lanes, and no other field says how many waves were behind them.
 
@@ -423,8 +423,9 @@ this.
 
 **Scope.** By default only the project's **retained** waves are listed
 (section 4); a wave past the retention is still in `waves` while the bound has
-room for it, with `retained: false`, and contributes no rows. `?all=1` lists every
-wave the store holds.
+room for it, with `retained: false`, and contributes no rows. `?all=1` widens
+the waves whose rows are collected to every wave the store holds; it does not lift
+the bound on `waves`, which still lists at most the newest `MAX_LISTED_WAVES`.
 
 **The query.** The part of the target after the first `?` must be empty — no `?`
 at all, or a bare trailing `?` — or exactly `all=1`. Anything else is a `400`

@@ -159,7 +159,9 @@ export interface AttentionView {
   }[];
   readonly truncated: boolean;
   /**
-   * The waves inside the attention window that this request did not read, which
+   * The waves inside the attention window holding at least one lane that this
+   * request did not read (a wave with no lanes can match nothing and is never
+   * counted), which
    * `truncated` is then `true` for: the list may be missing lanes a reader would
    * otherwise see, and no other field of this view says how many. While it is
    * above zero each project's `attention` count covers the waves that were read
