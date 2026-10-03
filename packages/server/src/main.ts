@@ -2,7 +2,12 @@
 import { fileURLToPath } from "node:url";
 
 import { type Config, parseConfig } from "./application/config.js";
-import { readAdminToken } from "./infrastructure/admin-token.js";
+import {
+  readAdminToken,
+  readEnrollToken,
+  sameToken,
+  type SecretToken,
+} from "./infrastructure/admin-token.js";
 import { FileStore } from "./infrastructure/file-store.js";
 import { createHttpServer } from "./infrastructure/http-server.js";
 import { listen } from "./infrastructure/listen.js";
@@ -45,23 +50,27 @@ async function loadReadToken(config: Config): Promise<string | undefined> {
   }
 }
 
-type AdminLoad =
+type SecretLoad =
   | { readonly kind: "enabled"; readonly token: string }
   | { readonly kind: "absent" }
   | { readonly kind: "failed" };
 
 /**
- * The admin token is read once, here, and only its digest is ever used. A
- * missing file is not a failure: the admin routes are then disabled, which the
- * one line below is the only trace of, so an operator can tell a disabled admin
- * from a broken one without the token ever appearing anywhere.
+ * Both service tokens are read once, here, and only their digests are ever used.
+ * A missing file is not a failure: what that token could do is then disabled,
+ * which the one line each caller prints is the only trace of, so an operator can
+ * tell a disabled token from a broken one without either value ever appearing
+ * anywhere.
  */
-async function loadAdminToken(config: Config): Promise<AdminLoad> {
-  if (config.adminTokenFile === undefined) {
+async function loadSecret(
+  path: string | undefined,
+  read: (path: string) => Promise<SecretToken>,
+): Promise<SecretLoad> {
+  if (path === undefined) {
     return { kind: "absent" };
   }
   try {
-    return await readAdminToken(config.adminTokenFile);
+    return await read(path);
   } catch (error) {
     fail(error);
     return { kind: "failed" };
@@ -77,12 +86,32 @@ async function start(): Promise<number> {
   if (config.readTokenFile !== undefined && readToken === undefined) {
     return EXIT_INVALID_ENVIRONMENT;
   }
-  const admin = await loadAdminToken(config);
+  const admin = await loadSecret(config.adminTokenFile, readAdminToken);
   if (admin.kind === "failed") {
     return EXIT_INVALID_ENVIRONMENT;
   }
   if (admin.kind === "absent") {
     io.out("waves: admin routes disabled");
+  }
+  const enroll = await loadSecret(config.enrollTokenFile, readEnrollToken);
+  if (enroll.kind === "failed") {
+    return EXIT_INVALID_ENVIRONMENT;
+  }
+  if (enroll.kind === "absent") {
+    io.out("waves: enrollment disabled");
+  }
+  // One value behind two names would hand every admin power to wherever the
+  // enrollment copy lives, so the process refuses to start rather than run with
+  // it. The comparison is over digests, never over the values themselves.
+  if (
+    admin.kind === "enabled" &&
+    enroll.kind === "enabled" &&
+    sameToken(admin.token, enroll.token)
+  ) {
+    io.err(
+      "waves: WAVES_ENROLL_TOKEN_FILE holds the admin token; the two must differ",
+    );
+    return EXIT_INVALID_ENVIRONMENT;
   }
 
   const server = createHttpServer({
@@ -91,6 +120,7 @@ async function start(): Promise<number> {
     publicDir: fileURLToPath(new URL("../public", import.meta.url)),
     readToken,
     adminToken: admin.kind === "enabled" ? admin.token : undefined,
+    enrollToken: enroll.kind === "enabled" ? enroll.token : undefined,
     trustProxy: config.trustProxy,
     log: io.out,
   });

@@ -1,6 +1,7 @@
 import type { Project, StoredSnapshot } from "@hexagen-monaco/waves-contract";
 
 import {
+  type CreateOutcome,
   type SnapshotHead,
   type StorePort,
   snapshotHead,
@@ -30,6 +31,26 @@ export class MemoryStore implements StorePort<Project, StoredSnapshot> {
   async putProject(project: Project): Promise<void> {
     assertIds(project.id);
     this.#projects.set(project.id, structuredClone(project));
+  }
+
+  /**
+   * The same three answers as the file store. Nothing is awaited between the
+   * test and the write, so one call cannot interleave with another and the
+   * contract the two stores share holds here too.
+   */
+  async createProject(
+    project: Project,
+    ceiling: number,
+  ): Promise<CreateOutcome> {
+    assertIds(project.id);
+    if (this.#projects.has(project.id)) {
+      return "exists";
+    }
+    if (this.#projects.size >= ceiling) {
+      return "ceiling";
+    }
+    this.#projects.set(project.id, structuredClone(project));
+    return "created";
   }
 
   async deleteProject(id: string): Promise<void> {

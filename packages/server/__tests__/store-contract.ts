@@ -88,6 +88,88 @@ export function runStoreContract(createHarness: () => StoreHarness): void {
       }
     });
 
+    it("creates a project whose id is free, and keeps it", async () => {
+      const { store, dispose } = createHarness();
+      try {
+        await expect(store.createProject(project("alpha"), 64)).resolves.toBe(
+          "created",
+        );
+
+        await expect(store.getProject("alpha")).resolves.toEqual(
+          project("alpha"),
+        );
+        await expect(store.listProjects()).resolves.toEqual([project("alpha")]);
+      } finally {
+        await dispose();
+      }
+    });
+
+    it("answers exists for an id that is taken, and stores nothing", async () => {
+      const { store, dispose } = createHarness();
+      try {
+        await store.putProject(project("alpha", "First"));
+
+        await expect(
+          store.createProject(project("alpha", "Second"), 64),
+        ).resolves.toBe("exists");
+
+        // The store it already had is left exactly as it was: a create is not a
+        // put, so it cannot replace a project on its way to answering.
+        await expect(store.getProject("alpha")).resolves.toEqual(
+          project("alpha", "First"),
+        );
+        await expect(store.listProjects()).resolves.toHaveLength(1);
+      } finally {
+        await dispose();
+      }
+    });
+
+    it("answers ceiling at the number it was handed, and stores nothing", async () => {
+      const { store, dispose } = createHarness();
+      try {
+        await store.putProject(project("alpha"));
+        await store.putProject(project("beta"));
+
+        // Two projects, a ceiling of two: the next one is over it, and the id
+        // below the ceiling would otherwise have been created.
+        await expect(store.createProject(project("gamma"), 2)).resolves.toBe(
+          "ceiling",
+        );
+        await expect(store.getProject("gamma")).resolves.toBeUndefined();
+        await expect(store.listProjects()).resolves.toHaveLength(2);
+      } finally {
+        await dispose();
+      }
+    });
+
+    it("counts every project in the ceiling, however it was stored", async () => {
+      const { store, dispose } = createHarness();
+      try {
+        await store.putProject(project("alpha"));
+
+        // The ceiling is the registry's size, not a count of what enrollment
+        // created: a project added by hand counts against it.
+        await expect(store.createProject(project("beta"), 1)).resolves.toBe(
+          "ceiling",
+        );
+        await expect(store.listProjects()).resolves.toEqual([project("alpha")]);
+      } finally {
+        await dispose();
+      }
+    });
+
+    it("rejects an invalid project id", async () => {
+      const { store, dispose } = createHarness();
+      try {
+        await expect(
+          store.createProject(project("../escape"), 64),
+        ).rejects.toThrow("invalid project id");
+        await expect(store.listProjects()).resolves.toEqual([]);
+      } finally {
+        await dispose();
+      }
+    });
+
     it("lists projects ordered by id", async () => {
       const { store, dispose } = createHarness();
       try {

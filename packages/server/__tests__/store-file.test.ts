@@ -195,6 +195,69 @@ describe("FileStore durability", () => {
   });
 });
 
+describe("FileStore concurrent creates", () => {
+  it("lets exactly one of two creates of the same id win", async () => {
+    const { store, dispose } = harness();
+    try {
+      // Started together, so the second call is waiting in the queue rather than
+      // reading a registry the first has already written: the check and the
+      // write have to be the same queued operation for this to hold.
+      const outcomes = await Promise.all([
+        store.createProject(project("alpha", "First"), 64),
+        store.createProject(project("alpha", "Second"), 64),
+      ]);
+
+      expect([...outcomes].sort()).toEqual(["created", "exists"]);
+      await expect(store.listProjects()).resolves.toHaveLength(1);
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("lets only one of two different ids through at the ceiling", async () => {
+    const { store, dispose } = harness();
+    try {
+      await store.putProject(project("gamma"));
+      await store.putProject(project("delta"));
+
+      const outcomes = await Promise.all([
+        store.createProject(project("alpha"), 3),
+        store.createProject(project("beta"), 3),
+      ]);
+
+      expect([...outcomes].sort()).toEqual(["ceiling", "created"]);
+      await expect(store.listProjects()).resolves.toHaveLength(3);
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("lets only one of many concurrent creates through at the ceiling", async () => {
+    const { store, dispose } = harness();
+    try {
+      await store.putProject(project("seed"));
+
+      const outcomes = await Promise.all(
+        ["alpha", "beta", "gamma", "delta"].map((id) =>
+          store.createProject(project(id), 2),
+        ),
+      );
+
+      // One slot below the ceiling of two, and four callers that all read the
+      // registry before any of them wrote: the queue is what leaves one winner.
+      expect(outcomes.filter((outcome) => outcome === "created")).toHaveLength(
+        1,
+      );
+      expect(outcomes.filter((outcome) => outcome === "ceiling")).toHaveLength(
+        3,
+      );
+      await expect(store.listProjects()).resolves.toHaveLength(2);
+    } finally {
+      await dispose();
+    }
+  });
+});
+
 describe("FileStore hostile filesystem", () => {
   it("refuses a data directory that is a symbolic link", async () => {
     const root = mkdtempSync(join(tmpdir(), "waves-file-store-"));

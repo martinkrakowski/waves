@@ -270,7 +270,7 @@ stopped telling the server whether the process is still up
 ### 5.1 Read routes
 
 A request is decided in this order, and the order is what picks the status you
-see (`respond`, `packages/server/src/infrastructure/http-server.ts:178-254`):
+see (`respond`, `packages/server/src/infrastructure/http-server.ts:182-258`):
 
 1. A parser refusal (`431`, `408`, `400`) happens before the request exists.
 2. An HTTP/1.1 `Expect` with any value other than `100-continue` is a `417`
@@ -350,8 +350,8 @@ own receive time and its own interval — so a push that lands between the heads
 the snapshot is judged by the push (`listAttention`,
 `packages/server/src/application/read-model.ts:693-755`).
 
-(`route`, `packages/server/src/infrastructure/http-routes.ts:109`;
-`replyFor`, `readyReply`, `packages/server/src/infrastructure/http-server.ts:96-143`;
+(`route`, `packages/server/src/infrastructure/http-routes.ts:116`;
+`replyFor`, `readyReply`, `packages/server/src/infrastructure/http-server.ts:98-145`;
 `ProjectSummary`, `WaveSummary`, `WaveView`,
 `packages/server/src/application/read-model.ts:69-113`;
 `SnapshotHead`, `packages/server/src/application/ports/store.ts:8-13`)
@@ -404,7 +404,7 @@ alone. The check is step 8 of section 5.1, so an unauthenticated request with a
 bad query is a `401`, a `PATCH` with a bad query is a `405`, and a bad query on
 an unknown project is a `400` rather than a `404`. `HEAD` gets the same status as
 `GET` with no body (`queryOf`, `…/http-routes.ts:93-96`; `ALL_WAVES` and the
-check itself, `packages/server/src/infrastructure/http-server.ts:61`, `219-245`).
+check itself, `packages/server/src/infrastructure/http-server.ts:61`, `223-249`).
 
 **The bounds and `truncated`.** A listing stops at whichever of three bounds it
 reaches first, and no further wave is read once one of them is spent — the wave
@@ -466,7 +466,7 @@ Status codes:
   that is not a route, or a static file that is not there. A `project` or
   `wave` segment that fails the id pattern is not a route at all, so it is a
   `404` and never reaches the store
-  (`packages/server/src/infrastructure/http-routes.ts:119-143`).
+  (`packages/server/src/infrastructure/http-routes.ts:126-150`).
 - `405` `{"error":"method not allowed"}` with the `Allow` of that path:
   `GET, HEAD, POST` on the project collection, `DELETE` on a single project,
   `GET, HEAD, PUT, DELETE` on a wave, and `GET, HEAD` everywhere else —
@@ -488,16 +488,16 @@ Status codes:
   (`parserRefusal`, `refuseParsedRequest`,
   `packages/server/src/infrastructure/http-security.ts:146-176`).
 - `500` `{"error":"internal"}` — anything that throws while building a reply
-  (`packages/server/src/infrastructure/http-server.ts:256-284`).
+  (`packages/server/src/infrastructure/http-server.ts:260-288`).
 - `401` `{"error":"unauthorized"}` with `WWW-Authenticate: Basic realm="waves",
 charset="UTF-8"` — only when a read token is configured and the path is
   neither `/healthz` nor `/readyz`
-  (`packages/server/src/infrastructure/http-server.ts:203-212`).
+  (`packages/server/src/infrastructure/http-server.ts:207-216`).
 
 ### 5.2 The optional viewer token
 
 `WAVES_READ_TOKEN_FILE` points at a file whose trimmed content is the password
-(`packages/server/src/application/config.ts:19`;
+(`packages/server/src/application/config.ts:20`;
 `readReadToken`, `packages/server/src/infrastructure/read-token.ts:10`). It
 guards every read except `/healthz` and `/readyz`, and it is presented as HTTP
 Basic credentials where **any username is accepted** — only the password is
@@ -520,9 +520,9 @@ unless it is a `204` (`BASE_HEADERS` and `send`,
 under `/api/`, the `GET` and `HEAD` answers of `/readyz` and every answer of the
 write pipeline also carry
 `Cache-Control: no-store` (`isApiPath`,
-`packages/server/src/infrastructure/http-routes.ts:98`; `extraFor`,
-`packages/server/src/infrastructure/http-server.ts:155-157`, `193-202`;
-`answer`, `packages/server/src/infrastructure/http-write.ts:255-265`). The `405`
+`packages/server/src/infrastructure/http-routes.ts:105`; `extraFor`,
+`packages/server/src/infrastructure/http-server.ts:157-159`, `195-204`;
+`answer`, `packages/server/src/infrastructure/http-write.ts:273-283`). The `405`
 that an `OPTIONS` or `PATCH` gets on `/readyz` carries no `Cache-Control`; a
 `PUT`, `POST` or `DELETE` on it is the write pipeline's `405` and does.
 
@@ -536,15 +536,15 @@ read these routes nor write to them; call them from a server, not from a page.
 
 ### 5.4 Write and registration routes
 
-| route                                       | token   | body                             | success                                        |
-| ------------------------------------------- | ------- | -------------------------------- | ---------------------------------------------- |
-| `PUT /api/v1/projects/<id>/waves/<wave>`    | project | the envelope of section 2        | `200` `{ receivedAt }`                         |
-| `DELETE /api/v1/projects/<id>/waves/<wave>` | project | none                             | `204`, or `404` when there was no such wave    |
-| `POST /api/v1/projects`                     | admin   | `{ id, name, repo? }`, see below | `201` `{ id, token }`                          |
-| `DELETE /api/v1/projects/<id>`              | admin   | none                             | `204`, or `404` when there was no such project |
+| route                                       | token                             | body                             | success                                        |
+| ------------------------------------------- | --------------------------------- | -------------------------------- | ---------------------------------------------- |
+| `PUT /api/v1/projects/<id>/waves/<wave>`    | project                           | the envelope of section 2        | `200` `{ receivedAt }`                         |
+| `DELETE /api/v1/projects/<id>/waves/<wave>` | project                           | none                             | `204`, or `404` when there was no such wave    |
+| `POST /api/v1/projects`                     | admin, or enrollment for a new id | `{ id, name, repo? }`, see below | `201` `{ id, token }`                          |
+| `DELETE /api/v1/projects/<id>`              | admin                             | none                             | `204`, or `404` when there was no such project |
 
-(`writeRouteOf`, `packages/server/src/infrastructure/http-routes.ts:64-81`;
-`createWriteHandler`, `packages/server/src/infrastructure/http-write.ts:244`)
+(`writeRouteOf`, `packages/server/src/infrastructure/http-routes.ts:71-88`;
+`createWriteHandler`, `packages/server/src/infrastructure/http-write.ts:259`)
 
 A token is presented as `Authorization: Bearer <token>`: exactly that scheme,
 exactly one space, and 32 to 128 characters of `A-Z`, `a-z`, `0-9`, `_` and `-`
@@ -555,12 +555,64 @@ SHA-256 digest of a project token, and compares digests in constant time
 
 The admin token is one secret for the whole service, read once at startup from
 the file `WAVES_ADMIN_TOKEN_FILE` names. When that variable is absent, or
-names a file that does not exist, the two admin routes do not exist: they answer
-`404`, so a probe cannot tell a disabled route from a path that was never there.
+names a file that does not exist, `?rotate=1` and `DELETE` do not exist: they
+answer `404`, so a probe cannot tell a disabled route from a path that was never
+there. A plain `POST /api/v1/projects` answers `404` only when neither the admin
+token nor the enrollment token is configured.
 A file that does exist must hold a token in the grammar above once trimmed, or
 the server refuses to start
-(`readAdminToken`, `packages/server/src/infrastructure/admin-token.ts:21-40`;
-`packages/server/src/infrastructure/http-write.ts:457-466`).
+(`readAdminToken`, `packages/server/src/infrastructure/admin-token.ts:59-61`;
+`adminRouteEnabled`, `packages/server/src/application/enrollment.ts:69-79`;
+`packages/server/src/infrastructure/http-write.ts:517-537`).
+
+The **enrollment token** is a second, optional secret, read the same way from
+the file `WAVES_ENROLL_TOKEN_FILE` names, with the same value rule
+(`readEnrollToken`, `packages/server/src/infrastructure/admin-token.ts:68-70`).
+It may do exactly one thing: `POST /api/v1/projects` with no query, for an id
+that does not exist yet. Everything else is refused: `?rotate=1` and
+`DELETE /api/v1/projects/<id>` under it are `403`
+`{"error":"enrollment token cannot do this"}`, charged to the address's failure
+window like a `401`; a push or a wave delete under it is `401`, as it is for any
+token that is not a project's. It never rotates a token, never removes a project
+and never touches a wave
+(`authorize`, `packages/server/src/application/enrollment.ts:37-52`;
+`refused`, `packages/server/src/infrastructure/http-write.ts:361-367`).
+
+When both tokens are present and their files hold the same value the server
+**refuses to start** with exit `2`, because an enrollment copy of the admin token
+would carry every admin power to wherever that copy lives. The comparison is over
+SHA-256 digests through `timingSafeEqual` and never over the values themselves
+(`sameToken`, `packages/server/src/infrastructure/admin-token.ts:79-81`;
+`packages/server/src/main.ts`).
+
+The whole authorization table is one pure function, and a route that no
+configured token could ever authorize is `404` rather than locked:
+
+| route         | rotate | token  | answer       | route exists when   |
+| ------------- | ------ | ------ | ------------ | ------------------- |
+| any           | any    | none   | refuse `401` | —                   |
+| register      | no     | admin  | `admin`      | `admin \|\| enroll` |
+| register      | no     | enroll | `enroll`     | `admin \|\| enroll` |
+| register      | yes    | admin  | `admin`      | `admin`             |
+| register      | yes    | enroll | refuse `403` | `admin`             |
+| removeProject | any    | admin  | `admin`      | `admin`             |
+| removeProject | any    | enroll | refuse `403` | `admin`             |
+
+(`authorize` and `adminRouteEnabled`,
+`packages/server/src/application/enrollment.ts:37-79`; `kindOf`,
+`packages/server/src/infrastructure/http-write.ts:346-352`)
+
+A registration or a removal therefore compares the presented digest against
+**both** configured digests, in two statements with no early return, so the time
+an answer takes depends on which tokens are configured and never on what was
+presented. The project-write path is not changed by any of this: a push or a
+wave delete compares only against every stored project digest.
+
+With only the enrollment token configured and no admin token, `POST
+/api/v1/projects` without a token is `401` while `?rotate=1` is `404` and another
+query is `400`, so a probe can tell a route that is locked from one that is gone,
+and from one whose query it does not know — never the value of a token, nor which
+token anyone presented. That is the cost of the `404` rule and it is accepted.
 
 **Registration.** The body is a closed object of `id` (the project id pattern of
 section 2.1), `name` (1 to 80 characters) and an optional `repo` (an `https` URL
@@ -573,20 +625,43 @@ the old one and keeps its `registeredAt`. A rotation body is a full
 registration body: its `name` and `repo` replace the stored ones. `rotate=1` on an id that is not
 registered registers it. Deleting a project removes its waves with it.
 (`REGISTRATION_KEYS`, `registerProject`,
-`packages/server/src/application/write-model.ts:16`, `97-128`;
+`packages/server/src/application/write-model.ts:16`, `152-177`;
 `packages/contract/src/domain/project.ts:16-21`;
 `mintToken`, `packages/server/src/infrastructure/digest.ts:19`;
-`deleteProject`, `packages/server/src/infrastructure/file-store.ts:116-129`)
+`deleteProject`, `packages/server/src/infrastructure/file-store.ts:149-162`)
+
+Under the enrollment token a registration is one serialized store operation that
+answers `created`, `exists` or `ceiling`, so two concurrent enrollments of one
+id cannot both win and two at the ceiling cannot both pass. Past **64 projects in
+the registry** — counting every project however it was registered — an enrollment
+answers `403` `{"error":"enrollment ceiling reached"}`, which is _not_ charged to
+the failure window, and the admin token still registers. The ceiling is a
+constant rather than configuration, and it bounds how many, never what is in it
+(`ENROLL_CEILING`, `packages/server/src/application/write-model.ts:43`;
+`enrollProject`, `packages/server/src/application/write-model.ts:186-199`;
+`createProject`, `packages/server/src/application/ports/store.ts:30-41`;
+`FileStore.createProject`, `packages/server/src/infrastructure/file-store.ts:126-147`).
+
+Every registration logs one line through the same `log` as the access log when
+the enrollment token made it: `{"ts":"…","event":"enrolled","project":"<id>"}`,
+naming the id and never a token or a digest.
 
 **Authentication comes before the body.** Every step below is decided from the
 request line, the headers and — for the two `429`s — what the server remembers
 of earlier failures and writes, never from the body. They run in this order, and each refusal closes the
 connection without reading the body
-(`packages/server/src/infrastructure/http-write.ts:436-527`):
+(`packages/server/src/infrastructure/http-write.ts:494-633`):
 
 1. `404` `{"error":"not found"}` — the path is not a route. `405` with that
    path's `Allow` — it is one, and this method does not write to it.
-2. `404` — an admin route with no admin token configured.
+2. The query is read, and the `404` of a route no configured token could ever
+   authorize is decided from it: `POST /api/v1/projects` is `404` only when
+   neither token is configured, `?rotate=1` and `DELETE /api/v1/projects/<id>`
+   are `404` whenever the admin token is not, whatever the enrollment token is
+   (`adminRouteEnabled`, `packages/server/src/application/enrollment.ts:69-79`;
+   `packages/server/src/infrastructure/http-write.ts:517-537`). This step comes
+   before step 3 because `rotate` is part of the question; the `400` itself does
+   not.
 3. `400` `{"error":"bad query"}` — any non-empty query string, other than
    exactly `rotate=1` on a registration.
 4. `403` `{"error":"cross-origin writes refused"}` — the request carries an
@@ -598,7 +673,7 @@ connection without reading the body
    and one whose `Content-Length` is over the cap is `413`
    `{"error":"body too large"}`. The cap is 1 MiB = 1 048 576 bytes for a
    `PUT` and 16 KiB = 16 384 bytes for a `POST` (`PUT_BODY_CAP`,
-   `POST_BODY_CAP`, `packages/server/src/infrastructure/http-write.ts:41-42`).
+   `POST_BODY_CAP`, `packages/server/src/infrastructure/http-write.ts:50-51`).
 6. `429` `{"error":"too many failures"}` — this client address has failed
    authentication 10 times within 60 seconds. The window starts at the first
    failure and is not extended by the ones inside it (`FAILURE_LIMIT`,
@@ -611,15 +686,22 @@ connection without reading the body
    `WWW-Authenticate: Bearer realm="waves"`. A valid token of a **different**
    project is `403` `{"error":"wrong project"}`; every stored digest is
    compared, so the time an answer takes says nothing about which projects
-   exist. Each `401` and `403` of this step counts as one failure against the
-   address in step 6
-   (`digestOf`, `authenticateWave`, `denied`,
-   `packages/server/src/infrastructure/http-write.ts:268-344`).
+   exist. On the two admin routes the digest is compared against both of this
+   service's own digests instead, which answers a kind; `authorize` then turns
+   that into the admin power, the enrollment power, or the refusal above. Each
+   `401` and `403` of this step counts as one failure against the address in
+   step 6 (`digestOf`, `kindOf`, `refused`, `authenticateWave`, `denied`,
+   `packages/server/src/infrastructure/http-write.ts:286-297`, `324-367`,
+   `396-408`).
 8. `429` `{"error":"too many writes"}` with `Retry-After: 1` — one write per
    second per project, counting every authenticated attempt and not only the
-   accepted ones. The two admin routes share one allowance between them
+   accepted ones. The admin token's requests share one allowance, and the
+   enrollment token's have one of their own at the same rate, so a leaked
+   enrollment token cannot keep the admin token's cleanup at `429`
    (`PROJECT_INTERVAL_MS`, `packages/server/src/application/limiters.ts:5`;
-   `ADMIN_LIMITER_KEY`, `packages/server/src/infrastructure/http-write.ts:43`).
+   `ADMIN_LIMITER_KEY` and `ENROLL_LIMITER_KEY` in
+   `packages/server/src/infrastructure/http-write.ts`). Neither key can be a
+   project id.
 
 The client address in step 6 is the socket's, or with `WAVES_TRUST_PROXY=1` the
 last entry of `X-Forwarded-For`
@@ -629,8 +711,8 @@ Only then is the body read. A client that sent `Expect: 100-continue` over
 HTTP/1.1 gets its `100 Continue` here and not before, so a client that waits for
 it never sends a body to a refusal; a client that does not wait and is refused
 sees the connection reset mid-body (`continueIfExpected`,
-`packages/server/src/infrastructure/http-write.ts:233-242`; `SendOptions`,
-`packages/server/src/infrastructure/http-security.ts:47-66`).
+`packages/server/src/infrastructure/http-write.ts:248-257`;
+`SendOptions`, `packages/server/src/infrastructure/http-security.ts:47-66`).
 
 Over HTTP/1.1, an `Expect` header with any other value never reaches this
 pipeline: the service
@@ -639,7 +721,7 @@ length is looked at, with `417` `{"error":"expectation failed"}`, the headers of
 section 5.3 and — on a path under `/api/` — `Cache-Control: no-store`. The
 connection is closed rather than left for a body nobody will read, and the
 answer is logged like any other (`checkExpectation`,
-`packages/server/src/infrastructure/http-server.ts:329-339`).
+`packages/server/src/infrastructure/http-server.ts:333-343`).
 
 After the body:
 
@@ -652,13 +734,15 @@ After the body:
   An envelope whose `project` or `wave` differs from the path is a `422` with
   the single issue `/project`, `expected the project and wave the path names`.
 - `409` `{"error":"already registered"}` — a registration only.
+- `403` `{"error":"enrollment ceiling reached"}` — a registration under the
+  enrollment token with 64 projects already in the registry, and nothing else.
 - `200` `{"receivedAt":"…"}` for a push: the server's own clock at the moment it
   stored the snapshot, which is the instant every rule of section 4 reads. A
   push replaces the wave's previous snapshot; the server keeps one per wave.
 
-(`readBody`, `register`, `push`,
-`packages/server/src/infrastructure/http-write.ts:281-428`;
-`putWave`, `packages/server/src/application/write-model.ts:71-81`)
+(`readBody`, `replyFor`, `register`, `push`,
+`packages/server/src/infrastructure/http-write.ts:299-313`, `374-388`, `410-487`;
+`putWave`, `packages/server/src/application/write-model.ts:126-134`)
 
 ## 6. TLS and trust
 

@@ -27,11 +27,22 @@ export interface WriteModelDeps {
 export type Registration =
   | { readonly kind: "invalid"; readonly errors: readonly ValidationIssue[] }
   | { readonly kind: "conflict" }
+  | { readonly kind: "ceiling" }
   | {
       readonly kind: "registered";
       readonly id: string;
       readonly token: string;
     };
+
+/**
+ * The registry size past which the enrollment token creates nothing more. It
+ * counts every project, however it was registered: projects the admin token
+ * registered leave less room for enrollments, not more. A constant, not
+ * configuration: a leaked enrollment token can fill the registry to a size the
+ * owner can see and count, and no further. It bounds how many, never what is in
+ * it, and the admin token is not subject to it.
+ */
+export const ENROLL_CEILING = 64;
 
 function escapeKey(key: string): string {
   return key.replace(/~/g, "~0").replace(/\//g, "~1");
@@ -63,8 +74,54 @@ function timestampOf(atMs: number): string {
   return new Date(atMs).toISOString();
 }
 
+/** A body that is an object and carries no key the contract does not own. */
+type Closed =
+  | { readonly kind: "invalid"; readonly errors: readonly ValidationIssue[] }
+  | { readonly kind: "closed"; readonly record: Record<string, unknown> };
+
+/** A body the contract accepted, with the token minted for it. */
+type Built =
+  | { readonly kind: "invalid"; readonly errors: readonly ValidationIssue[] }
+  | {
+      readonly kind: "built";
+      readonly project: Project;
+      readonly token: string;
+    };
+
+/** The id a record names, or undefined when it names none the store could hold. */
+function projectIdOf(record: Record<string, unknown>): string | undefined {
+  const id = record.id;
+  return typeof id === "string" && isProjectId(id) ? id : undefined;
+}
+
 export function createWriteModel(deps: WriteModelDeps) {
   const { store, now, mintToken, digestHex } = deps;
+
+  function closed(body: unknown): Closed {
+    const issues = closedIssues(body);
+    return issues.length > 0
+      ? { kind: "invalid", errors: issues }
+      : { kind: "closed", record: body as Record<string, unknown> };
+  }
+
+  /**
+   * The two fields only this service knows, added to a body that is already
+   * known to be an object of the three registration keys, and the contract's
+   * answer on the result. The token is minted here and nowhere else, and only
+   * once the body is known to be one this service will answer at all.
+   */
+  function build(record: Record<string, unknown>, registeredAt: string): Built {
+    const token = mintToken();
+    const validated = validateProject({
+      ...record,
+      tokenSha256: digestHex(token),
+      registeredAt,
+    });
+    if (!validated.ok) {
+      return { kind: "invalid", errors: validated.errors };
+    }
+    return { kind: "built", project: validated.value, token };
+  }
 
   return {
     /** Stores a snapshot with the moment the service received it. */
@@ -93,38 +150,70 @@ export function createWriteModel(deps: WriteModelDeps) {
      * time the clear text leaves this process is in the 201 that mints it, and
      * a rotation keeps the registration date so the project's age does not
      * restart because a token leaked.
+     *
+     * A registration that is not a rotation goes through the same serialized
+     * create as an enrollment, with no ceiling: reading the project and then
+     * writing it would let an enrollment of the same id land in between, and the
+     * admin write would then overwrite a token the enrollment had just handed out.
      */
     async registerProject(
       body: unknown,
       rotate: boolean,
     ): Promise<Registration> {
-      const issues = closedIssues(body);
-      if (issues.length > 0) {
-        return { kind: "invalid", errors: issues };
+      const opened = closed(body);
+      if (opened.kind === "invalid") {
+        return opened;
       }
-      const record = body as Record<string, unknown>;
-      const id = record.id;
+      if (!rotate) {
+        const fresh = build(opened.record, timestampOf(now()));
+        if (fresh.kind === "invalid") {
+          return fresh;
+        }
+        const outcome = await store.createProject(
+          fresh.project,
+          Number.POSITIVE_INFINITY,
+        );
+        return outcome === "created"
+          ? { kind: "registered", id: fresh.project.id, token: fresh.token }
+          : { kind: "conflict" };
+      }
       // An id the contract would refuse never reaches the store, so a body with
       // a malformed id is validated rather than looked up.
+      const id = projectIdOf(opened.record);
       const existing =
-        typeof id === "string" && isProjectId(id)
-          ? await store.getProject(id)
-          : undefined;
-      const token = mintToken();
-      const built = {
-        ...record,
-        tokenSha256: digestHex(token),
-        registeredAt: existing?.registeredAt ?? timestampOf(now()),
-      };
-      const validated = validateProject(built);
-      if (!validated.ok) {
-        return { kind: "invalid", errors: validated.errors };
+        id === undefined ? undefined : await store.getProject(id);
+      const built = build(
+        opened.record,
+        existing?.registeredAt ?? timestampOf(now()),
+      );
+      if (built.kind === "invalid") {
+        return built;
       }
-      if (existing !== undefined && !rotate) {
-        return { kind: "conflict" };
+      await store.putProject(built.project);
+      return { kind: "registered", id: built.project.id, token: built.token };
+    },
+
+    /**
+     * Registers a project that does not exist yet, and only that. Where the
+     * admin path reads the project and then writes it, this one hands the whole
+     * decision to one serialized store operation: the id taken and the ceiling
+     * are read from the same registry the write goes to, so two enrollments of
+     * one id cannot both win and two at the ceiling cannot both pass.
+     */
+    async enrollProject(body: unknown): Promise<Registration> {
+      const opened = closed(body);
+      if (opened.kind === "invalid") {
+        return opened;
       }
-      await store.putProject(validated.value);
-      return { kind: "registered", id: validated.value.id, token };
+      const built = build(opened.record, timestampOf(now()));
+      if (built.kind === "invalid") {
+        return built;
+      }
+      const outcome = await store.createProject(built.project, ENROLL_CEILING);
+      if (outcome === "created") {
+        return { kind: "registered", id: built.project.id, token: built.token };
+      }
+      return outcome === "exists" ? { kind: "conflict" } : { kind: "ceiling" };
     },
 
     /**

@@ -31,6 +31,7 @@ export interface HarnessOptions {
   readonly store?: StorePort<Project, StoredSnapshot>;
   readonly readToken?: string;
   readonly adminToken?: string;
+  readonly enrollToken?: string;
   readonly trustProxy?: boolean;
   readonly compare?: DigestComparer;
   readonly mint?: () => string;
@@ -138,6 +139,7 @@ export async function startHarness(
     publicDir: options.publicDir ?? (await publicDir()),
     readToken: options.readToken,
     adminToken: options.adminToken,
+    enrollToken: options.enrollToken,
     trustProxy: options.trustProxy,
     compare: options.compare,
     mint: options.mint,
@@ -155,7 +157,11 @@ export async function startHarness(
   const address = server.address();
   const port =
     typeof address === "object" && address !== null ? address.port : 0;
-  for (const secret of [options.readToken, options.adminToken]) {
+  for (const secret of [
+    options.readToken,
+    options.adminToken,
+    options.enrollToken,
+  ]) {
     if (secret !== undefined) {
       watchSecret(secret);
     }

@@ -8,11 +8,13 @@ infrastructure is written down.
 ## Run it anywhere
 
 The service reads `WAVES_HOST`, `WAVES_PORT`, `WAVES_DATA_DIR`, the optional
-`WAVES_READ_TOKEN_FILE` and `WAVES_ADMIN_TOKEN_FILE`, and `WAVES_TRUST_PROXY`,
-answers `/healthz` and `/readyz`, serves the status page and the read-only API
-from `packages/server/public`, and accepts the write routes: `PUT` and `DELETE`
-on a wave with the project's own token, `POST` on the project collection and
-`DELETE` on a project with the admin token.
+`WAVES_READ_TOKEN_FILE`, `WAVES_ADMIN_TOKEN_FILE` and
+`WAVES_ENROLL_TOKEN_FILE`, and `WAVES_TRUST_PROXY`, answers `/healthz` and
+`/readyz`, serves the status page and the read-only API from
+`packages/server/public`, and accepts the write routes: `PUT` and `DELETE` on a
+wave with the project's own token, `POST` on the project collection and `DELETE`
+on a project with the admin token, and `POST` on the project collection for a new
+id with the enrollment token.
 
 ### With docker
 
@@ -189,6 +191,50 @@ them apart from the outside: the Secret is missing, the file is not readable, or
 the path is wrong. The readiness of the deployment does not depend on it, which
 is why the base cannot fail closed loudly here.
 
+### The enrollment Secret
+
+The enrollment token does one thing: `POST /api/v1/projects` with no query, for
+an id that does not exist yet. It cannot rotate a token, cannot remove a project
+and cannot touch a wave — those are `403` under it and `401` on a push or a wave
+delete — so a copy that leaks can add a project and nothing else. The admin token
+keeps every power it has, and it is the only token that can register past the
+ceiling of 64 projects.
+
+It is optional, independent of the admin Secret, and made from a file of your own
+the same way:
+
+```sh
+umask 077
+cat > /root/waves-enroll-token
+chmod 600 /root/waves-enroll-token
+kubectl -n waves create secret generic waves-enroll \
+  --from-file=token=/root/waves-enroll-token
+kubectl -n waves rollout restart deploy/waves
+```
+
+The value is 32 to 128 characters of `A-Z`, `a-z`, `0-9`, `_` and `-`, exactly
+as for the admin token, and it **must differ from the admin token**: with both
+files present and holding the same value the server refuses to start with exit
+`2` and
+
+```
+waves: WAVES_ENROLL_TOKEN_FILE holds the admin token; the two must differ
+```
+
+Without the Secret, enrollment is disabled and the only trace is the startup line
+
+```
+waves: enrollment disabled
+```
+
+and `POST /api/v1/projects` is answered by the admin token alone. Revocation is
+the same two steps as for the admin Secret, in the other order:
+
+```sh
+kubectl -n waves delete secret waves-enroll
+kubectl -n waves rollout restart deploy/waves
+```
+
 ### Deploy-time checks
 
 Run these after the first deploy of the write path, in this order:
@@ -214,6 +260,15 @@ Run these after the first deploy of the write path, in this order:
    and holds the body until the backend answers with a 100, falling back to
    sending it after a second, so a `curl` that does wait is telling you the
    request never reached the service.
+6. With the enrollment Secret **absent** and the admin Secret present, an
+   enrollment-shaped `POST` — any bearer that is not the admin token — answers
+   `401`, never `201`: the route is the admin token's, locked rather than
+   absent. With neither Secret, it answers `404`.
+7. With the enrollment Secret **present**, `?rotate=1` under the enrollment token
+   answers `403` with `enrollment token cannot do this`, and a `DELETE` under it
+   answers `403` as well. Both are the enrollment token being refused, not the
+   admin token being absent: a `404` on either would mean the admin token is
+   missing too.
 
 ### The weekly backup
 

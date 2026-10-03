@@ -159,4 +159,70 @@ describe("the base deployment", () => {
       ),
     ).toHaveLength(1);
   });
+
+  // A Secret the deployment does not mount is a token nobody configured, and one
+  // it mounts at the wrong path is a file the server never reads: the enrollment
+  // route then answers 404 and the only trace is a startup line, so the manifest
+  // is the place where the mistake has to be caught.
+  it.each([
+    ["admin", "waves-admin", "WAVES_ADMIN_TOKEN_FILE"],
+    ["enroll", "waves-enroll", "WAVES_ENROLL_TOKEN_FILE"],
+  ])(
+    "mounts the optional %s Secret read only and names its file",
+    (volume, secretName, variable) => {
+      const body = readFileSync(BASE_DEPLOYMENT, "utf8");
+      const lines = body.split("\n");
+
+      // The volume, its Secret, and `optional: true` beside the name.
+      const declared = lines.findIndex(
+        (line) => line === `        - name: ${volume}`,
+      );
+      expect(
+        declared,
+        `the ${volume} volume is declared`,
+      ).toBeGreaterThanOrEqual(0);
+      const block = lines.slice(declared, declared + 5);
+      expect(block).toContain(`            secretName: ${secretName}`);
+      expect(block).toContain("            optional: true");
+      expect(
+        block.some((line) => /^ {12}defaultMode: 0440$/.test(line)),
+        `the ${volume} Secret has a group readable mode`,
+      ).toBe(true);
+
+      // The mount, read only, at the path the variable names.
+      const mounted = lines.findIndex(
+        (line) => line === `            - name: ${volume}`,
+      );
+      expect(mounted, `the ${volume} volume is mounted`).toBeGreaterThanOrEqual(
+        0,
+      );
+      expect(lines[mounted + 1]).toMatch(
+        new RegExp(`^ {14}mountPath: /run/secrets/${secretName}$`),
+      );
+      expect(lines[mounted + 2]).toBe("              readOnly: true");
+
+      // The variable, pointing at the mounted file.
+      const env = lines.findIndex(
+        (line) => line === `            - name: ${variable}`,
+      );
+      expect(env, `${variable} is set`).toBeGreaterThanOrEqual(0);
+      expect(lines[env + 1]).toBe(
+        `              value: /run/secrets/${secretName}/token`,
+      );
+    },
+  );
+
+  it("keeps the two token files independent of each other", () => {
+    const body = readFileSync(BASE_DEPLOYMENT, "utf8");
+
+    // Either Secret may be absent: enrollment is the second half of a feature
+    // that has to be switchable off on its own, and a manifest that made it
+    // depend on the admin Secret would take registration down with admin.
+    expect(body).toContain("secretName: waves-admin");
+    expect(body).toContain("secretName: waves-enroll");
+    expect(
+      (body.match(/optional: true/g) ?? []).length,
+      "both token volumes are optional",
+    ).toBe(2);
+  });
 });
