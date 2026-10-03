@@ -339,7 +339,9 @@ received in the last 72 hours take part, counted on the receive time as
 collected from every project and sorted newest receive first before any snapshot
 is read, and at most `MAX_ATTENTION_WAVES` (256) of them are read at all, so
 which waves a request reads is decided by receive time and never by the order the
-store answered its heads in. `wavesOmitted` is how many in-window waves that left
+store answered its heads in. Each project's newest wave in the window comes
+before any project's second, so one busy project cannot fill the bound on its
+own and leave the others at zero. `wavesOmitted` is how many in-window waves that left
 out, and `truncated` is `true` whenever it is above zero: the list may then be
 missing lanes, and no other field says how many waves were behind them.
 
@@ -361,8 +363,8 @@ about to read next; the row bound (`MAX_CACHED_ROWS`) still can, when the waves
 are large ones, which is what the cache is for. A wave's staleness here is read
 from the snapshot it answered with — its own receive time and its own interval —
 so a push that lands between the heads and the snapshot is judged by the push
-(`listAttention`, `packages/server/src/application/read-model.ts:730-822`;
-`MAX_ATTENTION_WAVES`, `…/read-model.ts:80-90`).
+(`listAttention`, `packages/server/src/application/read-model.ts:731-841`;
+`MAX_ATTENTION_WAVES`, `…/read-model.ts:80-89`).
 
 (`route`, `packages/server/src/infrastructure/http-routes.ts:116`;
 `replyFor`, `readyReply`, `packages/server/src/infrastructure/http-server.ts:98-145`;

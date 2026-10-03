@@ -220,7 +220,7 @@ export interface ProjectLanesView {
     readonly repo?: string;
   };
   readonly waves: readonly WaveSummary[];
-  /** The heads `MAX_LISTED_WAVES` left out of `waves`, which is the one it cut. */
+  /** How many heads `waves` leaves out: past the newest `MAX_LISTED_WAVES`. */
   readonly wavesOmitted: number;
   readonly lanes: readonly LaneRow[];
   readonly truncated: boolean;
@@ -659,6 +659,11 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
       // every head, as it always has, and its own bounds stop it. So the rows and
       // `truncated` are exactly what they were, and a wave too old to be listed
       // can still have its lanes in the table.
+      //
+      // Retention is a function of the receive time alone (`isRetained`), so in
+      // a newest-first list every retained head already precedes every
+      // unretained one: cutting at the bound keeps every retained head ahead of
+      // every wave past retention, with nothing left to reorder.
       const waves = heads.slice(0, MAX_LISTED_WAVES);
       const rows: LaneRow[] = [];
       let bytes = 0;
@@ -717,11 +722,6 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
           ...(project.repo === undefined ? {} : { repo: project.repo }),
         },
         waves,
-        // Retention is a function of the receive time alone (`isRetained`), so in
-        // a newest-first list every retained head already precedes every
-        // unretained one: cutting at the bound keeps every retained head ahead of
-        // every wave past retention, which is the one a reader cares least about,
-        // with nothing left to reorder.
         wavesOmitted: heads.length - waves.length,
         lanes: rows,
         truncated,
@@ -738,8 +738,11 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
      * The heads inside the window are collected and sorted before any snapshot is
      * read, so which waves the request reads is decided by receive time rather
      * than by the order the store answered its heads in, and it reads at most
-     * `MAX_ATTENTION_WAVES` of them. Everything the answer says about a project
-     * is then counted from the waves that were read.
+     * `MAX_ATTENTION_WAVES` of them. Each project's newest wave in the window is
+     * read before any project's second: one busy project pushing many wave ids
+     * would otherwise fill the bound on its own and leave every other project
+     * answering zero. Everything the answer says about a project is then counted
+     * from the waves that were read.
      */
     async listAttention(): Promise<AttentionView> {
       const nowMs = now();
@@ -747,23 +750,34 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
       const inWindow: {
         readonly project: string;
         readonly head: SnapshotHead;
+        readonly ms: number;
       }[] = [];
       for (const project of projects) {
         const heads = await store.listSnapshotHeads(project.id);
         for (const head of heads) {
-          if (inAttentionWindow(Date.parse(head.receivedAt), nowMs)) {
-            inWindow.push({ project: project.id, head });
+          const ms = Date.parse(head.receivedAt);
+          if (inAttentionWindow(ms, nowMs)) {
+            inWindow.push({ project: project.id, head, ms });
           }
         }
       }
       // Newest receive first, and `Array.prototype.sort` is stable, so waves that
       // arrived within the same millisecond keep the order they were found in:
-      // project order, then wave order.
-      inWindow.sort(
-        (left, right) =>
-          Date.parse(right.head.receivedAt) - Date.parse(left.head.receivedAt),
-      );
-      const toRead = inWindow.slice(0, MAX_ATTENTION_WAVES);
+      // project order, then wave order. Each receive time is parsed once, above.
+      inWindow.sort((left, right) => right.ms - left.ms);
+      // Every project's newest wave first, then the rest by receive time.
+      const newest: typeof inWindow = [];
+      const rest: typeof inWindow = [];
+      const seen = new Set<string>();
+      for (const item of inWindow) {
+        if (seen.has(item.project)) {
+          rest.push(item);
+        } else {
+          seen.add(item.project);
+          newest.push(item);
+        }
+      }
+      const toRead = [...newest, ...rest].slice(0, MAX_ATTENTION_WAVES);
       // Every registered project answers, in the order the registry answered it,
       // and a project none of whose waves was read is one of them with `0`.
       const counts = new Map<string, number>();
