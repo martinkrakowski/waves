@@ -251,14 +251,18 @@ hour and once at login.
 
    ```sh
    umask 077
-   mkdir -p -m 700 ~/.config/waves
+   mkdir -p ~/.config/waves && chmod 700 ~/.config/waves
+   rm -f ~/.config/waves/enroll.token
    openssl rand -hex 32 > ~/.config/waves/enroll.token
    ssh m 'KUBECONFIG=$HOME/.kube/config kubectl -n waves create secret generic waves-enroll --from-file=token=/dev/stdin' < ~/.config/waves/enroll.token
    ssh m 'KUBECONFIG=$HOME/.kube/config kubectl -n waves rollout restart deploy/waves'
    ```
 
    `openssl rand -hex 32` is 64 characters the token grammar accepts, and a
-   random value cannot equal the admin token. The directory must be yours and
+   random value cannot equal the admin token. The `chmod` and the `rm` are there
+   because `umask` and `mkdir -m` only shape what they create: an existing
+   directory or token file keeps its mode, and a loose one would be refused by
+   `install.sh` and readable by others. The directory must be yours and
    reachable by nobody else (`chmod 700`); the client refuses anything looser,
    and so does `install.sh`. (The recipe in
    [The enrollment Secret](#the-enrollment-secret) suits a Secret made on the
