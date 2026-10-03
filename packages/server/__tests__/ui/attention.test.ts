@@ -12,14 +12,21 @@ import { attentionLane, attentionView } from "./fixtures.js";
 const INVALID: readonly (readonly [string, unknown])[] = [
   ["null", null],
   ["a string", "lanes"],
-  ["no truncated", { lanes: [], projects: [] }],
+  ["no truncated", { lanes: [], projects: [], wavesOmitted: 0 }],
   [
     "a truncated that is not a boolean",
     { ...attentionView(), truncated: "no" },
   ],
-  ["no lanes", { projects: [], truncated: false }],
+  ["no wavesOmitted", { lanes: [], projects: [], truncated: false }],
+  ["a wavesOmitted that is negative", { ...attentionView(), wavesOmitted: -1 }],
+  ["a wavesOmitted that is in part", { ...attentionView(), wavesOmitted: 1.5 }],
+  [
+    "a wavesOmitted that is not a number",
+    { ...attentionView(), wavesOmitted: "1" },
+  ],
+  ["no lanes", { projects: [], truncated: false, wavesOmitted: 0 }],
   ["lanes that are not a list", { ...attentionView(), lanes: {} }],
-  ["no projects", { lanes: [], truncated: false }],
+  ["no projects", { lanes: [], truncated: false, wavesOmitted: 0 }],
   ["projects that are not a list", { ...attentionView(), projects: "one" }],
   ["a project count that is null", { ...attentionView(), projects: [null] }],
   [
@@ -102,6 +109,7 @@ describe("drawableAttention", () => {
           lanes: [attentionLane()],
           projects: [{ id: "alpha", attention: 1 }],
           truncated: true,
+          wavesOmitted: 3,
         }),
       ),
     ).toBe(true);

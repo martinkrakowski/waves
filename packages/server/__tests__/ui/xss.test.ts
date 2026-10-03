@@ -573,6 +573,7 @@ describe("the attention ids against stored markup", () => {
           lanes: [{ ...attentionLane(), [field]: payload }],
           projects: [{ id: "alpha", attention: 1 }],
           truncated: false,
+          wavesOmitted: 0,
         });
         assertNoInjectedMarkup();
         // A failed load: the note, once, and nothing drawn from the view.

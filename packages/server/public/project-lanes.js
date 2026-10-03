@@ -33,6 +33,15 @@ function oneOf(value, options) {
 }
 
 /**
+ * How many heads a listing left out. It is a whole number of waves, so `0` is the
+ * answer and `-1` and `1.5` are not: a page that could not say so would either
+ * claim a wave is missing when none is, or hide a wave strip that is short.
+ */
+function omitted(value) {
+  return Number.isSafeInteger(value) && value >= 0;
+}
+
+/**
  * A whole number of at least `least`. A pull request numbered zero is not a
  * pull request and `1.5` is not a number of them; a round before the first is
  * not a round.
@@ -182,6 +191,7 @@ export function drawableProjectLanes(view) {
     view !== null &&
     typeof view === "object" &&
     typeof view.truncated === "boolean" &&
+    omitted(view.wavesOmitted) &&
     project(view.project) &&
     drawableWaves(view.waves) &&
     view.waves.every((head) => isWaveId(head.wave)) &&

@@ -59,6 +59,13 @@ const INVALID: readonly (readonly [string, unknown])[] = [
   ["nothing at all", undefined],
   ["no truncated", { ...projectLanes(), truncated: undefined }],
   ["a truncated that is not a boolean", { ...projectLanes(), truncated: "no" }],
+  ["no wavesOmitted", { ...projectLanes(), wavesOmitted: undefined }],
+  ["a wavesOmitted that is negative", { ...projectLanes(), wavesOmitted: -1 }],
+  ["a wavesOmitted that is in part", { ...projectLanes(), wavesOmitted: 1.5 }],
+  [
+    "a wavesOmitted that is not a number",
+    { ...projectLanes(), wavesOmitted: "1" },
+  ],
   ["no project", { ...projectLanes(), project: undefined }],
   ["a project that is null", { ...projectLanes(), project: null }],
   [
@@ -327,6 +334,7 @@ describe("drawableProjectLanes", () => {
             waveSummary({ wave: "w-1", receivedAt: NOW_ISO, stale: true }),
           ],
           lanes: [FULL_ROW, laneRow({ id: "wv-b", seat: undefined })],
+          wavesOmitted: 4,
           truncated: true,
         }),
       ),

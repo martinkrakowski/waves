@@ -4,8 +4,10 @@ import type { StoredSnapshot } from "@hexagen-monaco/waves-contract";
 
 import {
   createReadModel,
+  MAX_ATTENTION_WAVES,
   MAX_CACHED_ROWS,
   MAX_CACHED_WAVES,
+  MAX_LISTED_WAVES,
   MAX_PROJECT_LANES,
   MAX_PROJECT_LANES_BYTES,
   MAX_WAVES_PER_READ,
@@ -946,40 +948,49 @@ describe("the project lanes view", () => {
 
   it("keeps no more than the wave bound, dropping the least recently used wave", async () => {
     const store = new WaryStore("wv-absent");
-    await store.putProject(project("p1"));
-    // Every wave received in the same millisecond, so the order they are read in
-    // is the order the store orders its heads in and the first wave of the
-    // listing is the first the cache holds. Ids are zero-padded so that `wv10`
-    // does not sort before `wv2`.
-    for (const at of [...Array(MAX_CACHED_WAVES).keys()]) {
-      const wave = `wv${String(at + 1).padStart(3, "0")}`;
-      await store.putSnapshot(
-        pushed("p1", wave, RECEIVED_AT, [laneOf(`${wave}-a`)]),
-      );
+    // Three projects of 171 waves each, which is more than the map holds and
+    // under the 200 waves one read may read. Every wave of a project holds one
+    // lane, and every wave id carries its project's own so the asks are
+    // unambiguous.
+    const each = 171;
+    for (const at of [1, 2, 3]) {
+      const of = `p${at}`;
+      await store.putProject(project(of));
+      for (let index = 1; index <= each; index += 1) {
+        const wave = `${of}-wv${String(index).padStart(3, "0")}`;
+        await store.putSnapshot(
+          pushed(
+            of,
+            wave,
+            // One second older per wave, so each project is read from its
+            // newest wave to its oldest and its newest wave is the first its
+            // reads used.
+            new Date(RECEIVED_AT_MS - index * 1_000).toISOString(),
+            [laneOf(`${wave}-a`)],
+          ),
+        );
+      }
     }
-    // A second project, with a wave id of its own so the asks are unambiguous.
-    await store.putProject(project("p2"));
-    await store.putSnapshot(
-      pushed("p2", "wv1", RECEIVED_AT, [laneOf("wv1-a")]),
-    );
     const read = model(store);
 
-    // The cross-project view reads every wave of both projects in one answer.
-    await read.listAttention();
+    for (const at of [1, 2, 3]) {
+      await read.listLanes(`p${at}`, true);
+    }
     expect(store.asked).toHaveLength(MAX_CACHED_WAVES + 1);
-    expect(store.asked[0]).toBe("wv001");
-    expect(store.asked[MAX_CACHED_WAVES]).toBe("wv1");
+    expect(store.asked[0]).toBe("p1-wv001");
+    expect(store.asked[MAX_CACHED_WAVES]).toBe("p3-wv171");
 
-    // The map never grew past its bound: p2's wave was the last one used and is
-    // still held, so reading that project again parses nothing.
-    await read.listLanes("p2", true);
+    // The map never grew past its bound: p3's waves were the last ones used and
+    // are all still held, so reading that project again parses nothing.
+    await read.listLanes("p3", true);
     expect(store.asked).toHaveLength(MAX_CACHED_WAVES + 1);
 
     // And p1 is asked first for the wave the bound dropped: the one used longest
-    // ago. Its other waves are still held, but this project fills the map on its
-    // own, so its reads roll the entry it has just used off the end.
+    // ago, which is its newest wave — the first of its reads. Its other waves are
+    // still held, but they are the entries used longest ago (p2's and p3's are
+    // newer), so its reads roll the entry it has just used off the end.
     await read.listLanes("p1", true);
-    expect(store.asked[MAX_CACHED_WAVES + 1]).toBe("wv001");
+    expect(store.asked[MAX_CACHED_WAVES + 1]).toBe("p1-wv001");
   });
 
   it("keeps no more than the row bound, dropping the least recently used wave", async () => {
@@ -1151,6 +1162,46 @@ describe("the project lanes view", () => {
     expect(store.asked).toHaveLength(MAX_WAVES_PER_READ);
   });
 
+  it("lists the newest of at most MAX_LISTED_WAVES heads and counts the rest", async () => {
+    const store = new WaryStore("wv-absent");
+    // Only the five oldest waves hold a lane, so the rows a listing answers are
+    // the lanes of waves its own wave strip had no room for.
+    await filled(store, "alpha", MAX_LISTED_WAVES + 5, (_wave, index) =>
+      index > 5 ? [] : [laneOf(`${waveIdOf(index)}-a`)],
+    );
+
+    const view = await model(store).listLanes("alpha", true);
+
+    expect(view?.waves).toHaveLength(MAX_LISTED_WAVES);
+    expect(view?.waves[0]?.wave).toBe(`wv${MAX_LISTED_WAVES + 5}`);
+    expect(view?.waves[MAX_LISTED_WAVES - 1]?.wave).toBe("wv006");
+    expect(view?.waves.every((wave) => wave.retained)).toBe(true);
+    expect(view?.wavesOmitted).toBe(5);
+
+    // The rows are not cut with the strip: the bound is on the wave list alone,
+    // and a wave too old to be listed still has its lanes in the table.
+    expect(view?.lanes.map((row) => [row.wave, row.id])).toEqual([
+      ["wv005", "wv005-a"],
+      ["wv004", "wv004-a"],
+      ["wv003", "wv003-a"],
+      ["wv002", "wv002-a"],
+      ["wv001", "wv001-a"],
+    ]);
+    expect(view?.truncated).toBe(false);
+    expect(store.asked).toEqual(["wv005", "wv004", "wv003", "wv002", "wv001"]);
+  });
+
+  it("omits no head while the project holds fewer than the bound", async () => {
+    const store = new WaryStore("wv-absent");
+    await filled(store, "alpha", 12, (wave) => [laneOf(`${wave}-a`)]);
+
+    const view = await model(store).listLanes("alpha", true);
+
+    expect(view?.waves).toHaveLength(12);
+    expect(view?.wavesOmitted).toBe(0);
+    expect(view?.waves).toStrictEqual(await model(store).listWaves("alpha"));
+  });
+
   it("answers the whole cap of small lanes without cutting it", async () => {
     const store = new MemoryStore();
     await filled(
@@ -1312,6 +1363,7 @@ describe("the attention view", () => {
         { id: "beta", attention: 2 },
       ],
       truncated: false,
+      wavesOmitted: 0,
     });
   });
 
@@ -1581,5 +1633,145 @@ describe("the attention view", () => {
     expect(second.lanes.map((entry) => entry.lane)).toEqual(["wv1-a"]);
     expect(store.asked).toEqual(["wv1"]);
     expect(store.wholeLists).toBe(0);
+  });
+
+  it("reads the newest MAX_ATTENTION_WAVES waves and counts what it left out", async () => {
+    const store = new WaryStore("wv-absent");
+    // Receive times are interleaved across the two projects and the wave ids sort
+    // in the opposite order to the receive times, so reading the store's own head
+    // order would read a different set of waves than reading newest first.
+    for (let index = 1; index <= MAX_ATTENTION_WAVES + 2; index += 1) {
+      const of = index % 4 < 2 ? "alpha" : "beta";
+      await store.putSnapshot(
+        pushed(
+          of,
+          `wv${index}`,
+          new Date(RECEIVED_AT_MS - index * 1_000).toISOString(),
+          // A lane that wants a reader in every other wave and a settled one in the
+          // rest: every wave holds a lane, so each takes a read slot, and the
+          // lanes that match stay under the lane cap, so only the wave bound can
+          // make this answer truncated.
+          index % 2 === 1
+            ? [laneOf(`wv${index}-a`)]
+            : [laneOf(`wv${index}-a`, { derived: { alive: false, exit: 0 } })],
+        ),
+      );
+    }
+    // A third project whose only wave is the oldest of them all. It is still
+    // read, because every project's newest wave is read before any project's
+    // second, so a quiet project is not starved by two busy ones.
+    await store.putProject(project("alpha"));
+    await store.putProject(project("beta"));
+    await store.putProject(project("gamma"));
+    await store.putSnapshot(
+      pushed(
+        "gamma",
+        "gvw1",
+        new Date(RECEIVED_AT_MS - 10 * 60_000).toISOString(),
+        [laneOf("gvw1-a")],
+      ),
+    );
+
+    const view = await model(store).listAttention();
+
+    expect(store.asked).toHaveLength(MAX_ATTENTION_WAVES);
+    // The newest receive first, not the order the store answered its heads in.
+    // Each project's newest wave first (alpha's, beta's, gamma's), then the rest
+    // newest first.
+    expect(store.asked.slice(0, 4)).toEqual(["wv1", "wv2", "gvw1", "wv3"]);
+    expect(store.asked[MAX_ATTENTION_WAVES - 1]).toBe(
+      `wv${MAX_ATTENTION_WAVES - 1}`,
+    );
+    expect(store.asked).not.toContain(`wv${MAX_ATTENTION_WAVES}`);
+    expect(store.asked).not.toContain(`wv${MAX_ATTENTION_WAVES + 1}`);
+    expect(store.asked).not.toContain(`wv${MAX_ATTENTION_WAVES + 2}`);
+    expect(view.wavesOmitted).toBe(3);
+    // The lanes that matched fit under the lane cap, so the cut is the waves'.
+    expect(view.lanes).toHaveLength(129);
+    expect(view.truncated).toBe(true);
+    expect(view.projects).toEqual([
+      { id: "alpha", attention: 64 },
+      { id: "beta", attention: 64 },
+      { id: "gamma", attention: 1 },
+    ]);
+  });
+
+  it("reads a quiet project's newest wave though a busy one fills the bound", async () => {
+    const store = new WaryStore("wv-absent");
+    await filled(store, "busy", MAX_ATTENTION_WAVES + 10, (wave) => [
+      laneOf(`${wave}-a`),
+    ]);
+    await store.putProject(project("quiet"));
+    // Older than every one of the busy project's waves.
+    await store.putSnapshot(
+      pushed("quiet", "qw1", new Date(RECEIVED_AT_MS - 60_000).toISOString(), [
+        laneOf("qw1-a"),
+      ]),
+    );
+
+    const view = await model(store).listAttention();
+
+    expect(store.asked).toHaveLength(MAX_ATTENTION_WAVES);
+    expect(store.asked).toContain("qw1");
+    expect(view.projects.find((entry) => entry.id === "quiet")).toEqual({
+      id: "quiet",
+      attention: 1,
+    });
+    expect(view.wavesOmitted).toBe(11);
+  });
+
+  it("gives no read slot to a wave with no lanes", async () => {
+    const store = new WaryStore("wv-absent");
+    // Many newer empty waves, then one older wave with a lane: the empty ones
+    // cannot match anything, so they neither crowd it out nor count as omitted.
+    await filled(store, "alpha", MAX_ATTENTION_WAVES + 20, () => []);
+    await store.putSnapshot(
+      pushed("alpha", "old", new Date(RECEIVED_AT_MS - 60_000).toISOString(), [
+        laneOf("old-a"),
+      ]),
+    );
+
+    const view = await model(store).listAttention();
+
+    expect(store.asked).toEqual(["old"]);
+    expect(view.wavesOmitted).toBe(0);
+    expect(view.truncated).toBe(false);
+    expect(view.lanes.map((entry) => entry.lane)).toEqual(["old-a"]);
+  });
+
+  it("omits no wave while the window holds fewer than the bound", async () => {
+    const store = new WaryStore("wv-absent");
+    await store.putProject(project("alpha"));
+    await store.putSnapshot(
+      pushed("alpha", "wv1", RECEIVED_AT, [laneOf("wv1-a")]),
+    );
+    await store.putSnapshot(
+      pushed("alpha", "wv2", receivedAtOf(2), [laneOf("wv2-a")]),
+    );
+
+    const view = await model(store).listAttention();
+
+    expect(view.wavesOmitted).toBe(0);
+    expect(view.truncated).toBe(false);
+    expect(view.lanes.map((entry) => entry.lane)).toEqual(["wv2-a", "wv1-a"]);
+    expect(store.asked).toEqual(["wv2", "wv1"]);
+  });
+
+  it("reads no wave again on the second of two answers over the wave bound", async () => {
+    const store = new WaryStore("wv-absent");
+    // More waves in the window than the cache holds, one lane each. Without the
+    // bound each request would read all of them newest first and the last reads
+    // would evict the first, so the second request would read every one again.
+    // With it, both read the same newest 256, which the cache keeps whole.
+    await filled(store, "alpha", MAX_CACHED_WAVES + 1, (wave) => [
+      laneOf(`${wave}-a`),
+    ]);
+    const read = model(store);
+
+    await read.listAttention();
+    expect(store.asked).toHaveLength(MAX_ATTENTION_WAVES);
+
+    await read.listAttention();
+    expect(store.asked).toHaveLength(MAX_ATTENTION_WAVES);
   });
 });

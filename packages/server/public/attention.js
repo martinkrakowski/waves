@@ -33,6 +33,15 @@ function projectCount(entry) {
   );
 }
 
+/**
+ * How many in-window waves the route did not read. It is a whole number of waves,
+ * so `0` is the answer and `-1` and `1.5` are not: the fleet note is only as
+ * true as this number.
+ */
+function omitted(value) {
+  return Number.isSafeInteger(value) && value >= 0;
+}
+
 /** A lane asked about: at least one reason, and only the six. */
 function reasons(reasons_) {
   return (
@@ -73,6 +82,7 @@ export function drawableAttention(view) {
     view !== null &&
     typeof view === "object" &&
     typeof view.truncated === "boolean" &&
+    omitted(view.wavesOmitted) &&
     Array.isArray(view.lanes) &&
     Array.isArray(view.projects) &&
     view.lanes.every(lane) &&

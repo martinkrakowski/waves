@@ -227,6 +227,18 @@ describe("the wave strip", () => {
     expect(host.querySelectorAll(".wave-strip > a")).toHaveLength(0);
   });
 
+  it("offers the toggle when the route left older waves out, though every listed one is retained", () => {
+    const host = renderProjectView({
+      lanes: projectLanes({
+        waves: [waveSummary({ wave: "w-3" })],
+        wavesOmitted: 5,
+      }),
+    });
+    expect(oneOf(host, ".wave-strip > a")?.textContent).toBe(
+      "show waves past retention",
+    );
+  });
+
   it("asks for the waves past retention, and offers to hide them again", () => {
     const hidden = renderProjectView({ lanes: LISTING });
     const toggle = oneOf(hidden, ".wave-strip > a");
@@ -269,6 +281,43 @@ describe("the wave strip", () => {
       "/p/alpha/w/w-2?reason=gate&all=1",
       "/p/alpha/w/w-1?reason=gate&all=1",
       "/p/alpha/w/w-2?reason=gate",
+    ]);
+  });
+
+  it("says how many waves the route's own bound left out", () => {
+    const one = renderProjectView({
+      lanes: projectLanes({ wavesOmitted: 1 }),
+    });
+    const many = renderProjectView({
+      lanes: projectLanes({ wavesOmitted: 1200 }),
+    });
+
+    expect(textsOf(one, ".note-inline")).toStrictEqual([
+      "1 older wave is not listed.",
+    ]);
+    expect(textsOf(many, ".note-inline")).toStrictEqual([
+      "1200 older waves are not listed.",
+    ]);
+    // Under the strip, which is the only place a reader can see they are missing.
+    expect(
+      one.querySelector(".wave-strip")?.nextElementSibling?.className,
+    ).toBe("note-inline");
+  });
+
+  it("says nothing about omitted waves while the route listed every one", () => {
+    expect(
+      renderProjectView({ lanes: LISTING }).querySelector(".note-inline"),
+    ).toBeNull();
+  });
+
+  it("says it under the strip of a wave this project does not have", () => {
+    const host = renderProjectView({
+      lanes: projectLanes({ waves: [waveSummary()], wavesOmitted: 2 }),
+      wave: "w-9",
+    });
+
+    expect(textsOf(host, ".note-inline")).toStrictEqual([
+      "2 older waves are not listed.",
     ]);
   });
 });
