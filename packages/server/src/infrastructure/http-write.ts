@@ -15,10 +15,19 @@ import {
   createAuthenticator,
   matches,
 } from "../application/bearer.js";
+import {
+  adminRouteEnabled,
+  type Authorization,
+  authorize,
+  type TokenKind,
+} from "../application/enrollment.js";
 import type { FailureLimiter, RateLimiter } from "../application/limiters.js";
 import type { StorePort } from "../application/ports/store.js";
 import type { Now } from "../application/read-model.js";
-import { createWriteModel } from "../application/write-model.js";
+import {
+  createWriteModel,
+  type Registration,
+} from "../application/write-model.js";
 import { clientAddress, forwardedProto } from "./client-address.js";
 import {
   type Headers,
@@ -56,6 +65,8 @@ const CONNECTION_CLOSE = { Connection: "close" } as const;
 const ROTATE_QUERY = "rotate=1";
 const EXPECT_100 = /(?:^|\W)100-continue(?:$|\W)/i;
 
+const ENROLLMENT_REFUSAL = "enrollment token cannot do this";
+
 const PATH_MISMATCH: readonly ValidationIssue[] = [
   {
     path: "/project",
@@ -68,6 +79,10 @@ export interface WriteDeps {
   readonly now: Now;
   /** undefined leaves the admin routes disabled, so they answer 404. */
   readonly adminToken: string | undefined;
+  /** undefined leaves registration by enrollment token disabled, so it answers 404. */
+  readonly enrollToken: string | undefined;
+  /** The same sink as the access log: one JSON line per answer. */
+  readonly log: (line: string) => void;
   readonly trustProxy: boolean;
   readonly compare: DigestComparer;
   readonly mintToken: () => string;
@@ -242,7 +257,8 @@ function continueIfExpected(req: IncomingMessage, res: ServerResponse): void {
 }
 
 export function createWriteHandler(deps: WriteDeps): WriteHandler {
-  const { store, now, adminToken, trustProxy, failures, rate } = deps;
+  const { store, now, adminToken, enrollToken, trustProxy, failures, rate } =
+    deps;
   const model = createWriteModel({
     store,
     now,
@@ -250,6 +266,8 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
     digestHex: deps.digestHex,
   });
   const adminDigest = adminToken === undefined ? undefined : sha256(adminToken);
+  const enrollDigest =
+    enrollToken === undefined ? undefined : sha256(enrollToken);
   const authenticate = createAuthenticator({ store, compare: deps.compare });
 
   const answer = (
@@ -295,16 +313,15 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
   }
 
   /**
-   * The digest of the presented token, and every way it is refused. A duplicate
-   * `Authorization` header is a request with two answers and is refused before
-   * either is read; behind a trusted proxy a write has to have arrived as https;
-   * a token outside this service's grammar never becomes a digest; and the admin
-   * digest is compared in the same constant time as any project digest.
+   * The digest of the presented token, and every way it is refused before there
+   * is one. A duplicate `Authorization` header is a request with two answers and
+   * is refused before either is read; behind a trusted proxy a write has to
+   * have arrived as https; and a token outside this service's grammar never
+   * becomes a digest. What the digest is compared against is not decided here:
+   * the two admin routes compare it against both of the service's own tokens,
+   * and a wave against every stored project digest.
    */
-  function digestOf(
-    req: IncomingMessage,
-    admin: Digest | undefined,
-  ): Digest | Refusal {
+  function digestOf(req: IncomingMessage): Digest | Refusal {
     const presented = req.headersDistinct.authorization ?? [];
     if (presented.length > 1) {
       return refuse(jsonReply(400, { error: "more than one authorization" }));
@@ -316,11 +333,58 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
     if (token === undefined) {
       return refuse(jsonReply(401, { error: "unauthorized" }), BEARER_REQUIRED);
     }
-    const digest = sha256(token);
-    if (admin !== undefined && !matches(deps.compare, digest, admin)) {
-      return refuse(jsonReply(401, { error: "unauthorized" }), BEARER_REQUIRED);
+    return sha256(token);
+  }
+
+  /**
+   * Which of the two service tokens the presented digest is. Both comparisons
+   * are two statements, each guarded only by its own digest being configured, and
+   * neither is skipped because the other matched: the time an answer takes then
+   * depends on which tokens are configured and never on what was presented, so
+   * it announces neither the tokens nor the one a caller guessed.
+   */
+  function kindOf(digest: Digest): TokenKind {
+    const adminHit =
+      adminDigest !== undefined && matches(deps.compare, digest, adminDigest);
+    const enrollHit =
+      enrollDigest !== undefined && matches(deps.compare, digest, enrollDigest);
+    return adminHit ? "admin" : enrollHit ? "enroll" : "none";
+  }
+
+  /**
+   * The two refusals the authorization table can answer, both charged to the
+   * address's failure window: a token that is neither of this service's own is a
+   * 401, and one that is the enrollment token on a route the enrollment token may
+   * not use is a 403 that says so. Neither body carries anything the caller did
+   * not already know.
+   */
+  function refused(
+    decision: Extract<Authorization, { kind: "refuse" }>,
+  ): Refusal {
+    return decision.status === 401
+      ? refuse(jsonReply(401, { error: "unauthorized" }), BEARER_REQUIRED)
+      : refuse(jsonReply(403, { error: ENROLLMENT_REFUSAL }));
+  }
+
+  /**
+   * The one answer per outcome of a registration, shared by the admin and the
+   * enrollment dispatch: the four bodies a `POST /api/v1/projects` can end in,
+   * whichever token asked. The `201` is the only place a token is ever returned.
+   */
+  function replyFor(registration: Registration): Reply {
+    switch (registration.kind) {
+      case "invalid":
+        return jsonReply(422, { errors: registration.errors });
+      case "conflict":
+        return jsonReply(409, { error: "already registered" });
+      case "ceiling":
+        return jsonReply(403, { error: "enrollment ceiling reached" });
+      case "registered":
+        return jsonReply(201, {
+          id: registration.id,
+          token: registration.token,
+        });
     }
-    return digest;
   }
 
   /**
@@ -349,6 +413,7 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
     socket: Socket,
     req: IncomingMessage,
     rotate: boolean,
+    power: "admin" | "enroll",
   ): Promise<number> {
     const body = await readBody(req, res, POST_BODY_CAP);
     if (isRefusal(body)) {
@@ -358,31 +423,24 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
     if ("reply" in decoded) {
       return answer(res, method, socket, decoded);
     }
-    const registration = await model.registerProject(decoded.value, rotate);
-    if (registration.kind === "invalid") {
-      return answer(
-        res,
-        method,
-        socket,
-        afterRead(jsonReply(422, { errors: registration.errors })),
+    // Both tokens read the body and the framing identically; they differ only in
+    // what they may do with a free id, which is the model and not this pipeline.
+    const registration =
+      power === "admin"
+        ? await model.registerProject(decoded.value, rotate)
+        : await model.enrollProject(decoded.value);
+    if (power === "enroll" && registration.kind === "registered") {
+      // One line, so the owner can tell an enrolled project from a hand
+      // registered one after the fact. The id, never the token or its digest.
+      deps.log(
+        JSON.stringify({
+          ts: new Date(now()).toISOString(),
+          event: "enrolled",
+          project: registration.id,
+        }),
       );
     }
-    if (registration.kind === "conflict") {
-      return answer(
-        res,
-        method,
-        socket,
-        afterRead(jsonReply(409, { error: "already registered" })),
-      );
-    }
-    return answer(
-      res,
-      method,
-      socket,
-      afterRead(
-        jsonReply(201, { id: registration.id, token: registration.token }),
-      ),
-    );
+    return answer(res, method, socket, afterRead(replyFor(registration)));
   }
 
   async function push(
@@ -454,9 +512,22 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
             }),
           );
     }
-    if (isAdminWrite(route) && adminDigest === undefined) {
+    const query = queryOf(target);
+    const rotate = query === ROTATE_QUERY;
+    if (
+      isAdminWrite(route) &&
+      !adminRouteEnabled(
+        route.kind,
+        rotate,
+        adminDigest !== undefined,
+        enrollDigest !== undefined,
+      )
+    ) {
       // Disabled admin routes are gone rather than locked, so a probe cannot
-      // tell one from a path that never existed.
+      // tell one from a path that never existed. `rotate` is read before this is
+      // asked, because it is part of the question: a rotation and a removal are
+      // admin-only whatever else is configured, so they are 404 while a plain
+      // registration is not.
       return answer(
         res,
         method,
@@ -464,8 +535,6 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
         refuse(jsonReply(404, { error: "not found" })),
       );
     }
-    const query = queryOf(target);
-    const rotate = query === ROTATE_QUERY;
     if (query !== "" && !(route.kind === "register" && rotate)) {
       return answer(
         res,
@@ -498,14 +567,23 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
         refuse(jsonReply(429, { error: "too many failures" })),
       );
     }
-    const authenticated = digestOf(
-      req,
-      isAdminWrite(route) ? adminDigest : undefined,
-    );
+    const authenticated = digestOf(req);
     if (isRefusal(authenticated)) {
       return denied(res, method, socket, address, authenticated);
     }
-    if (route.kind === "push" || route.kind === "drop") {
+    let power: "admin" | "enroll" = "admin";
+    if (isAdminWrite(route)) {
+      // A rotation and a removal are the admin token's alone, so the two service
+      // tokens resolve to a power and the table below turns that into an answer.
+      // The handler does not check that the two configured tokens differ: it
+      // cannot, and it does not have to — a test may hand it equal ones, and the
+      // startup refusal in `main.ts` is what keeps that out of a deployment.
+      const decision = authorize(route.kind, rotate, kindOf(authenticated));
+      if (decision.kind === "refuse") {
+        return denied(res, method, socket, address, refused(decision));
+      }
+      power = decision.kind;
+    } else {
       const wave = await authenticateWave(authenticated, route.project);
       if (wave !== undefined) {
         return denied(res, method, socket, address, wave);
@@ -527,7 +605,7 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
     }
     switch (route.kind) {
       case "register":
-        return register(res, method, socket, req, rotate);
+        return register(res, method, socket, req, rotate, power);
       case "removeProject":
         return answer(
           res,

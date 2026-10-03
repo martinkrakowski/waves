@@ -13,7 +13,11 @@ import { join } from "node:path";
 
 import type { Project, StoredSnapshot } from "@hexagen-monaco/waves-contract";
 
-import type { SnapshotHead, StorePort } from "../application/ports/store.js";
+import type {
+  CreateOutcome,
+  SnapshotHead,
+  StorePort,
+} from "../application/ports/store.js";
 import { snapshotHead } from "../application/ports/store.js";
 import { assertIds } from "./ids.js";
 
@@ -113,6 +117,35 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
     });
   }
 
+  /**
+   * The read, the ceiling test and the write are one queued operation, which is
+   * the only reason two enrollments of one id cannot both win, and two at the
+   * ceiling cannot both pass: taken outside the queue, the second caller would
+   * read a registry the first has not written yet and answer as if it had.
+   */
+  async createProject(
+    project: Project,
+    ceiling: number,
+  ): Promise<CreateOutcome> {
+    assertIds(project.id);
+    return this.#serialised(async () => {
+      await this.#checkedDataDir(true);
+      const projects = await this.#readProjects();
+      if (projects.has(project.id)) {
+        return "exists";
+      }
+      if (projects.size >= ceiling) {
+        return "ceiling";
+      }
+      projects.set(project.id, project);
+      await this.#writeAtomic(
+        this.#projectsPath(),
+        serialiseProjects(projects),
+      );
+      return "created";
+    });
+  }
+
   async deleteProject(id: string): Promise<void> {
     await this.#serialised(async () => {
       assertIds(id);
@@ -203,7 +236,7 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
     });
   }
 
-  #serialised(operation: () => Promise<void>): Promise<void> {
+  #serialised<T>(operation: () => Promise<T>): Promise<T> {
     const run = this.#queue.then(operation);
     this.#queue = run.then(ignore, ignore);
     return run;

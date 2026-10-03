@@ -21,10 +21,24 @@ export function snapshotHead(snapshot: StoredSnapshot): SnapshotHead {
   };
 }
 
+export type CreateOutcome = "created" | "exists" | "ceiling";
+
 export interface StorePort<TProject, TSnapshot> {
   getProject(id: string): Promise<TProject | undefined>;
   listProjects(): Promise<readonly TProject[]>;
   putProject(project: TProject): Promise<void>;
+  /**
+   * Stores a project only if its id is free, in one operation the store
+   * serialises, and says which of the three things happened: it was created, the
+   * id was already taken, or the registry is already at `ceiling` projects.
+   *
+   * `ceiling` is an argument rather than a constant of this port on purpose: it
+   * is a rule of the enrollment path in the application layer, not of storage,
+   * and a port that hard-coded it would make the registry's size a property of
+   * the adapter. The store only applies the number it is handed, which is what
+   * lets a test drive the boundary with any ceiling at all.
+   */
+  createProject(project: TProject, ceiling: number): Promise<CreateOutcome>;
   deleteProject(id: string): Promise<void>;
   putSnapshot(snapshot: TSnapshot): Promise<void>;
   getSnapshot(project: string, wave: string): Promise<TSnapshot | undefined>;

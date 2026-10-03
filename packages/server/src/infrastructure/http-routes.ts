@@ -50,8 +50,15 @@ export function allowOf(matched: Route): string {
   return ALLOWED[matched.kind];
 }
 
-/** Registration and project removal are the two writes an admin token answers. */
-export function isAdminWrite(route: WriteRoute): boolean {
+/**
+ * Registration and project removal are the two writes an admin token answers. The
+ * predicate narrows, so the two calls that follow it — whether the route exists
+ * at all, and which of the two service tokens may use it — see a `kind` of
+ * `register` or `removeProject` and nothing else.
+ */
+export function isAdminWrite(
+  route: WriteRoute,
+): route is Extract<WriteRoute, { kind: "register" | "removeProject" }> {
   return route.kind === "register" || route.kind === "removeProject";
 }
 

@@ -11,6 +11,12 @@ export {
 export { ConfigError, parseConfig } from "./application/config.js";
 export type { Config } from "./application/config.js";
 export {
+  adminRouteEnabled,
+  authorize,
+  type Authorization,
+  type TokenKind,
+} from "./application/enrollment.js";
+export {
   createFailureLimiter,
   createRateLimiter,
   FAILURE_LIMIT,
@@ -27,10 +33,19 @@ export type {
   WaveView,
 } from "./application/read-model.js";
 export { snapshotHead } from "./application/ports/store.js";
-export type { SnapshotHead, StorePort } from "./application/ports/store.js";
-export { createWriteModel } from "./application/write-model.js";
+export type {
+  CreateOutcome,
+  SnapshotHead,
+  StorePort,
+} from "./application/ports/store.js";
+export { createWriteModel, ENROLL_CEILING } from "./application/write-model.js";
 export type { Registration, WriteModel } from "./application/write-model.js";
-export { readAdminToken } from "./infrastructure/admin-token.js";
+export {
+  readAdminToken,
+  readEnrollToken,
+  type SecretToken,
+  sameToken,
+} from "./infrastructure/admin-token.js";
 export { FileStore } from "./infrastructure/file-store.js";
 export { digestsEqual, mintToken } from "./infrastructure/digest.js";
 export { createHttpServer } from "./infrastructure/http-server.js";

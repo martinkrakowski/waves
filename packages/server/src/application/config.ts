@@ -6,6 +6,7 @@ export interface Config {
   readonly dataDir: string;
   readonly readTokenFile?: string;
   readonly adminTokenFile?: string;
+  readonly enrollTokenFile?: string;
   /**
    * Whether `X-Forwarded-For` and `X-Forwarded-Proto` are the address and the
    * scheme of the client, rather than of the proxy in front of this process.
@@ -18,6 +19,7 @@ export const PORT_VARIABLE = "WAVES_PORT";
 export const DATA_DIR_VARIABLE = "WAVES_DATA_DIR";
 export const READ_TOKEN_FILE_VARIABLE = "WAVES_READ_TOKEN_FILE";
 export const ADMIN_TOKEN_FILE_VARIABLE = "WAVES_ADMIN_TOKEN_FILE";
+export const ENROLL_TOKEN_FILE_VARIABLE = "WAVES_ENROLL_TOKEN_FILE";
 export const TRUST_PROXY_VARIABLE = "WAVES_TRUST_PROXY";
 
 const DEFAULT_HOST = "0.0.0.0";
@@ -111,6 +113,7 @@ export function parseConfig(env: Env): Config {
     dataDir: readDataDir(env),
     readTokenFile: optional(env, READ_TOKEN_FILE_VARIABLE),
     adminTokenFile: optional(env, ADMIN_TOKEN_FILE_VARIABLE),
+    enrollTokenFile: optional(env, ENROLL_TOKEN_FILE_VARIABLE),
     trustProxy: readTrustProxy(env),
   };
 }

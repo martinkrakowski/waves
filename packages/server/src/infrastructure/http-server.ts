@@ -68,6 +68,8 @@ export interface HttpServerDeps {
   readonly readToken?: string;
   /** undefined leaves the admin routes disabled, so they answer 404. */
   readonly adminToken?: string;
+  /** undefined leaves registration by the enrollment token disabled. */
+  readonly enrollToken?: string;
   readonly trustProxy?: boolean;
   readonly compare?: DigestComparer;
   readonly mint?: () => string;
@@ -167,6 +169,8 @@ export function createHttpServer(deps: HttpServerDeps): Server {
     store,
     now,
     adminToken: deps.adminToken,
+    enrollToken: deps.enrollToken,
+    log,
     trustProxy: deps.trustProxy === true,
     compare,
     mintToken: deps.mint ?? mintToken,

@@ -4,6 +4,7 @@ import {
   ADMIN_TOKEN_FILE_VARIABLE,
   ConfigError,
   DATA_DIR_VARIABLE,
+  ENROLL_TOKEN_FILE_VARIABLE,
   HOST_VARIABLE,
   parseConfig,
   PORT_VARIABLE,
@@ -21,6 +22,7 @@ describe("parseConfig", () => {
       dataDir: "/srv/waves",
       readTokenFile: undefined,
       adminTokenFile: undefined,
+      enrollTokenFile: undefined,
       trustProxy: false,
     });
   });
@@ -33,6 +35,7 @@ describe("parseConfig", () => {
         [DATA_DIR_VARIABLE]: "/var/lib/waves",
         [READ_TOKEN_FILE_VARIABLE]: "/run/secrets/waves-read",
         [ADMIN_TOKEN_FILE_VARIABLE]: "/run/secrets/waves-admin/token",
+        [ENROLL_TOKEN_FILE_VARIABLE]: "/run/secrets/waves-enroll/token",
         [TRUST_PROXY_VARIABLE]: "1",
       }),
     ).toEqual({
@@ -41,7 +44,20 @@ describe("parseConfig", () => {
       dataDir: "/var/lib/waves",
       readTokenFile: "/run/secrets/waves-read",
       adminTokenFile: "/run/secrets/waves-admin/token",
+      enrollTokenFile: "/run/secrets/waves-enroll/token",
       trustProxy: true,
+    });
+  });
+
+  it("takes the enrollment file on its own, as an optional one", () => {
+    expect(
+      parseConfig({
+        ...DATA_DIR,
+        [ENROLL_TOKEN_FILE_VARIABLE]: "/run/secrets/waves-enroll/token",
+      }),
+    ).toMatchObject({
+      adminTokenFile: undefined,
+      enrollTokenFile: "/run/secrets/waves-enroll/token",
     });
   });
 
@@ -69,6 +85,26 @@ describe("parseConfig", () => {
     expect(() =>
       parseConfig({ ...DATA_DIR, [ADMIN_TOKEN_FILE_VARIABLE]: "" }),
     ).toThrow(ADMIN_TOKEN_FILE_VARIABLE);
+  });
+
+  it("rejects an empty enrollment token file path", () => {
+    expect(() =>
+      parseConfig({ ...DATA_DIR, [ENROLL_TOKEN_FILE_VARIABLE]: "" }),
+    ).toThrow(ENROLL_TOKEN_FILE_VARIABLE);
+  });
+
+  it("never reads a token value from the environment", () => {
+    // The two variables name a file and nothing else: a value set beside them
+    // under any spelling is not configuration this service reads.
+    const parsed = parseConfig({
+      ...DATA_DIR,
+      [ADMIN_TOKEN_FILE_VARIABLE]: "/run/secrets/waves-admin/token",
+      [ENROLL_TOKEN_FILE_VARIABLE]: "/run/secrets/waves-enroll/token",
+      WAVES_ENROLL_TOKEN: "in-the-environment-0123456789abcdefghij",
+      WAVES_ADMIN_TOKEN: "in-the-environment-0123456789abcdefghij",
+    });
+
+    expect(JSON.stringify(parsed)).not.toContain("in-the-environment");
   });
 
   it.each(["1", "8080", "65535"])("accepts the port %j", (port) => {
