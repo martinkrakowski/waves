@@ -64,6 +64,26 @@ dd {
   overflow-wrap: anywhere;
 }
 
+/* The two controls this page draws itself rather than linking: the drawer's
+   Close and the project's Copy digest. One look for both, here where both
+   stylesheets can reach it, and the same as `.toolbar select` above them. */
+.close,
+.copy {
+  background: var(--bg-sink);
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  padding: 0.25rem 0.6rem;
+}
+
+.close:focus-visible,
+.copy:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
 .badge {
   border: 1px solid currentcolor;
   border-radius: 0.75rem;

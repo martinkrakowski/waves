@@ -1,0 +1,150 @@
+/*
+ * The lane drawer: the dialog the project page opens over itself. Colours come
+ * only from tokens.css, as everywhere else on the page.
+ *
+ * The padding is on `.drawer` and never on the dialog, and the dialog does not
+ * scroll: a click whose target is the dialog itself is a click on the backdrop,
+ * and a scrollbar on the dialog would make a click on that scrollbar a click on
+ * the backdrop too. The drawer scrolls instead, so a long log tail never turns
+ * the frame into something a reader cannot dismiss.
+ *
+ * The Close control's own look is not here: it is shared with the project's
+ * "Copy digest" in `app.css`, so a control that has to look like a control on
+ * both sides of a dialog is one rule rather than two.
+ */
+
+dialog.lane-drawer {
+  background: var(--bg-raise);
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  color: var(--text);
+  overflow: hidden;
+  padding: 0;
+  width: min(46rem, calc(100vw - 2rem));
+}
+
+dialog.lane-drawer::backdrop {
+  background: rgb(0 0 0 / 55%);
+}
+
+.drawer {
+  box-sizing: border-box;
+  /* The dialog's own ceiling is the viewport less 2em and 6px; `dvh` follows a
+     phone's collapsing address bar. */
+  max-height: calc(100dvh - 2rem - 6px);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  padding: 1rem 1.25rem;
+}
+
+.drawer header {
+  align-items: baseline;
+  display: flex;
+  gap: 0.5rem 0.75rem;
+}
+
+.drawer header h2 {
+  font-size: 1.1rem;
+  margin: 0;
+}
+
+.drawer header .close {
+  margin-left: auto;
+}
+
+.drawer section {
+  margin-top: 1rem;
+}
+
+.drawer h3 {
+  font-size: 0.95rem;
+  margin: 0 0 0.4rem;
+}
+
+.drawer pre {
+  background: var(--bg-sink);
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  margin: 0;
+  max-height: 22rem;
+  overflow-x: auto;
+  padding: 0.6rem 0.8rem;
+  white-space: pre-wrap;
+}
+
+.drawer table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.drawer th,
+.drawer td {
+  border-bottom: 1px solid var(--line);
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.drawer thead th {
+  color: var(--muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.drawer tbody th {
+  font-weight: inherit;
+  white-space: nowrap;
+}
+
+.drawer dl {
+  display: grid;
+  gap: 0.2rem 0.75rem;
+  /* A detail key is a pusher's text with no length of its own: a column sized
+     to it could push every value off the drawer. */
+  grid-template-columns: minmax(0, 12rem) 1fr;
+  margin: 0;
+}
+
+.drawer dt {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.drawer dd {
+  margin: 0;
+}
+
+.drawer ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.drawer li {
+  margin: 0.15rem 0;
+}
+
+/* The page's own `.panel .panel-empty` and `.project .badge` rules are scoped to
+   the page and do not reach a dialog that sits outside it, so the drawer's two
+   are declared here with the same declarations. */
+.drawer .panel-empty {
+  color: var(--muted);
+  margin: 0;
+}
+
+.drawer .badge {
+  border: 1px solid currentcolor;
+  border-radius: 0.75rem;
+  font-size: 0.75rem;
+  padding: 0 0.45rem;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.drawer .badge.reason {
+  color: var(--red);
+}
+
+.drawer .badge.stale {
+  color: var(--amber);
+}

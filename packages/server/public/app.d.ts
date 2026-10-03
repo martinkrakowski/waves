@@ -13,7 +13,11 @@ export type Route =
 export interface AppGlobals {
   readonly doc: Document;
   /** Read again at every navigation, never cached: it is the browser's. */
-  readonly location: { pathname: string; search: string };
+  readonly location: {
+    readonly origin: string;
+    readonly pathname: string;
+    readonly search: string;
+  };
   readonly history: {
     pushState(data: unknown, unused: string, url: string): void;
     replaceState(data: unknown, unused: string, url: string): void;
@@ -23,6 +27,11 @@ export interface AppGlobals {
     removeEventListener(type: "popstate", listener: () => void): void;
   };
   readonly fetch: FetchLike;
+  /**
+   * The browser's clipboard. Absent outside a secure context, which the page
+   * reads as a copy that cannot be made rather than as nothing to do.
+   */
+  readonly clipboard?: { writeText(text: string): Promise<void> };
   readonly setTimer: (callback: () => void, delayMs: number) => unknown;
   readonly clearTimer: (handle: unknown) => void;
   readonly clock: () => number;

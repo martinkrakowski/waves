@@ -279,6 +279,13 @@
   margin-left: auto;
 }
 
+/* What the last copy of the digest said. Empty most of the time, and empty is
+   what keeps the toolbar the same height. */
+.toolbar .copied {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
 /* One column below 1080px, where the panels stop fitting side by side. */
 @media (max-width: 1080px) {
   .split {
