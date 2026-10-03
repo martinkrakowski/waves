@@ -21,12 +21,13 @@ const REPO_RULE: StringRule = { maxChars: MAX_REPO_CHARS };
 const TOKEN_RULE: StringRule = { pattern: /^[0-9a-f]{64}$/ };
 
 /**
- * The characters RFC 3986 lets a URL carry without escaping: unreserved, then
- * the gen-delimiters, then `%`. Written without control-character escapes, so
+ * The characters RFC 3986 lets a URL carry without escaping: the unreserved
+ * characters, the gen-delimiters, the sub-delimiters, and `%`. Written without control-character escapes, so
  * `no-control-regex` stays happy.
  *
  * Three things are known and accepted. A bare `%` is one of the set, so `b%ZZ`
- * and a trailing `%` pass this rule and are left to `isHttpsUrl`. IPv6
+ * and a trailing `%` pass this rule, and `new URL` accepts them too, so both
+ * are stored. IPv6
  * brackets are delimiters, so `https://[2001:db8::1]/a` passes. An
  * internationalised host is refused, because its letters are not ASCII and a
  * URL has to spell them as punycode or as percent escapes.

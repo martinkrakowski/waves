@@ -16,7 +16,8 @@ function withPrs(skipped: unknown): Record<string, unknown> {
 }
 
 // The two documents of "The project status document" in docs/waves-v1.md are
-// these two literals; changing one is changing both, by hand and in step.
+// `minimalStatus()` and `fullStatus()` in `support.ts`; changing one is changing
+// both, by hand and in step.
 describe("validateStatus", () => {
   it("accepts the minimal document of the docs section", () => {
     expect(expectValidStatus(minimalStatus())).toEqual(minimalStatus());

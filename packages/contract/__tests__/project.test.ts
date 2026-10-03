@@ -86,8 +86,15 @@ describe("validateProject", () => {
 
   it("refuses a repository with a character a URL must escape", () => {
     // The placeholder a first register-all passes: <owner> is not a URL.
-    expectPaths(project({ repo: "https://github.com/<owner>/<repo>" }), [
-      "/repo",
+    const placeholder = validateProject(
+      project({ repo: "https://github.com/<owner>/<repo>" }),
+    );
+    expect(placeholder.ok).toBe(false);
+    expect(placeholder.ok ? [] : placeholder.errors).toEqual([
+      {
+        path: "/repo",
+        message: "expected only the characters a URL holds unescaped",
+      },
     ]);
     expectPaths(project({ repo: "https://github.com/a/b c" }), ["/repo"]);
     expectPaths(project({ repo: "https://github.com/a\\b" }), ["/repo"]);
@@ -96,6 +103,9 @@ describe("validateProject", () => {
     expectPaths(project({ repo: "https://github.com/a|b" }), ["/repo"]);
     expectPaths(project({ repo: "https://github.com/a^b" }), ["/repo"]);
     expectPaths(project({ repo: "https://github.com/a`b" }), ["/repo"]);
+  });
+
+  it("refuses a control character in a repository before its characters are read", () => {
     expectPaths(project({ repo: `https://github.com/a${BELL}b` }), ["/repo"]);
   });
 

@@ -1,6 +1,6 @@
 # @hexagen-monaco/waves-contract
 
-The `waves/v1` contract for [waves](https://github.com/martinkrakowski/waves): the envelope a project pushes for one wave, its validator, the id patterns, and the staleness and retention rules. Pure TypeScript with no dependencies, so any client or server can validate exactly what the reference server accepts.
+The `waves/v1` contract for [waves](https://github.com/martinkrakowski/waves): the envelope a project pushes for one wave and the status document it pushes for the whole project, their validators, the id patterns, and the staleness and retention rules. Pure TypeScript with no dependencies, so any client or server can validate exactly what the reference server accepts.
 
 ```sh
 npm install @hexagen-monaco/waves-contract

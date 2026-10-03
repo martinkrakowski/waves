@@ -15,7 +15,8 @@ break a build.
 
 ## 2. The envelope
 
-`validateEnvelope` is the whole gate. It is exported from
+`validateEnvelope` is the whole gate for a wave (a project's status has its own,
+`validateStatus`; see "The project status document"). It is exported from
 `@hexagen-monaco/waves-contract` and is pure: give it a parsed JSON value, get
 either `{ ok: true, value }` or `{ ok: false, errors }`.
 (`packages/contract/src/domain/envelope.ts`, `packages/contract/src/index.ts`)
@@ -293,7 +294,7 @@ Every string of the document is bounded in characters and free of control
 characters, and none of them allows a line break: there is no field here that
 holds log output, so no rule sets `lineBreaks`. The whole document re-serialised
 must be at most 1 MiB, else one error at the root, as for the envelope
-(`normalise`, `packages/contract/src/domain/status.ts:88`).
+(`normalise`, `packages/contract/src/domain/status.ts:90`).
 
 **Staleness.** The clock is the server's and the instant it uses is when the
 server received the document, exactly as section 4 for a wave: the status is
@@ -737,8 +738,8 @@ such as `https://github.com/<owner>/<repo>` is a `422` rather than a stored URL
 (`REPO_CHARACTER_PATTERN`, `packages/contract/src/domain/project.ts:34`,
 `53`; the
 message is `expected only the characters a URL holds unescaped`). A bare `%` is
-in the set, so `b%ZZ` and a trailing `%` are the character rule's business and
-the `https` rule's after it; an internationalised host is refused, because its
+in the set, so `b%ZZ` and a trailing `%` pass it, and `new URL` accepts them
+too, so both are stored; an internationalised host is refused, because its
 letters are not in the set. The `201` carries the
 project's token — 32 random bytes as base64url, 43 characters — and that answer
 is the only time the token exists in clear text anywhere. An id that is already

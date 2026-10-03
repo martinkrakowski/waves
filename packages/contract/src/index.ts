@@ -4,6 +4,8 @@ export type { LaneId, ProjectId, WaveId } from "./domain/ids.js";
 export { SCHEMA, STATUS_SCHEMA } from "./domain/model.js";
 export type {
   Backlog,
+  BacklogGit,
+  BacklogScope,
   BacklogState,
   CheckStatus,
   DiffStat,
