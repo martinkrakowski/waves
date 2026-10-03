@@ -235,6 +235,28 @@ describe("the enrollment ceiling", () => {
   });
 });
 
+describe("the two allowances", () => {
+  it("keeps the admin token's cleanup open while the enrollment token spends its own", async () => {
+    const store = await filled(1);
+    const started = await startHarness({
+      store,
+      adminToken: ADMIN_TOKEN,
+      enrollToken: ENROLL_TOKEN,
+    });
+
+    // One clock second: the enrollment token takes its one write, then asks
+    // again and is held; the admin token's removal in the same second is not.
+    const enrolled = await post(started, registration("beta"));
+    const held = await post(started, registration("gamma"));
+    const removed = await remove(started, "seed-0", ADMIN_TOKEN);
+
+    expect([enrolled.status, held.status, removed.status]).toEqual([
+      201, 429, 204,
+    ]);
+    expect(await held.json()).toEqual({ error: "too many writes" });
+  });
+});
+
 describe("both refusals are charged", () => {
   it("429s the eleventh deletion under the enrollment token", async () => {
     const store = await filled(1);

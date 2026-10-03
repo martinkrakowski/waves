@@ -695,10 +695,13 @@ connection without reading the body
    `396-408`).
 8. `429` `{"error":"too many writes"}` with `Retry-After: 1` — one write per
    second per project, counting every authenticated attempt and not only the
-   accepted ones. The two admin routes and both of the two service tokens share
-   one allowance between them (`PROJECT_INTERVAL_MS`,
-   `packages/server/src/application/limiters.ts:5`;
-   `ADMIN_LIMITER_KEY`, `packages/server/src/infrastructure/http-write.ts:52`).
+   accepted ones. The admin token's requests share one allowance, and the
+   enrollment token's have one of their own at the same rate, so a leaked
+   enrollment token cannot keep the admin token's cleanup at `429`
+   (`PROJECT_INTERVAL_MS`, `packages/server/src/application/limiters.ts:5`;
+   `ADMIN_LIMITER_KEY` and `ENROLL_LIMITER_KEY` in
+   `packages/server/src/infrastructure/http-write.ts`). Neither key can be a
+   project id.
 
 The client address in step 6 is the socket's, or with `WAVES_TRUST_PROXY=1` the
 last entry of `X-Forwarded-For`

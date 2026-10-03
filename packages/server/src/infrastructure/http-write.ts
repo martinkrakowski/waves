@@ -49,7 +49,16 @@ import {
 
 export const PUT_BODY_CAP = 1_048_576;
 export const POST_BODY_CAP = 16_384;
-export const ADMIN_LIMITER_KEY = "admin";
+// Neither key can be a project id (an id holds no colon), so neither token's
+// allowance is ever shared with a project's pushes.
+export const ADMIN_LIMITER_KEY = ":admin";
+/**
+ * The enrollment token's own allowance: the same one write a second as the
+ * admin token's, kept apart from it, so a leaked enrollment token sending one
+ * request a second cannot hold the admin token's rotations and removals — the
+ * owner's way of cleaning up after it — at 429.
+ */
+export const ENROLL_LIMITER_KEY = ":enroll";
 export const BEARER_REQUIRED = {
   "WWW-Authenticate": 'Bearer realm="waves"',
 } as const;
@@ -429,6 +438,10 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
       power === "admin"
         ? await model.registerProject(decoded.value, rotate)
         : await model.enrollProject(decoded.value);
+    // The answer goes out before anything else happens: it carries the only
+    // copy of a new token there will ever be, and a log sink that throws must
+    // not stand between the token and the client that asked for it.
+    const sent = answer(res, method, socket, afterRead(replyFor(registration)));
     if (power === "enroll" && registration.kind === "registered") {
       // One line, so the owner can tell an enrolled project from a hand
       // registered one after the fact. The id, never the token or its digest.
@@ -440,7 +453,7 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
         }),
       );
     }
-    return answer(res, method, socket, afterRead(replyFor(registration)));
+    return sent;
   }
 
   async function push(
@@ -593,7 +606,9 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
       !rate.take(
         route.kind === "push" || route.kind === "drop"
           ? route.project
-          : ADMIN_LIMITER_KEY,
+          : power === "enroll"
+            ? ENROLL_LIMITER_KEY
+            : ADMIN_LIMITER_KEY,
       )
     ) {
       return answer(

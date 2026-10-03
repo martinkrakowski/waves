@@ -35,7 +35,9 @@ export type Registration =
     };
 
 /**
- * How many projects the enrollment token may have created. A constant, not
+ * The registry size past which the enrollment token creates nothing more. It
+ * counts every project, however it was registered: projects the admin token
+ * registered leave less room for enrollments, not more. A constant, not
  * configuration: a leaked enrollment token can fill the registry to a size the
  * owner can see and count, and no further. It bounds how many, never what is in
  * it, and the admin token is not subject to it.
