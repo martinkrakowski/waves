@@ -275,20 +275,27 @@ describe("registering a project", () => {
     expect(stale.status).toBe(401);
   });
 
-  it.each([
+  it.each(
     [
-      "a key the client does not own",
-      { ...registration(), tokenSha256: "a".repeat(64) },
-    ],
-    ["a body that is not an object", ["alpha"]],
-    ["a name the contract refuses", { id: "alpha", name: "" }],
-    [
-      "a repo that is not https",
-      { id: "alpha", name: "Alpha", repo: "http://example.com" },
-    ],
-    ["an id the contract refuses", { id: "Alpha", name: "Alpha" }],
-    ["an id that is not a string", { id: 7, name: "Alpha" }],
-  ])("422s %s, and stores nothing", async (_label, body) => {
+      [
+        "a key the client does not own",
+        { ...registration(), tokenSha256: "a".repeat(64) },
+      ],
+      ["a body that is not an object", ["alpha"]],
+      ["a name the contract refuses", { id: "alpha", name: "" }],
+      [
+        "a repo that is not https",
+        { id: "alpha", name: "Alpha", repo: "http://example.com" },
+      ],
+      ["an id the contract refuses", { id: "Alpha", name: "Alpha" }],
+      ["an id that is not a string", { id: 7, name: "Alpha" }],
+    ].flatMap(([label, body]) => [
+      [label, body, ""],
+      // A rotation reads the project before it builds the new record, so it is a
+      // path of its own and refuses the same bodies on its own.
+      [`${String(label)} on a rotation`, body, "?rotate=1"],
+    ]),
+  )("422s %s, and stores nothing", async (_label, body, query) => {
     const store = new MemoryStore();
     const started = await startHarness({
       store,
@@ -296,7 +303,7 @@ describe("registering a project", () => {
       mint: minting().mint,
     });
 
-    const response = await register(started, body);
+    const response = await register(started, body, { query: String(query) });
 
     expect(response.status).toBe(422);
     const body422 = (await response.json()) as { errors: { path: string }[] };

@@ -185,7 +185,7 @@ describe("the base deployment", () => {
       expect(block).toContain(`            secretName: ${secretName}`);
       expect(block).toContain("            optional: true");
       expect(
-        block.some((line) => /^ {12}defaultMode: 0\d{3}$/.test(line)),
+        block.some((line) => /^ {12}defaultMode: 0440$/.test(line)),
         `the ${volume} Secret has a group readable mode`,
       ).toBe(true);
 

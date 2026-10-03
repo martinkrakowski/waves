@@ -148,6 +148,11 @@ export function createWriteModel(deps: WriteModelDeps) {
      * time the clear text leaves this process is in the 201 that mints it, and
      * a rotation keeps the registration date so the project's age does not
      * restart because a token leaked.
+     *
+     * A registration that is not a rotation goes through the same serialized
+     * create as an enrollment, with no ceiling: reading the project and then
+     * writing it would let an enrollment of the same id land in between, and the
+     * admin write would then overwrite a token the enrollment had just handed out.
      */
     async registerProject(
       body: unknown,
@@ -156,6 +161,19 @@ export function createWriteModel(deps: WriteModelDeps) {
       const opened = closed(body);
       if (opened.kind === "invalid") {
         return opened;
+      }
+      if (!rotate) {
+        const fresh = build(opened.record, timestampOf(now()));
+        if (fresh.kind === "invalid") {
+          return fresh;
+        }
+        const outcome = await store.createProject(
+          fresh.project,
+          Number.POSITIVE_INFINITY,
+        );
+        return outcome === "created"
+          ? { kind: "registered", id: fresh.project.id, token: fresh.token }
+          : { kind: "conflict" };
       }
       // An id the contract would refuse never reaches the store, so a body with
       // a malformed id is validated rather than looked up.
@@ -168,9 +186,6 @@ export function createWriteModel(deps: WriteModelDeps) {
       );
       if (built.kind === "invalid") {
         return built;
-      }
-      if (existing !== undefined && !rotate) {
-        return { kind: "conflict" };
       }
       await store.putProject(built.project);
       return { kind: "registered", id: built.project.id, token: built.token };

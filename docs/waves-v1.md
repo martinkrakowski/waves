@@ -555,8 +555,10 @@ SHA-256 digest of a project token, and compares digests in constant time
 
 The admin token is one secret for the whole service, read once at startup from
 the file `WAVES_ADMIN_TOKEN_FILE` names. When that variable is absent, or
-names a file that does not exist, the admin routes do not exist: they answer
-`404`, so a probe cannot tell a disabled route from a path that was never there.
+names a file that does not exist, `?rotate=1` and `DELETE` do not exist: they
+answer `404`, so a probe cannot tell a disabled route from a path that was never
+there. A plain `POST /api/v1/projects` answers `404` only when neither the admin
+token nor the enrollment token is configured.
 A file that does exist must hold a token in the grammar above once trimmed, or
 the server refuses to start
 (`readAdminToken`, `packages/server/src/infrastructure/admin-token.ts:59-61`;

@@ -260,9 +260,10 @@ Run these after the first deploy of the write path, in this order:
    and holds the body until the backend answers with a 100, falling back to
    sending it after a second, so a `curl` that does wait is telling you the
    request never reached the service.
-6. With the enrollment Secret **absent**, an enrollment-shaped `POST` — any
-   bearer that is not the admin token — answers `401`, never `201`. The route is
-   not gone: it is the admin token's, and it is locked rather than absent.
+6. With the enrollment Secret **absent** and the admin Secret present, an
+   enrollment-shaped `POST` — any bearer that is not the admin token — answers
+   `401`, never `201`: the route is the admin token's, locked rather than
+   absent. With neither Secret, it answers `404`.
 7. With the enrollment Secret **present**, `?rotate=1` under the enrollment token
    answers `403` with `enrollment token cannot do this`, and a `DELETE` under it
    answers `403` as well. Both are the enrollment token being refused, not the
