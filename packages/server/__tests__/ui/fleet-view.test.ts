@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { AttentionView } from "../../src/application/read-model.js";
 import type { ProjectCard } from "../../public/api.js";
-import type { FleetModel } from "../../public/views/fleet.js";
+import type { FleetHandlers, FleetModel } from "../../public/views/fleet.js";
 import { renderFleet } from "../../public/views/fleet.js";
+import { rowIdOf } from "../../public/views/fleet-rows.js";
 
 import {
   attentionLane,
@@ -11,6 +12,7 @@ import {
   NOW_ISO,
   NOW_MS,
   projectCard,
+  recentWave,
   statusFacts,
 } from "./fixtures.js";
 import {
@@ -21,328 +23,937 @@ import {
   textsOf,
 } from "./helpers.js";
 
+/** The handlers every draw gets: one search box, and nothing else. */
+function noHandlers(): FleetHandlers {
+  return { onSearch: vi.fn() };
+}
+
 /** Draws the page and hands back the host it was drawn into. */
 function draw(model: Partial<FleetModel> = {}): HTMLElement {
   const host = freshRoot();
   const full: FleetModel = {
     projects: [projectCard()],
     attention: attentionView(),
+    query: { all: false },
+    open: new Set<string>(),
     ...model,
   };
-  host.append(renderFleet(full, NOW_MS));
+  host.append(renderFleet(full, NOW_MS, noHandlers()));
   assertNoInjectedMarkup();
   return host;
 }
 
-/** The five counters, in order, as `[term, value]` pairs. */
-function counters(host: HTMLElement): [string, string][] {
-  return Array.from(host.querySelectorAll(".kpi")).map(
-    (kpi) =>
-      [textOf(kpi.querySelector("dt")), textOf(kpi.querySelector("dd"))] as [
-        string,
-        string,
-      ],
+/** The four stat cards, as `[term, number, caption]` triples. */
+function stats(host: HTMLElement): [string, string, string][] {
+  return Array.from(host.querySelectorAll(".stat")).map(
+    (card) =>
+      [
+        textOf(card.querySelector("dt")),
+        textOf(card.querySelector("dd")),
+        textOf(card.querySelector(".stat-caption")),
+      ] as [string, string, string],
   );
 }
 
+/** The `tab`/`q` a draw was given, as the page writes it back into a link. */
+function query(
+  overrides: Partial<FleetModel["query"]> = {},
+): FleetModel["query"] {
+  return { all: false, ...overrides };
+}
+
 const ALPHA = projectCard();
-
-describe("the fleet page's counters", () => {
-  it("counts the projects, and sums their waves and lanes", () => {
+const BETA = projectCard({ id: "beta", name: "Beta" });
+describe("the hero", () => {
+  it("names the page, says its counts in one line, and drifts a field below", () => {
     const host = draw({
-      projects: [
-        ALPHA,
-        projectCard({ id: "beta", name: "Beta", waves: 1, lanes: 0 }),
-      ],
+      projects: [ALPHA, BETA],
+      attention: attentionView({ projects: [{ id: "alpha", attention: 3 }] }),
     });
-    expect(counters(host)).toStrictEqual([
-      ["Projects", "2"],
-      ["Waves", "4"],
-      ["Lanes", "6"],
-      ["Need attention", "0"],
-      ["Stale projects", "0"],
+    const hero = oneOf(host, ".fleet-hero");
+    expect(hero?.tagName).toBe("HEADER");
+    expect(textsOf(host, ".eyebrow")).toStrictEqual(["fleet"]);
+    expect(textsOf(host, ".fleet-hero h1")).toStrictEqual([
+      "Every wave, accounted for.",
     ]);
-    expect(host.querySelectorAll(".kpi.warn")).toHaveLength(0);
-  });
-
-  it("counts an empty fleet as zeroes rather than hiding the row", () => {
-    expect(counters(draw({ projects: [] }))).toStrictEqual([
-      ["Projects", "0"],
-      ["Waves", "0"],
-      ["Lanes", "0"],
-      ["Need attention", "0"],
-      ["Stale projects", "0"],
+    // Two projects, nothing running, three lanes asking: the same three numbers
+    // the cards below break down, counted once.
+    expect(textsOf(host, ".hero-counts")).toStrictEqual([
+      "2 projects · 0 waves running · 3 lanes asking for attention",
     ]);
+    const field = oneOf(host, ".wave-field");
+    expect(field?.getAttribute("aria-hidden")).toBe("true");
+    expect(field?.getAttribute("focusable")).toBe("false");
+    expect(field?.getAttribute("viewBox")).toBe("0 0 120 36");
+    const paths = Array.from(field?.querySelectorAll("path") ?? []);
+    expect(paths.map((path) => path.getAttribute("class"))).toStrictEqual([
+      "wave-a",
+      "wave-b",
+      "wave-c",
+    ]);
+    for (const path of paths) {
+      expect(path.getAttribute("d")).toMatch(/^M-6 /);
+    }
   });
 
-  it("warns when something is asking for attention, and only then", () => {
+  it("says one the way one is written", () => {
     const host = draw({
-      attention: attentionView({
-        projects: [
-          { id: "alpha", attention: 2 },
-          { id: "beta", attention: 0 },
-        ],
-      }),
+      projects: [projectCard({ recentWaves: [recentWave()] })],
+      attention: attentionView({ projects: [{ id: "alpha", attention: 1 }] }),
     });
-    expect(textsOf(host, ".kpi dd")).toContain("2");
-    const asking = Array.from(host.querySelectorAll(".kpi")).find(
-      (kpi) => textOf(kpi.querySelector("dt")) === "Need attention",
-    );
-    expect(asking?.getAttribute("class")).toBe("kpi warn");
-    expect(asking?.querySelectorAll(".warn")).toHaveLength(0);
-
-    const quiet = Array.from(
-      draw({
-        attention: attentionView({ projects: [{ id: "alpha", attention: 0 }] }),
-      }).querySelectorAll(".kpi"),
-    ).find((kpi) => textOf(kpi.querySelector("dt")) === "Need attention");
-    expect(quiet?.getAttribute("class")).toBe("kpi");
-  });
-
-  it("warns when a project is stale, and only then", () => {
-    const host = draw({
-      projects: [ALPHA, projectCard({ id: "beta", name: "Beta", stale: true })],
-    });
-    const stale = Array.from(host.querySelectorAll(".kpi")).find(
-      (kpi) => textOf(kpi.querySelector("dt")) === "Stale projects",
-    );
-    expect(textOf(stale?.querySelector("dd") ?? null)).toBe("1");
-    expect(stale?.getAttribute("class")).toBe("kpi warn");
-
-    expect(
-      Array.from(draw().querySelectorAll(".kpi"))
-        .find((kpi) => textOf(kpi.querySelector("dt")) === "Stale projects")
-        ?.getAttribute("class"),
-    ).toBe("kpi");
+    expect(textsOf(host, ".hero-counts")).toStrictEqual([
+      "1 project · 1 wave running · 1 lane asking for attention",
+    ]);
   });
 });
 
-describe("the projects panel", () => {
-  it("says so when nothing is registered", () => {
-    const host = draw({ projects: [] });
-    expect(textsOf(host, ".fleet-projects h2")).toStrictEqual(["Projects"]);
-    expect(textsOf(host, ".fleet-projects .empty")).toStrictEqual([
-      "No projects registered yet.",
-    ]);
-    expect(host.querySelectorAll(".project-card")).toHaveLength(0);
-  });
-
-  it("gives one card per project, in the order given", () => {
-    const host = draw({
-      projects: [
-        ALPHA,
-        projectCard({ id: "beta", name: "Beta" }),
-        projectCard({ id: "gamma", name: "Gamma" }),
-      ],
-    });
-    expect(textsOf(host, ".project-card h3 a")).toStrictEqual([
-      "Alpha",
-      "Beta",
-      "Gamma",
-    ]);
-  });
-
-  it("gives a card every fact, in the order the eye reads them", () => {
+describe("the stat cards", () => {
+  it("counts the fleet and says what each number is a part of", () => {
     const host = draw({
       projects: [
         projectCard({
-          id: "beta",
-          name: "Beta",
-          repo: "https://git.example.test/beta",
-          waves: 1,
-          lanes: 2,
+          lanes: 6,
+          stale: true,
+          recentWaves: [
+            recentWave({ wave: "w-3", lanes: 2, merged: 1, state: "running" }),
+            recentWave({ wave: "w-2", lanes: 4, merged: 3, state: "done" }),
+          ],
+        }),
+        projectCard({ id: "beta", name: "Beta", lanes: 4 }),
+      ],
+      attention: attentionView({ projects: [{ id: "alpha", attention: 2 }] }),
+    });
+    expect(stats(host)).toStrictEqual([
+      ["Projects", "2", "1 stale"],
+      ["Waves running", "1", "of 2 recent"],
+      ["Lanes", "10", "4 merged in recent waves"],
+      ["Need attention", "2", "asking now"],
+    ]);
+    expect(
+      Array.from(host.querySelectorAll(".stat-icon")).map((icon) =>
+        icon.getAttribute("class"),
+      ),
+    ).toStrictEqual(["stat-icon", "stat-icon", "stat-icon", "stat-icon"]);
+    expect(host.querySelectorAll(".stat.warn")).toHaveLength(1);
+    expect(
+      Array.from(host.querySelectorAll(".stat")).map((card) =>
+        card.getAttribute("class"),
+      ),
+    ).toStrictEqual(["stat", "stat", "stat", "stat warn"]);
+  });
+
+  it("counts an empty fleet as zeroes rather than hiding the cards", () => {
+    expect(stats(draw({ projects: [] }))).toStrictEqual([
+      ["Projects", "0", "none stale"],
+      ["Waves running", "0", "of 0 recent"],
+      ["Lanes", "0", "0 merged in recent waves"],
+      ["Need attention", "0", "none"],
+    ]);
+    expect(draw({ projects: [] }).querySelectorAll(".stat.warn")).toHaveLength(
+      0,
+    );
+  });
+
+  it("says a warning in its caption and not only in its colour", () => {
+    const asking = draw({
+      attention: attentionView({ projects: [{ id: "alpha", attention: 4 }] }),
+    });
+    expect(
+      Array.from(asking.querySelectorAll(".stat")).map((card) =>
+        card.getAttribute("class"),
+      ),
+    ).toStrictEqual(["stat", "stat", "stat", "stat warn"]);
+    expect(textsOf(asking, ".stat.warn .stat-caption")).toStrictEqual([
+      "asking now",
+    ]);
+    // Nothing asks: the caption says so in the word as well as in the absence of
+    // the warning colour.
+    expect(
+      Array.from(
+        draw({
+          attention: attentionView({
+            projects: [{ id: "alpha", attention: 0 }],
+          }),
+        }).querySelectorAll(".stat.warn"),
+      ),
+    ).toStrictEqual([]);
+  });
+});
+
+describe("the tabs", () => {
+  const FLEET = {
+    projects: [
+      // Quiet: no attention, and its newest wave is settled.
+      projectCard({
+        id: "quiet",
+        name: "Quiet",
+        recentWaves: [recentWave({ wave: "w-2", state: "settled" })],
+      }),
+      // Active: a running wave and nothing asking.
+      projectCard({
+        id: "active",
+        name: "Active",
+        recentWaves: [recentWave({ wave: "w-3", state: "running" })],
+      }),
+      // Flagged: its newest wave failed.
+      projectCard({
+        id: "failed",
+        name: "Failed",
+        recentWaves: [recentWave({ wave: "w-9", state: "failed" })],
+      }),
+      // Flagged: asking for attention, with a running wave and no failure.
+      projectCard({
+        id: "asking",
+        name: "Asking",
+        recentWaves: [recentWave({ wave: "w-4", state: "running" })],
+      }),
+      // Quiet and stale: every project whose pushes have stopped is stale, and
+      // staleness is not what a tab is.
+      projectCard({
+        id: "stale",
+        name: "Stale",
+        stale: true,
+        recentWaves: [recentWave({ wave: "w-1", state: "settled" })],
+      }),
+    ],
+    attention: attentionView({ projects: [{ id: "asking", attention: 1 }] }),
+  };
+
+  /** The four tabs' words and counts, in the order the nav draws them. */
+  function tabbed(host: HTMLElement): [string, string][] {
+    return Array.from(host.querySelectorAll(".fleet-tabs a")).map(
+      (link) =>
+        [textOf(link), textOf(link.nextElementSibling as Element | null)] as [
+          string,
+          string,
+        ],
+    );
+  }
+
+  it("counts each tab over the whole fleet, before the search", () => {
+    expect(tabbed(draw(FLEET))).toStrictEqual([
+      ["All", "5"],
+      ["Active", "1"],
+      ["Flagged", "2"],
+      ["Quiet", "2"],
+    ]);
+    // The search narrows the rows and the tabs with them, and the counts stay
+    // what they were: a tab's count is what it is about to show.
+    const searched = draw({ ...FLEET, query: query({ q: "active" }) });
+    expect(textsOf(searched, "article.project")).toHaveLength(1);
+    expect(tabbed(searched)).toStrictEqual(tabbed(draw(FLEET)));
+  });
+
+  it("puts each tab in the address, carrying the search across", () => {
+    const host = draw({ ...FLEET, query: query({ q: "gate" }) });
+    expect(
+      Array.from(host.querySelectorAll(".fleet-tabs a")).map((link) => [
+        link.getAttribute("href"),
+        link.getAttribute("aria-current"),
+      ]),
+    ).toStrictEqual([
+      // No tab in the address means the whole fleet, and that is the tab the
+      // reader is on.
+      ["/?q=gate", "page"],
+      ["/?tab=active&q=gate", null],
+      ["/?tab=flagged&q=gate", null],
+      ["/?tab=quiet&q=gate", null],
+    ]);
+    expect(
+      Array.from(draw(FLEET).querySelectorAll(".fleet-tabs a")).map((link) =>
+        link.getAttribute("href"),
+      ),
+    ).toStrictEqual(["/", "/?tab=active", "/?tab=flagged", "/?tab=quiet"]);
+  });
+
+  it("marks the tab the reader is on, and only that one", () => {
+    const host = draw({ ...FLEET, query: query({ tab: "flagged" }) });
+    const current = Array.from(host.querySelectorAll(".fleet-tabs a")).filter(
+      (link) => link.getAttribute("aria-current") === "page",
+    );
+    expect(current).toHaveLength(1);
+    expect(textOf(current[0] as Element)).toBe("Flagged");
+    // With no tab in the address the reader is on the whole fleet.
+    expect(
+      draw(FLEET).querySelectorAll(".fleet-tabs a[aria-current]"),
+    ).toHaveLength(1);
+  });
+});
+
+describe("the tab partition", () => {
+  /** One project, in one tab, with everything else as quiet as it can be. */
+  function tabOf(project: Partial<ProjectCard>, asking = 0): string {
+    const host = draw({
+      projects: [projectCard({ id: "one", name: "One", ...project })],
+      attention: attentionView({
+        projects: [{ id: "one", attention: asking }],
+      }),
+    });
+    return textOf(oneOf(host, ".dot .sr"));
+  }
+
+  it("flags a project whose newest wave failed", () => {
+    expect(
+      tabOf({ recentWaves: [recentWave({ wave: "w-3", state: "failed" })] }),
+    ).toBe("flagged");
+    // Only the newest: an older failure is a wave that has been answered since.
+    expect(
+      tabOf({
+        recentWaves: [
+          recentWave({ wave: "w-4", state: "done" }),
+          recentWave({ wave: "w-3", state: "failed" }),
+        ],
+      }),
+    ).not.toBe("flagged");
+  });
+
+  it("flags a project with a lane asking for attention", () => {
+    expect(tabOf({ recentWaves: [recentWave({ state: "running" })] }, 2)).toBe(
+      "flagged",
+    );
+    // A zero is not an attention: the view has an entry for it and says zero.
+    expect(tabOf({ recentWaves: [recentWave({ state: "running" })] }, 0)).toBe(
+      "active",
+    );
+  });
+
+  it("calls a project with a wave running active, and the rest quiet", () => {
+    expect(tabOf({ recentWaves: [recentWave({ state: "running" })] })).toBe(
+      "active",
+    );
+    expect(
+      tabOf({
+        recentWaves: [
+          recentWave({ wave: "w-2", state: "done" }),
+          recentWave({ wave: "w-3", state: "running" }),
+        ],
+      }),
+    ).toBe("active");
+    expect(tabOf({ recentWaves: [recentWave({ state: "settled" })] })).toBe(
+      "quiet",
+    );
+    expect(tabOf({ recentWaves: [recentWave({ state: "done" })] })).toBe(
+      "quiet",
+    );
+    expect(tabOf({ recentWaves: [] })).toBe("quiet");
+  });
+
+  it("does not flag a project merely for being stale", () => {
+    // Every project's pushes stop eventually, so a rule that read stale as
+    // flagged would put the whole fleet under one tab and leave two empty.
+    expect(tabOf({ stale: true, recentWaves: [recentWave()] })).not.toBe(
+      "flagged",
+    );
+  });
+
+  it("draws the tab's name as a word, not only as the dot's colour", () => {
+    const host = draw({
+      projects: [ALPHA],
+      attention: attentionView({ projects: [{ id: "alpha", attention: 1 }] }),
+    });
+    const dot = oneOf(host, ".dot");
+    expect(dot?.getAttribute("class")).toBe("dot flagged");
+    expect(textsOf(host, ".dot .sr")).toStrictEqual(["flagged"]);
+    // With nothing asking and nothing failed, the same row is quiet.
+    expect(oneOf(draw(), ".dot")?.getAttribute("class")).toBe("dot quiet");
+  });
+});
+
+describe("the rows a filter leaves", () => {
+  const THREE = [
+    projectCard({ id: "one", name: "One" }),
+    projectCard({ id: "two", name: "Two" }),
+    projectCard({ id: "three", name: "Three" }),
+  ];
+
+  it("gives one row per project, in the order the answer gave them", () => {
+    const host = draw({ projects: THREE });
+    expect(textsOf(host, ".row-head h3")).toStrictEqual([
+      "One",
+      "Two",
+      "Three",
+    ]);
+    expect(host.querySelectorAll("article.project")).toHaveLength(3);
+  });
+
+  it("leaves only the chosen tab's rows", () => {
+    const fleet = [
+      projectCard({
+        id: "quiet",
+        name: "Quiet",
+        recentWaves: [recentWave({ wave: "w-2", state: "settled" })],
+      }),
+      projectCard({
+        id: "live",
+        name: "Live",
+        recentWaves: [recentWave({ wave: "w-3", state: "running" })],
+      }),
+    ];
+    for (const tab of ["active", "flagged", "quiet"] as const) {
+      const host = draw({ projects: fleet, query: query({ tab }) });
+      expect(textsOf(host, ".row-head h3")).toStrictEqual(
+        tab === "active" ? ["Live"] : tab === "quiet" ? ["Quiet"] : [],
+      );
+    }
+  });
+
+  it("searches the name, the id and the repository, in any case", () => {
+    const projects = [
+      projectCard({ id: "apollo", name: "Apollo", repo: "https://g.test/a" }),
+      // Registered no repository at all: a search for a host name must not
+      // match a project that never named one.
+      projectCard({ id: "borealis", name: "Borealis", repo: undefined }),
+      projectCard({ id: "cygnus", name: "Cygnus", repo: "http://g.test/c" }),
+    ];
+    const found = (q: string): string[] =>
+      textsOf(draw({ projects, query: query({ q }) }), ".row-head h3");
+    expect(found("APOLLO")).toStrictEqual(["Apollo"]);
+    expect(found("bore")).toStrictEqual(["Borealis"]);
+    expect(found("g.test")).toStrictEqual(["Apollo", "Cygnus"]);
+    expect(found("")).toStrictEqual(["Apollo", "Borealis", "Cygnus"]);
+    expect(found("nothing here")).toStrictEqual([]);
+  });
+
+  it("says an empty registry and an empty filter two different ways", () => {
+    expect(
+      textsOf(draw({ projects: [] }), ".fleet-projects .empty"),
+    ).toStrictEqual(["No projects registered yet."]);
+    expect(
+      textsOf(
+        draw({ projects: THREE, query: query({ q: "zzz" }) }),
+        ".fleet-projects .empty",
+      ),
+    ).toStrictEqual(["No project matches."]);
+    expect(
+      textsOf(
+        draw({ projects: THREE, query: query({ tab: "flagged" }) }),
+        ".fleet-projects .empty",
+      ),
+    ).toStrictEqual(["No project matches."]);
+  });
+});
+
+describe("the search box", () => {
+  it("carries the key the app's own `/` and caret restore look for", () => {
+    const input = oneOf(draw({ query: query({ q: "alp" }) }), "#fleet-q");
+    expect(input?.getAttribute("type")).toBe("search");
+    expect(input?.getAttribute("name")).toBe("q");
+    expect(input?.getAttribute("data-key")).toBe("q");
+    expect(input?.getAttribute("placeholder")).toBe("Filter projects");
+    expect(input?.getAttribute("value")).toBe("alp");
+    expect(oneOf(draw(), "#fleet-q")?.getAttribute("value")).toBe("");
+    expect(oneOf(draw(), 'label[for="fleet-q"]')?.textContent).toBe("Search");
+  });
+
+  it("asks with what is in it, and not while a character is composed", () => {
+    const host = freshRoot();
+    const onSearch = vi.fn();
+    host.append(
+      renderFleet(
+        {
+          projects: [ALPHA],
+          attention: attentionView(),
+          query: query(),
+          open: new Set<string>(),
+        },
+        NOW_MS,
+        { onSearch },
+      ),
+    );
+    const input = host.querySelector("#fleet-q") as HTMLInputElement;
+    input.value = "k";
+    input.dispatchEvent(
+      new InputEvent("input", { bubbles: true, isComposing: true }),
+    );
+    expect(onSearch).not.toHaveBeenCalled();
+
+    input.value = "か";
+    input.dispatchEvent(new Event("compositionend", { bubbles: true }));
+    expect(onSearch).toHaveBeenCalledTimes(1);
+    expect(onSearch).toHaveBeenLastCalledWith("か");
+
+    input.value = "alpha";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(onSearch).toHaveBeenLastCalledWith("alpha");
+    // Emptied, the address carries no `q` at all.
+    input.value = "";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(onSearch).toHaveBeenLastCalledWith("");
+  });
+
+  it("asks with the same text the project's own search box would", () => {
+    const host = freshRoot();
+    const onSearch = vi.fn();
+    host.append(
+      renderFleet(
+        {
+          projects: [ALPHA],
+          attention: attentionView(),
+          query: query(),
+          open: new Set<string>(),
+        },
+        NOW_MS,
+        { onSearch },
+      ),
+    );
+    const input = host.querySelector("#fleet-q") as HTMLInputElement;
+    // A control character cannot go into the address, which `parseQuery` would
+    // then refuse — so the page cuts it here, as the project's box does.
+    input.value = "a\tb";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(onSearch).toHaveBeenLastCalledWith("ab");
+  });
+});
+
+describe("a row", () => {
+  /** The one project the row is drawn from, in the default fleet. */
+  function row(overrides: Partial<ProjectCard> = {}): HTMLElement {
+    return draw({ projects: [projectCard(overrides)] });
+  }
+
+  /** The class of the row's disclosure, or nothing when it has none. */
+  function rowClass(host: HTMLElement): string | null {
+    return (
+      (host.querySelector("details") as HTMLElement | null)?.getAttribute(
+        "class",
+      ) ?? null
+    );
+  }
+
+  it("keeps the name and the `repo · id` line out of the summary", () => {
+    const host = row();
+    const details = oneOf(host, "details") as HTMLElement;
+    expect(rowClass(host)).toBe("project-row");
+    expect(details.querySelector("summary a")).toBeNull();
+    expect(details.querySelector("summary .row-head")).toBeNull();
+    // The name is a link to the project's own page, and it is above the row.
+    const name = oneOf(host, ".row-head h3 a") as HTMLElement;
+    expect(textOf(name)).toBe("Alpha");
+    expect(name.getAttribute("href")).toBe("/p/alpha");
+    expect(name.getAttribute("data-key")).toBe("nav");
+    expect(textsOf(host, ".row-id")).toStrictEqual([
+      "https://git.example.test/alpha · alpha",
+    ]);
+    expect(oneOf(host, ".row-id code")?.textContent).toBe("alpha");
+    expect(details.getAttribute("data-key")).toBeNull();
+    expect(
+      (oneOf(host, "summary") as HTMLElement).getAttribute("data-key"),
+    ).toBe("row:alpha");
+  });
+
+  it("flags a project asking for attention, in a word", () => {
+    const host = draw({
+      projects: [ALPHA],
+      attention: attentionView({ projects: [{ id: "alpha", attention: 2 }] }),
+    });
+    expect(textsOf(host, ".flag")).toStrictEqual(["2 need attention"]);
+    expect(textsOf(draw(), ".flag")).toStrictEqual([]);
+  });
+
+  it("badges a stale project, and badges nothing on a fresh one", () => {
+    expect(textsOf(row({ stale: true }), ".pill")).toStrictEqual(["stale"]);
+    expect(textsOf(row(), ".pill")).toStrictEqual([]);
+  });
+
+  it("says what has been done, which wave arrived last, and when the project did", () => {
+    const host = row({
+      recentWaves: [
+        recentWave({ wave: "w-3", state: "running" }),
+        recentWave({ wave: "w-2", state: "done" }),
+        recentWave({ wave: "w-1", state: "done" }),
+      ],
+    });
+    expect(textsOf(host, ".row-caption")).toStrictEqual([
+      "2/3 waves done · newest w-3 running · last push 2m ago",
+    ]);
+    expect(
+      oneOf(host, ".row-caption")
+        ?.querySelector("span[title]")
+        ?.getAttribute("title"),
+    ).toBe("2026-04-01T11:58:00.000Z");
+  });
+
+  it("says never when the project has pushed nothing at all", () => {
+    expect(textsOf(row({ lastPush: undefined }), ".row-caption")).toStrictEqual(
+      ["no recent waves · last push never"],
+    );
+  });
+
+  it("is open when the app says it is, and shut when it does not", () => {
+    const shut = row();
+    expect((oneOf(shut, "details") as HTMLDetailsElement).open).toBe(false);
+    const open = draw({
+      projects: [ALPHA, BETA],
+      open: new Set(["beta"]),
+    });
+    const rows = Array.from(
+      open.querySelectorAll("details"),
+    ) as HTMLDetailsElement[];
+    expect(rows.map((details) => details.open)).toStrictEqual([false, true]);
+  });
+});
+
+describe("the wave bar", () => {
+  /** The states of a row's segments, left to right. */
+  function segments(host: HTMLElement): string[] {
+    return textsOf(host, ".wave-bar .seg").map((_, at) => {
+      const li = host.querySelectorAll(".wave-bar .seg")[at] as HTMLElement;
+      return li.getAttribute("class") ?? "";
+    });
+  }
+
+  it("puts the oldest wave on the left and the newest on the right", () => {
+    const host = draw({
+      projects: [
+        projectCard({
+          recentWaves: [
+            recentWave({ wave: "w-3", state: "running" }),
+            recentWave({ wave: "w-2", state: "done" }),
+            recentWave({ wave: "w-1", state: "settled" }),
+          ],
         }),
       ],
     });
-    const card = oneOf(host, ".project-card");
-    expect(textsOf(card as Element, "dt")).toStrictEqual([
-      "id",
-      "repo",
-      "waves",
-      "lanes",
-      "last push",
-      "attention",
+    expect(segments(host)).toStrictEqual([
+      "seg settled",
+      "seg done",
+      "seg running",
     ]);
-    expect(textsOf(card as Element, "dd")).toStrictEqual([
-      "beta",
-      "https://git.example.test/beta",
-      "1 wave",
-      "2",
-      "2m ago",
-      "0",
-    ]);
-    // dt and dd are direct children of the dl, so the grid is the whole layout.
-    const facts = oneOf(card as Element, ".facts");
+    // It is a list of waves and not a picture of them, so each segment's own
+    // state is in the document as text.
+    expect(oneOf(host, ".wave-bar")?.getAttribute("aria-label")).toBe(
+      "Recent waves, oldest first",
+    );
     expect(
-      Array.from(facts?.children ?? []).map((child) => child.tagName),
-    ).toStrictEqual([
-      "DT",
-      "DD",
-      "DT",
-      "DD",
-      "DT",
-      "DD",
-      "DT",
-      "DD",
-      "DT",
-      "DD",
-      "DT",
-      "DD",
+      host.querySelectorAll(".wave-bar")[0]?.getAttribute("role"),
+    ).toBeNull();
+    expect(textsOf(host, ".wave-bar .seg .sr")).toStrictEqual([
+      "w-1: settled",
+      "w-2: done",
+      "w-3: running",
     ]);
   });
 
-  it("links a project whose id the app owns, and never one it does not", () => {
+  it("says a failed wave in its own colour, and a stale one as stale", () => {
     const host = draw({
-      projects: [ALPHA, projectCard({ id: "Not An Id", name: "Spaced" })],
+      projects: [
+        projectCard({
+          recentWaves: [
+            recentWave({ wave: "w-3", state: "failed", stale: true }),
+            recentWave({ wave: "w-2", state: "settled" }),
+          ],
+        }),
+      ],
     });
-    expect(textsOf(host, ".project-card h3 a")).toStrictEqual(["Alpha"]);
-    const unlinked = host.querySelectorAll(".project-card")[1] as HTMLElement;
-    const name = unlinked.querySelector("h3")?.firstChild as HTMLElement;
-    expect(name.tagName).toBe("SPAN");
-    expect(textOf(name)).toBe("Spaced");
-    expect(unlinked.querySelector("h3")?.childElementCount).toBe(2);
-    expect(textsOf(unlinked, ".facts dd")[0]).toBe("Not An Id");
+    expect(segments(host)).toStrictEqual(["seg settled", "seg failed stale"]);
+    expect(textsOf(host, ".wave-bar .seg .sr")).toStrictEqual([
+      "w-2: settled",
+      "w-3: failed, stale",
+    ]);
   });
 
-  it("links the repository only when it is https, and says so when there is none", () => {
+  it("draws a word and no bar for a project with no retained wave", () => {
+    const host = draw({ projects: [projectCard({ recentWaves: [] })] });
+    expect(textsOf(host, ".bar-empty")).toStrictEqual(["no recent waves"]);
+    expect(host.querySelectorAll(".wave-bar")).toHaveLength(0);
+    expect(textsOf(host, ".row-caption")).toStrictEqual([
+      "no recent waves · last push 2m ago",
+    ]);
+    expect(host.querySelectorAll(".ring")).toHaveLength(0);
+  });
+});
+
+describe("the merged ring", () => {
+  /** The dash the row's ring is drawn with, or nothing when it drew no ring. */
+  function dash(host: HTMLElement): string | null {
+    return (
+      host.querySelector(".ring .value")?.getAttribute("stroke-dasharray") ??
+      null
+    );
+  }
+
+  /** A project whose recent waves hold the given lanes, of which so many merged. */
+  function sharing(merged: number, lanes: number): Partial<ProjectCard> {
+    return {
+      recentWaves: [recentWave({ wave: "w-3", lanes, merged })],
+    };
+  }
+
+  it("fills the share of merged lanes, and says the number beside it", () => {
+    // 56.55 is the whole circle at r=9; a third of it is 18.85.
+    expect(dash(draw({ projects: [projectCard(sharing(0, 3))] }))).toBe(
+      "0.00 56.55",
+    );
+    expect(
+      textsOf(draw({ projects: [projectCard(sharing(0, 3))] }), ".ring-label"),
+    ).toStrictEqual(["0% merged"]);
+    const twoOfThree = draw({ projects: [projectCard(sharing(2, 3))] });
+    expect(dash(twoOfThree)).toBe("37.70 56.55");
+    expect(textsOf(twoOfThree, ".ring-label")).toStrictEqual(["67% merged"]);
+    const all = draw({ projects: [projectCard(sharing(3, 3))] });
+    expect(dash(all)).toBe("56.55 56.55");
+    expect(textsOf(all, ".ring-label")).toStrictEqual(["100% merged"]);
+  });
+
+  it("counts the waves the row lists, not the project's own lane total", () => {
+    // The project says 90 lanes; the three waves beside the bar hold 6 of them,
+    // and the ring is a share of what the reader can see.
+    const host = draw({
+      projects: [
+        projectCard({
+          lanes: 90,
+          recentWaves: [
+            recentWave({ wave: "w-3", lanes: 4, merged: 2 }),
+            recentWave({ wave: "w-2", lanes: 2, merged: 1 }),
+          ],
+        }),
+      ],
+    });
+    expect(dash(host)).toBe("28.27 56.55");
+    expect(textsOf(host, ".ring-label")).toStrictEqual(["50% merged"]);
+    // The lane count beside it is the project's own, which is a different number.
+    expect(textsOf(host, ".lane-count")).toStrictEqual(["90 lanes"]);
+  });
+
+  it("draws no ring for waves that hold no lane between them", () => {
+    const empty = draw({ projects: [projectCard({ recentWaves: [] })] });
+    expect(empty.querySelectorAll(".ring")).toHaveLength(0);
+    expect(textsOf(empty, ".ring-label")).toStrictEqual([]);
+    // Nor when the waves hold a lane the page cannot count a share of: the two
+    // numbers of a dash are this page's own arithmetic, and neither is drawn
+    // until both of them are finite.
+    const broken = draw({
+      projects: [projectCard(sharing(2, 0))],
+    });
+    expect(broken.querySelectorAll(".ring")).toHaveLength(0);
+  });
+
+  it("is built as an SVG out of literals, and hidden from assistive tech", () => {
+    const ring = oneOf(
+      draw({ projects: [projectCard(sharing(1, 3))] }),
+      ".ring",
+    );
+    expect(ring?.tagName).toBe("svg");
+    expect(ring?.getAttribute("viewBox")).toBe("0 0 24 24");
+    expect(ring?.getAttribute("aria-hidden")).toBe("true");
+    const circles = Array.from(ring?.querySelectorAll("circle") ?? []);
+    expect(circles).toHaveLength(2);
+    expect(circles.map((one) => one.getAttribute("class"))).toStrictEqual([
+      "track",
+      "value",
+    ]);
+    for (const one of circles) {
+      expect(one.getAttribute("r")).toBe("9");
+      expect(one.getAttribute("cx")).toBe("12");
+      expect(one.getAttribute("cy")).toBe("12");
+    }
+    expect(circles[0]?.getAttribute("stroke-dasharray")).toBeNull();
+    expect(circles[1]?.getAttribute("transform")).toBe("rotate(-90 12 12)");
+  });
+});
+
+describe("the waves inside an opened row", () => {
+  /** The chips of the one row the host holds, newest first. */
+  function chips(host: HTMLElement): HTMLElement[] {
+    return Array.from(host.querySelectorAll(".wave-chips li"));
+  }
+
+  it("links every wave to its own page, newest first", () => {
+    const host = draw({
+      projects: [
+        projectCard({
+          recentWaves: [
+            recentWave({ wave: "w-3", lanes: 2, merged: 1, state: "running" }),
+            recentWave({ wave: "w-2", lanes: 3, merged: 3, state: "done" }),
+          ],
+        }),
+      ],
+    });
+    expect(
+      chips(host).map((chip) => textOf(chip.querySelector("a"))),
+    ).toStrictEqual(["w-3", "w-2"]);
+    expect(
+      Array.from(host.querySelectorAll(".wave-chips a")).map((link) =>
+        link.getAttribute("href"),
+      ),
+    ).toStrictEqual(["/p/alpha/w/w-3", "/p/alpha/w/w-2"]);
+    expect(
+      Array.from(host.querySelectorAll(".wave-chips .state")).map((state) => [
+        state.getAttribute("class"),
+        textOf(state),
+      ]),
+    ).toStrictEqual([
+      ["state running", "running"],
+      ["state done", "done"],
+    ]);
+    expect(textsOf(host, ".wave-chips li")[0]).toBe(
+      "w-3running2 lanes · 1 mergedjust now",
+    );
+  });
+
+  it("badges a stale wave and stamps every one of them", () => {
+    const host = draw({
+      projects: [
+        projectCard({
+          recentWaves: [
+            recentWave({
+              wave: "w-3",
+              state: "failed",
+              stale: true,
+              receivedAt: "2026-04-01T11:50:00.000Z",
+            }),
+          ],
+        }),
+      ],
+    });
+    expect(textsOf(host, ".wave-chips .badge")).toStrictEqual(["stale"]);
+    expect(oneOf(host, ".wave-chips span[title]")?.getAttribute("title")).toBe(
+      "2026-04-01T11:50:00.000Z",
+    );
+    expect(textsOf(host, ".wave-chips span[title]")).toStrictEqual(["10m ago"]);
+    // Nothing stale, nothing badged.
+    expect(textsOf(draw(), ".wave-chips .badge")).toStrictEqual([]);
+  });
+
+  it("draws no chips at all for a project with no wave", () => {
+    const host = draw({ projects: [projectCard({ recentWaves: [] })] });
+    expect(host.querySelectorAll(".wave-chips")).toHaveLength(0);
+  });
+});
+
+describe("a project the app has no page for", () => {
+  const BROKEN = projectCard({
+    id: "Not An Id",
+    name: "Spaced",
+    repo: "https://git.example.test/spaced",
+    lanes: 4,
+    recentWaves: [
+      recentWave({ wave: "w-2", lanes: 2, merged: 1, state: "done" }),
+    ],
+  });
+
+  it("keeps its numbers and draws no control and no link", () => {
+    const host = draw({ projects: [projectCard(), BROKEN] });
+    const broken = host.querySelectorAll("article.project")[1] as HTMLElement;
+    expect(broken.querySelectorAll("details")).toHaveLength(0);
+    expect(broken.querySelectorAll("[data-key]")).toHaveLength(0);
+    expect(broken.querySelectorAll(".wave-chips a")).toHaveLength(0);
+    // The name is plain text, and the `repo · id` line says both.
+    expect(textsOf(broken, ".row-head h3")).toStrictEqual(["Spaced"]);
+    expect(textsOf(broken, ".row-id")).toStrictEqual([
+      "https://git.example.test/spaced · Not An Id",
+    ]);
+    // The same bar, caption, lane count and ring a summary holds.
+    const summary = oneOf(broken, ".row-summary") as HTMLElement;
+    expect(textsOf(summary, ".wave-bar .seg .sr")).toStrictEqual(["w-2: done"]);
+    expect(textsOf(summary, ".row-caption")).toStrictEqual([
+      "1/1 waves done · newest w-2 done · last push 2m ago",
+    ]);
+    expect(textsOf(summary, ".lane-count")).toStrictEqual(["4 lanes"]);
+    expect(textsOf(summary, ".ring-label")).toStrictEqual(["50% merged"]);
+    expect(textOf(oneOf(broken, ".dot .sr"))).toBe("quiet");
+  });
+
+  it("says so in a project's place that registered no repository", () => {
+    const host = draw({ projects: [projectCard({ repo: undefined })] });
+    expect(textsOf(host, ".row-id")).toStrictEqual([
+      "no repository registered · alpha",
+    ]);
+    expect(host.querySelectorAll(".row-id a")).toHaveLength(0);
+  });
+
+  it("never links a repository that is not https", () => {
     const host = draw({
       projects: [
         projectCard({ id: "http", repo: "http://git.example.test/http" }),
         projectCard({ id: "js", repo: "javascript:alert(1)" }),
-        projectCard({ id: "none", repo: undefined }),
       ],
     });
-    expect(textsOf(host, ".facts a")).toStrictEqual([]);
-    // Six facts per card, and the repository is the second of them.
-    const values = textsOf(host, ".facts dd");
-    expect(values.filter((_, at) => at % 6 === 1)).toStrictEqual([
-      "http://git.example.test/http",
-      "javascript:alert(1)",
-      "no repository registered",
+    expect(host.querySelectorAll(".row-id a")).toHaveLength(0);
+    expect(textsOf(host, ".row-id")).toStrictEqual([
+      "http://git.example.test/http · http",
+      "javascript:alert(1) · js",
     ]);
-
-    const withHttps = draw();
-    expect(textsOf(withHttps, ".project-card a")).toStrictEqual([
-      "Alpha",
-      "https://git.example.test/alpha",
-    ]);
-    expect(withHttps.querySelector(".facts a")?.getAttribute("href")).toBe(
-      "https://git.example.test/alpha",
-    );
-  });
-
-  it("puts the exact push time in the title of the relative one", () => {
-    const host = draw({
-      projects: [projectCard({ lastPush: "2026-04-01T11:58:00.000Z" })],
-    });
-    const stamp = oneOf(host, ".facts dd span[title]");
-    expect(textOf(stamp)).toBe("2m ago");
-    expect(stamp?.getAttribute("title")).toBe("2026-04-01T11:58:00.000Z");
-  });
-
-  it("says never when the project has pushed nothing", () => {
-    const host = draw({
-      projects: [projectCard({ waves: 0, lastPush: undefined })],
-    });
-    expect(textsOf(host, ".facts dd")[4]).toBe("never");
-  });
-
-  it("badges a project stale or fresh, and a project with no waves is fresh", () => {
-    const host = draw({
-      projects: [
-        ALPHA,
-        projectCard({ id: "beta", name: "Beta", stale: true }),
-        projectCard({ id: "gamma", name: "Gamma", waves: 0, stale: false }),
-      ],
-    });
-    expect(textsOf(host, ".pill")).toStrictEqual(["fresh", "stale", "fresh"]);
-    expect(
-      Array.from(host.querySelectorAll(".pill")).map((pill) =>
-        pill.getAttribute("class"),
-      ),
-    ).toStrictEqual(["pill fresh", "pill stale", "pill fresh"]);
-  });
-
-  it("shows a project's own attention count, and zeroes one with no entry", () => {
-    const host = draw({
-      projects: [ALPHA, projectCard({ id: "beta", name: "Beta" })],
-      attention: attentionView({
-        projects: [{ id: "alpha", attention: 4 }],
-      }),
-    });
-    const first = host.querySelectorAll(".project-card")[0] as HTMLElement;
-    const second = host.querySelectorAll(".project-card")[1] as HTMLElement;
-    // Alpha is the only project the view has a count for; Beta has none.
-    expect(textsOf(first as Element, ".facts dd")[5]).toBe("4");
-    expect(textsOf(second, ".facts dd")[5]).toBe("0");
   });
 });
 
-describe("a card's status row", () => {
-  /** The terms and values of the row the card drew for a project. */
-  function statusRow(
-    overrides: Partial<NonNullable<ProjectCard["status"]>> = {},
-  ): { terms: string[]; value: string; title: string | null } {
+describe("the row's own status", () => {
+  it("says what the project last reported, under the waves", () => {
     const host = draw({
-      projects: [projectCard({ status: statusFacts(overrides) })],
+      projects: [projectCard({ status: statusFacts() })],
     });
-    const dd = host.querySelectorAll(".facts dd");
-    const row = dd[dd.length - 1] as HTMLElement;
-    return {
-      terms: textsOf(host, ".facts dt"),
-      value: textOf(row),
-      title: row.querySelector("span[title]")?.getAttribute("title") ?? null,
-    };
-  }
-
-  it("leaves the row out entirely for a project with no status", () => {
-    const host = draw({ projects: [ALPHA] });
-
-    expect(textsOf(host, ".facts dt")).not.toContain("status");
-    expect(textsOf(host, ".facts dd")).toHaveLength(6);
-  });
-
-  it("says the backlog state, the unread rows and when it arrived", () => {
-    const row = statusRow();
-
-    expect(row.terms.at(-1)).toBe("status");
-    expect(row.value).toBe("backlog recorded · 2 PR rows unread · just now");
-    expect(row.title).toBe(NOW_ISO);
-  });
-
-  it("says nothing reported for a document that carried no backlog", () => {
-    expect(
-      statusRow({ backlogState: undefined, prsSkipped: undefined }).value,
-    ).toBe("nothing reported · just now");
-  });
-
-  it("leaves the unread rows out when the summary sent none", () => {
-    expect(statusRow({ prsSkipped: undefined }).value).toBe(
-      "backlog recorded · just now",
+    expect(textsOf(host, ".row-facts dt")).toStrictEqual(["status"]);
+    expect(textsOf(host, ".row-facts dd")).toStrictEqual([
+      "backlog recorded · 2 PR rows unread · just now",
+    ]);
+    expect(oneOf(host, ".row-facts span[title]")?.getAttribute("title")).toBe(
+      NOW_ISO,
     );
   });
 
-  it("leaves them out at zero, which is a count rather than a warning", () => {
-    expect(statusRow({ prsSkipped: 0 }).value).toBe(
-      "backlog recorded · just now",
-    );
+  it("leaves the row out for a project that has pushed no status", () => {
+    expect(draw().querySelectorAll(".row-facts")).toHaveLength(0);
   });
 
-  it("badges nothing stale, whatever the summary says about staleness", () => {
-    // The window is the document's own and is capped at 300 s, so a project that
-    // pushes a status once a run would be badged stale nearly every time a reader
-    // looked. The receive time is shown instead, and `stale` stays in the API.
+  it("says nothing reported, and counts no rows unread, at their own values", () => {
     const host = draw({
       projects: [
-        projectCard({ status: statusFacts({ stale: true }) }),
-        projectCard({ id: "beta", name: "Beta" }),
+        projectCard({
+          status: statusFacts({
+            backlogState: undefined,
+            prsSkipped: undefined,
+          }),
+        }),
+        projectCard({
+          id: "beta",
+          name: "Beta",
+          status: statusFacts({ prsSkipped: 0 }),
+        }),
       ],
     });
+    expect(textsOf(host, ".row-facts dd")).toStrictEqual([
+      "nothing reported · just now",
+      "backlog recorded · just now",
+    ]);
+    // And never a staleness badge: the document's own window is capped at 300 s.
+    expect(
+      draw({
+        projects: [projectCard({ status: statusFacts({ stale: true }) })],
+      }).querySelectorAll(".row-facts .badge"),
+    ).toHaveLength(0);
+  });
+});
 
-    expect(textsOf(host, ".facts dd span.badge.stale")).toStrictEqual([]);
-    expect(host.querySelectorAll(".facts dd .badge")).toHaveLength(0);
-    // The card's own freshness pill is still there: that one is about the waves.
-    expect(textsOf(host, ".pill")).toStrictEqual(["fresh", "fresh"]);
+describe("a row's key", () => {
+  it("names the project the row was drawn for", () => {
+    const host = freshRoot();
+    const details = document.createElement("details");
+    details.setAttribute("class", "project-row");
+    const summary = document.createElement("summary");
+    summary.setAttribute("data-key", "row:alpha");
+    details.append(summary);
+    host.append(details);
+    expect(rowIdOf(details)).toBe("alpha");
+  });
+
+  it("is nothing on a row this page did not key", () => {
+    freshRoot();
+    const keyless = document.createElement("details");
+    keyless.append(document.createElement("summary"));
+    expect(rowIdOf(keyless)).toBeUndefined();
+
+    const other = document.createElement("details");
+    const summary = document.createElement("summary");
+    summary.setAttribute("data-key", "menu");
+    other.append(summary);
+    expect(rowIdOf(other)).toBeUndefined();
+  });
+
+  it("is nothing at all on a disclosure with no summary", () => {
+    const host = freshRoot();
+    const bare = document.createElement("details");
+    host.append(bare);
+    expect(rowIdOf(bare)).toBeUndefined();
   });
 });
 
@@ -359,51 +970,43 @@ describe("the attention panel", () => {
   });
 
   it("carries everything one lane knows, in a readable order", () => {
-    const host = draw({
-      attention: attentionView({
-        lanes: [
-          attentionLane({
-            lane: "wv-c",
-            reasons: ["failed", "gate"],
-            seat: "s1",
-            stale: true,
-            pr: 42,
-            receivedAt: "2026-04-01T11:50:00.000Z",
-          }),
-        ],
-      }),
+    const attention: AttentionView = attentionView({
+      lanes: [
+        attentionLane({
+          lane: "wv-c",
+          reasons: ["failed", "gate"],
+          seat: "s1",
+          stale: true,
+          pr: 42,
+          receivedAt: "2026-04-01T11:50:00.000Z",
+        }),
+      ],
     });
-    const row = oneOf(host, ".attention li");
+    const row = oneOf(draw({ attention }), ".attention li");
     expect(textsOf(row as Element, "a")).toStrictEqual(["wv-c"]);
     expect(textsOf(row as Element, ".where code")).toStrictEqual([
       "alpha",
       "w-3",
     ]);
-    expect(textOf(row?.querySelector(".where") ?? null)).toBe("alpha / w-3");
     expect(textsOf(row as Element, ".badge")).toStrictEqual([
       "failed",
       "gate",
       "stale",
     ]);
-    expect(
-      Array.from(row?.querySelectorAll(".badge") ?? []).map((badge) =>
-        badge.getAttribute("class"),
-      ),
-    ).toStrictEqual(["badge reason", "badge reason", "badge stale"]);
     expect(textsOf(row as Element, ".seat")).toStrictEqual(["s1"]);
     expect(textsOf(row as Element, ".pr")).toStrictEqual(["PR #42"]);
     expect(textsOf(row as Element, "span[title]")).toStrictEqual(["10m ago"]);
-    expect(textOf(row?.querySelector("span[title]") ?? null)).toBe("10m ago");
   });
 
   it("leaves out everything a lane did not report", () => {
-    const host = draw({
-      attention: attentionView({
-        lanes: [attentionLane({ reasons: ["silent"] })],
+    const row = oneOf(
+      draw({
+        attention: attentionView({
+          lanes: [attentionLane({ reasons: ["silent"] })],
+        }),
       }),
-    });
-    const row = oneOf(host, ".attention li");
-    expect(textsOf(row as Element, "a")).toStrictEqual(["wv-a"]);
+      ".attention li",
+    );
     expect(textsOf(row as Element, ".badge")).toStrictEqual(["silent"]);
     expect(row?.querySelectorAll(".seat")).toHaveLength(0);
     expect(row?.querySelectorAll(".pr")).toHaveLength(0);
@@ -420,20 +1023,20 @@ describe("the attention panel", () => {
   });
 
   it("lists the lanes in the order the view was given them", () => {
-    const attention: AttentionView = attentionView({
-      lanes: [
-        attentionLane({ lane: "wv-c" }),
-        attentionLane({ lane: "wv-a" }),
-        attentionLane({ lane: "wv-b", project: "beta", wave: "b-3" }),
-      ],
+    const host = draw({
+      attention: attentionView({
+        lanes: [
+          attentionLane({ lane: "wv-c" }),
+          attentionLane({ lane: "wv-a" }),
+          attentionLane({ lane: "wv-b", project: "beta", wave: "b-3" }),
+        ],
+      }),
     });
-    const host = draw({ attention });
     expect(textsOf(host, ".attention a")).toStrictEqual([
       "wv-c",
       "wv-a",
       "wv-b",
     ]);
-    expect(host.querySelectorAll(".attention li")).toHaveLength(3);
   });
 
   it("says the list was cut only when it was", () => {
@@ -448,30 +1051,24 @@ describe("the attention panel", () => {
 });
 
 describe("the page around them", () => {
-  it("names itself and says what it is for", () => {
-    const host = draw();
-    const view = oneOf(host, "section.view");
-    expect(view?.getAttribute("class")).toBe("view fleet");
-    expect(textsOf(host, "h1")).toStrictEqual(["Fleet"]);
-    expect(textOf(oneOf(host, ".lede"))).toBe(
-      "What each project's lanes reported, beside what the last push could derive. The gap is flagged, not resolved.",
-    );
-  });
-
-  it("puts the counters above the grid, and the two panels in it", () => {
+  it("is one view, read hero, cards, then the two columns", () => {
     const host = draw({
       attention: attentionView({ lanes: [attentionLane()] }),
     });
     const view = oneOf(host, "section.view");
-    const order = Array.from(view?.children ?? []).map((child) =>
-      child.getAttribute("class"),
-    );
-    expect(order).toStrictEqual([null, "lede", "kpis", "fleet-grid"]);
-    expect(host.querySelectorAll(".fleet-grid > section")).toHaveLength(2);
+    expect(view?.getAttribute("class")).toBe("view fleet");
+    expect(
+      Array.from(view?.children ?? []).map((child) =>
+        child.getAttribute("class"),
+      ),
+    ).toStrictEqual(["fleet-hero", "stats", "fleet-grid"]);
     expect(
       Array.from(host.querySelectorAll(".fleet-grid > section")).map(
         (section) => section.getAttribute("class"),
       ),
     ).toStrictEqual(["fleet-projects", "fleet-attention"]);
+    expect(
+      textsOf(host, ".fleet-projects > h2, .fleet-attention > h2"),
+    ).toStrictEqual(["Projects", "Needs attention"]);
   });
 });

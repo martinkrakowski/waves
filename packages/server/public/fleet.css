@@ -1,14 +1,91 @@
 /*
- * The fleet page's own rules: the counters, the two-column grid the page and
- * the attention panel share, and the labels inside them. Colours come only from
- * tokens.css, so both schemes read the same names, and every state that is shown
- * in a colour is also shown in a word.
+ * The fleet page's own rules, and the ones the project page and the drawer draw
+ * with it. This stylesheet is loaded on every route, so every rule below that is
+ * not scoped under `.view.fleet` is one another view is relying on and must keep
+ * working: `.lede`, `.kpis`, `.kpi`, `.note-inline`, `.seat`, `.attention` and
+ * `.pill` are the older views' and are untouched here.
+ *
+ * Colours come only from tokens.css, so both schemes read the same names, and
+ * every state that is shown in a colour is also shown in a word. The state
+ * colours are the footer legend's: running cyan, done emerald, settled slate,
+ * failed rose, stale amber.
  */
 
-/* The grid on the fleet page is the point of the page, so it takes the whole
-   width the frame has rather than the reading measure the other views use. */
-.view.fleet {
-  max-width: none;
+/* The hero, its line of live counts and the field that drifts under them. */
+.view.fleet .fleet-hero {
+  margin: 0 0 1.4rem;
+  max-height: 11.25rem;
+  overflow: hidden;
+  padding-bottom: 1.5rem;
+  position: relative;
+}
+
+.view.fleet .eyebrow {
+  color: var(--cyan);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.22em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.view.fleet h1 {
+  font-family: var(--display);
+  font-size: clamp(1.6rem, 1.1rem + 1.5vw, 2.4rem);
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  margin: 0.25rem 0 0.35rem;
+  overflow-wrap: anywhere;
+}
+
+.view.fleet .hero-counts {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+/*
+ * The field: three literals of `d`, stretched to the width of the hero and cut
+ * off at the bottom edge. The paths tile every sixty units, so drifting one
+ * period is a loop with no seam in it, and the drift is the only thing that
+ * moves on this page.
+ */
+.view.fleet .wave-field {
+  bottom: -0.75rem;
+  fill: none;
+  height: 4.5rem;
+  left: 0;
+  opacity: 0.55;
+  pointer-events: none;
+  position: absolute;
+  stroke-width: 1.2;
+  width: 100%;
+}
+
+.view.fleet .wave-a {
+  animation: fleet-drift 19s linear infinite;
+  stroke: var(--cyan);
+}
+
+.view.fleet .wave-b {
+  animation: fleet-drift 27s linear infinite reverse;
+  stroke: var(--violet);
+}
+
+.view.fleet .wave-c {
+  animation: fleet-drift 37s linear infinite;
+  stroke: var(--emerald);
+}
+
+@keyframes fleet-drift {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(-60px);
+  }
 }
 
 .lede {
@@ -61,43 +138,6 @@
 .fleet-projects h2,
 .fleet-attention h2 {
   margin: 0 0 0.5rem;
-}
-
-.project-card {
-  background: var(--bg-raise);
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
-  margin: 0 0 0.75rem;
-  padding: 0.75rem 1rem;
-}
-
-/* The name and the freshness pill at either end of the card's heading. */
-.project-card h3 {
-  align-items: baseline;
-  display: flex;
-  flex-wrap: wrap;
-  font-size: 1.05rem;
-  gap: 0.5rem;
-  justify-content: space-between;
-  margin: 0 0 0.5rem;
-}
-
-/* The card's own facts: dt and dd are direct children of the dl, so the grid
-   below is the whole layout. */
-.facts {
-  display: grid;
-  gap: 0.15rem 0.75rem;
-  grid-template-columns: max-content 1fr;
-  margin: 0.5rem 0 0;
-}
-
-.facts dt {
-  color: var(--muted);
-  font-size: 0.85rem;
-}
-
-.facts dd {
-  margin: 0;
 }
 
 .attention {
@@ -159,5 +199,475 @@
 @media (max-width: 1080px) {
   .fleet-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/*
+ * The four stat cards: a glass card each, as the plan's reference design has it —
+ * an opaque ground with a hairline border and the sheen gradient over it, rather
+ * than a translucency under the words. `dt` and `dd` are direct children of the
+ * `dl`, and each card is one `div` around them, so the grid below is the layout.
+ */
+.view.fleet .stats {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  margin: 0 0 1.5rem;
+}
+
+.view.fleet .stat {
+  background: var(--card-sheen), var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 0.85rem 1rem 0.9rem;
+}
+
+.view.fleet .stat-icon {
+  color: var(--cyan);
+  fill: none;
+  height: 1.15rem;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.4;
+  width: 1.15rem;
+}
+
+.view.fleet .stat dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  margin-top: 0.4rem;
+  text-transform: uppercase;
+}
+
+.view.fleet .stat dd {
+  font-family: var(--mono);
+  font-size: 1.75rem;
+  line-height: 1.1;
+  margin: 0;
+}
+
+.view.fleet .stat-caption {
+  color: var(--faint);
+  font-size: 0.78rem;
+  margin: 0.25rem 0 0;
+}
+
+/* A warning is said in the caption above as well as in the colour here (W14). */
+.view.fleet .stat.warn {
+  border-color: var(--amber);
+}
+
+.view.fleet .stat.warn .stat-icon,
+.view.fleet .stat.warn dd {
+  color: var(--amber);
+}
+
+/* The filter and the search, one row, and the filter's own tabs within it. */
+.view.fleet .fleet-filters {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  justify-content: space-between;
+  margin: 0 0 0.75rem;
+}
+
+.view.fleet .fleet-tabs {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.9rem;
+}
+
+.view.fleet .fleet-tabs a {
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+  text-decoration: none;
+}
+
+.view.fleet .fleet-tabs a[aria-current="page"] {
+  background: var(--glow-cyan);
+  color: var(--text);
+}
+
+/*
+ * The count sits beside its tab rather than inside the link, so the link's own
+ * name stays the name of the filter. The extra room on the far side of a count
+ * is what pairs it with the tab it belongs to, since the row above spaces every
+ * child of the nav the same.
+ */
+.view.fleet .fleet-tabs .count {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  margin-right: 0.75rem;
+}
+
+.view.fleet .fleet-search {
+  align-items: center;
+  display: flex;
+  gap: 0.45rem;
+}
+
+.view.fleet .fleet-search label {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.view.fleet .fleet-search input {
+  background: var(--bg-sink);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+  min-width: 13rem;
+  padding: 0.2rem 0.75rem;
+}
+
+.view.fleet .fleet-search input:focus-visible {
+  border-color: var(--cyan);
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+/* One project: a glass card, the name above it and the waves inside it. */
+.view.fleet .project {
+  background: var(--card-sheen), var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  margin: 0 0 0.75rem;
+  overflow: hidden;
+}
+
+.view.fleet .row-head {
+  border-bottom: 1px solid var(--line-soft);
+  padding: 0.7rem 0.9rem;
+}
+
+.view.fleet .row-head h3 {
+  font-size: 1.02rem;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.view.fleet .row-head a {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.view.fleet .row-head a:hover {
+  color: var(--cyan);
+}
+
+.view.fleet .row-id {
+  color: var(--faint);
+  font-size: 0.78rem;
+  margin: 0.15rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * The row's closed line. A `summary` is a button, so nothing interactive is
+ * inside it: the name and the `repo · id` line are above it in `.row-head`
+ * (W39). The line wraps rather than scrolls, so one project's long name cannot
+ * widen the page.
+ */
+.view.fleet .project-row > summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.7rem;
+  list-style: none;
+  padding: 0.6rem 0.9rem;
+}
+
+.view.fleet .project-row > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* A project with no row of its own: the same line, drawn as a static summary. */
+.view.fleet .row-summary {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.7rem;
+  padding: 0.6rem 0.9rem;
+}
+
+/* The tab the row is in, in the state colour that tab means. */
+.view.fleet .dot {
+  border-radius: 50%;
+  flex: none;
+  height: 0.5rem;
+  width: 0.5rem;
+}
+
+.view.fleet .dot.flagged {
+  background: var(--rose);
+}
+
+.view.fleet .dot.active {
+  background: var(--cyan);
+}
+
+.view.fleet .dot.quiet {
+  background: var(--slate);
+}
+
+.view.fleet .flag {
+  border: 1px solid currentcolor;
+  border-radius: 0.75rem;
+  color: var(--rose);
+  font-size: 0.72rem;
+  padding: 0 0.45rem;
+  white-space: nowrap;
+}
+
+/*
+ * The bar: one segment per recent wave, oldest on the left. Each segment says
+ * its own state in the text inside it, which is what keeps a reader who cannot
+ * see the four colours on the same page as the rest of us.
+ */
+.view.fleet .wave-bar {
+  display: flex;
+  flex: 1 1 5rem;
+  gap: 2px;
+  list-style: none;
+  margin: 0;
+  min-height: 0.6rem;
+  padding: 0;
+}
+
+.view.fleet .seg {
+  border-radius: 2px;
+  flex: 1 1 0;
+  min-width: 0.3rem;
+}
+
+.view.fleet .seg.running {
+  background-color: var(--cyan);
+  /* The sheen, drawn over the segment's own colour rather than instead of it. */
+  animation: fleet-sheen 2.8s linear infinite;
+  background-image: linear-gradient(
+    100deg,
+    transparent 25%,
+    var(--glow-cyan) 50%,
+    transparent 75%
+  );
+  background-size: 220% 100%;
+}
+
+@keyframes fleet-sheen {
+  from {
+    background-position: 220% 0;
+  }
+
+  to {
+    background-position: -20% 0;
+  }
+}
+
+.view.fleet .seg.done {
+  background: var(--emerald);
+}
+
+.view.fleet .seg.settled {
+  background: var(--slate);
+}
+
+.view.fleet .seg.failed {
+  background: var(--rose);
+}
+
+/*
+ * A stale wave keeps its own state's colour and takes a hairline of the legend's
+ * stale amber: every finished wave goes stale when its pushes stop, so a bar in
+ * which stale won the colour would be one amber block per wave and would say
+ * nothing at all.
+ */
+.view.fleet .seg.stale {
+  box-shadow: inset 0 0 0 1px var(--amber);
+}
+
+.view.fleet .bar-empty {
+  color: var(--faint);
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+.view.fleet .row-caption {
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.view.fleet .lane-count {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.view.fleet .ring {
+  fill: none;
+  flex: none;
+  height: 1.7rem;
+  stroke-width: 3;
+  width: 1.7rem;
+}
+
+.view.fleet .ring .track {
+  stroke: var(--line-strong);
+}
+
+.view.fleet .ring .value {
+  stroke: var(--emerald);
+  stroke-linecap: round;
+}
+
+.view.fleet .ring-label {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+/* The chevron: CSS only, and it turns when the row is open. */
+.view.fleet .chevron {
+  border: 2px solid currentcolor;
+  border-width: 0 2px 2px 0;
+  color: var(--faint);
+  height: 0.4rem;
+  margin-left: auto;
+  transform: rotate(45deg);
+  transition: transform 160ms ease;
+  width: 0.4rem;
+}
+
+.view.fleet .project-row[open] > summary .chevron {
+  transform: rotate(225deg);
+}
+
+/* The opened row: the waves one by one, and the project's own status below. */
+.view.fleet .row-body {
+  border-top: 1px solid var(--line-soft);
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.7rem 0.9rem 0.8rem;
+}
+
+.view.fleet .wave-chips {
+  display: grid;
+  gap: 0.3rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.view.fleet .wave-chips li {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.6rem;
+}
+
+.view.fleet .wave-chips a {
+  font-family: var(--mono);
+}
+
+.view.fleet .state {
+  font-size: 0.75rem;
+}
+
+.view.fleet .state.running {
+  color: var(--cyan);
+}
+
+.view.fleet .state.done {
+  color: var(--emerald);
+}
+
+.view.fleet .state.settled {
+  color: var(--slate);
+}
+
+.view.fleet .state.failed {
+  color: var(--rose);
+}
+
+.view.fleet .row-facts {
+  display: grid;
+  gap: 0.15rem 0.7rem;
+  grid-template-columns: max-content 1fr;
+  margin: 0;
+}
+
+.view.fleet .row-facts dt {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.view.fleet .row-facts dd {
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+/*
+ * The standard clip: the text is in the document and read aloud, and it takes no
+ * room on the page. Every segment's state and every row's tab is said in one of
+ * these, which is what lets a colour be only a colour.
+ */
+.view.fleet .sr {
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
+/* On a phone the filters stack and the row's own line breaks where it must. */
+@media (max-width: 44rem) {
+  .view.fleet .fleet-filters {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .view.fleet .fleet-search input {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .view.fleet .wave-bar,
+  .view.fleet .row-caption {
+    flex-basis: 100%;
+  }
+
+  .view.fleet .chevron {
+    margin-left: 0;
+  }
+}
+
+/*
+ * Nothing on this page moves when the reader has asked for that (W34). The
+ * global rule in tokens.css already says so for every animation on the site; it
+ * is repeated here so that this file reads as the whole of what it does.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .view.fleet .wave-a,
+  .view.fleet .wave-b,
+  .view.fleet .wave-c,
+  .view.fleet .seg.running {
+    animation: none;
+  }
+
+  #root[data-first] .app > main > .view.fleet {
+    animation: none;
   }
 }

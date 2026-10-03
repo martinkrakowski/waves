@@ -251,7 +251,7 @@ describe("a click on one of the app's own links", () => {
     app.start();
     await flush();
 
-    const repo = root().querySelector("dd a");
+    const repo = root().querySelector(".row-id a");
     expect(repo?.getAttribute("href")).toBe("https://git.example.test/alpha");
     expect(repo?.hasAttribute("data-key")).toBe(false);
     click(repo as HTMLElement);
@@ -403,10 +403,7 @@ describe("the back button", () => {
 
     expect(browser.pushes).toStrictEqual(["/p/beta"]);
     expect(app.route).toStrictEqual({ kind: "projects" });
-    expect(textsOf(root(), ".project-card h3 a")).toStrictEqual([
-      "Alpha",
-      "Beta",
-    ]);
+    expect(textsOf(root(), ".row-head h3 a")).toStrictEqual(["Alpha", "Beta"]);
     app.stop();
   });
 });
@@ -534,10 +531,7 @@ describe("a navigation that lands while a pass is in flight", () => {
     // The pass for the project was dropped rather than drawn under the fleet,
     // and the fleet asked for nothing but the rail's two lists.
     expect(root().querySelectorAll("table")).toHaveLength(0);
-    expect(textsOf(root(), ".project-card h3 a")).toStrictEqual([
-      "Alpha",
-      "Beta",
-    ]);
+    expect(textsOf(root(), ".row-head h3 a")).toStrictEqual(["Alpha", "Beta"]);
     expect(
       gate.calls.filter((path) => path !== "/api/v1/projects"),
     ).toStrictEqual([
@@ -998,9 +992,22 @@ describe("the / key", () => {
   });
 
   it("does nothing on a page with no search box", async () => {
-    const { app } = harness({ pathname: "/" });
+    // A project with no lanes in scope draws no toolbar, and so no search box:
+    // the fleet's is the other one on the page.
+    const fetchImpl = fetchStub((path) =>
+      path === "/api/v1/projects"
+        ? { status: 200, body: [projectCard()] }
+        : path === "/api/v1/attention"
+          ? { status: 200, body: attentionView() }
+          : /\/status$/.test(path)
+            ? { status: 404 }
+            : { status: 200, body: projectLanes({ lanes: [], waves: [] }) },
+    );
+    const { app } = harness({ pathname: "/p/alpha", fetchImpl });
     app.start();
     await flush();
+    expect(root().querySelector("#filter-q")).toBeNull();
+    expect(root().querySelector("#fleet-q")).toBeNull();
 
     const event = press("/");
 
@@ -1025,6 +1032,223 @@ describe("the / key", () => {
 
     expect(event.defaultPrevented).toBe(false);
     expect(document.activeElement).toBe(document.body);
+    app.stop();
+  });
+});
+
+describe("the fleet's own filters", () => {
+  /** The rows' names, in the order the page drew them. */
+  function names(): string[] {
+    return textsOf(root(), ".row-head h3");
+  }
+
+  /** The rows' disclosures, in the order the page drew them. */
+  function rows(): HTMLDetailsElement[] {
+    return Array.from(
+      root().querySelectorAll("details.project-row"),
+    ) as HTMLDetailsElement[];
+  }
+
+  /** The tab at the reader's own place in the nav. */
+  function tab(name: string): HTMLElement {
+    const link = Array.from(root().querySelectorAll(".fleet-tabs a")).find(
+      (anchor) => textOf(anchor) === name,
+    );
+    expect(link).toBeDefined();
+    return link as HTMLElement;
+  }
+
+  /**
+   * Booted and settled on whatever route it is asked for, with the fleet's two
+   * reads and one project's lanes behind it, and with the call log emptied: a
+   * test here is about what a change of the address asks for.
+   */
+  async function onFleet(
+    pathname = "/",
+    search = "",
+  ): Promise<ReturnType<typeof harness> & { readonly fetchImpl: FetchStub }> {
+    const fetchImpl = fetchStub(
+      answering(
+        projectCard(),
+        projectCard({ id: "beta", name: "Beta", stale: true }),
+      ),
+    );
+    const started = harness({ pathname, search, fetchImpl });
+    started.app.start();
+    await flush();
+    fetchImpl.calls.length = 0;
+    return { ...started, fetchImpl };
+  }
+
+  it("redraws the fleet on a tab change and asks for nothing", async () => {
+    const { app, browser, fetchImpl } = await onFleet();
+    expect(names()).toStrictEqual(["Alpha", "Beta"]);
+
+    tab("Flagged").click();
+
+    expect(browser.pushes).toStrictEqual(["/?tab=flagged"]);
+    expect(fetchImpl.calls).toStrictEqual([]);
+    expect(textsOf(root(), ".fleet-projects .empty")).toStrictEqual([
+      "No project matches.",
+    ]);
+
+    // Synchronously, because the answer in hand is the answer to this question.
+    tab("Quiet").click();
+    expect(browser.pushes).toStrictEqual(["/?tab=flagged", "/?tab=quiet"]);
+    expect(names()).toStrictEqual(["Alpha", "Beta"]);
+    expect(textsOf(root(), ".fleet-tabs a[aria-current]")).toStrictEqual([
+      "Quiet",
+    ]);
+    // The count sits beside its tab, so the link's own name stays the name of
+    // the filter.
+    expect(
+      textOf(
+        root().querySelector(".fleet-tabs a[aria-current]")
+          ?.nextElementSibling as Element,
+      ),
+    ).toBe("2");
+
+    await flush();
+    expect(fetchImpl.calls).toStrictEqual([]);
+    app.stop();
+  });
+
+  it("redraws the fleet on a keystroke and asks for nothing", async () => {
+    const { app, browser, fetchImpl } = await onFleet();
+    const input = root().querySelector("#fleet-q") as HTMLInputElement;
+    input.value = "BETA";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+
+    expect(browser.replaces).toStrictEqual(["/?q=BETA"]);
+    expect(fetchImpl.calls).toStrictEqual([]);
+    expect(names()).toStrictEqual(["Beta"]);
+
+    input.value = "";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(browser.replaces).toStrictEqual(["/?q=BETA", "/"]);
+    expect(names()).toStrictEqual(["Alpha", "Beta"]);
+
+    await flush();
+    expect(fetchImpl.calls).toStrictEqual([]);
+    app.stop();
+  });
+
+  it("keeps a tab across a keystroke, and a keystroke across a tab", async () => {
+    const { app, browser, fetchImpl } = await onFleet();
+    const flagged = tab("Flagged");
+    flagged.click();
+    const input = root().querySelector("#fleet-q") as HTMLInputElement;
+    input.value = "beta";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+
+    expect(browser.replaces).toStrictEqual(["/?tab=flagged&q=beta"]);
+    tab("Active").click();
+    expect(browser.pushes).toStrictEqual([
+      "/?tab=flagged",
+      "/?tab=active&q=beta",
+    ]);
+    expect(fetchImpl.calls).toStrictEqual([]);
+    app.stop();
+  });
+
+  it("asks again for a project, which is another listing", async () => {
+    const { app, fetchImpl } = await onFleet();
+    (root().querySelector(".row-head h3 a") as HTMLElement).click();
+    expect(textsOf(root(), ".empty")).toStrictEqual(["Loading…"]);
+
+    await flush();
+    expect(lanesAskedFor(fetchImpl.calls)).toStrictEqual([
+      "/api/v1/projects/alpha/lanes",
+    ]);
+    app.stop();
+  });
+
+  it("carries no tab into a project's page, or into any link it draws", async () => {
+    const { app } = await onFleet("/p/alpha", "?tab=flagged");
+    expect(app.route).toStrictEqual({ kind: "project", id: "alpha" });
+    for (const anchor of Array.from(root().querySelectorAll("a[href]"))) {
+      expect(anchor.getAttribute("href")).not.toContain("tab");
+    }
+
+    // Nor after the reader has chosen a filter there, whose links are written
+    // from the same query.
+    const input = root().querySelector("#filter-q") as HTMLInputElement;
+    input.value = "wv";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await flush();
+
+    for (const anchor of Array.from(root().querySelectorAll("a[href]"))) {
+      expect(anchor.getAttribute("href")).not.toContain("tab");
+    }
+    expect(textsOf(root(), "a[href]").length).toBeGreaterThan(0);
+    app.stop();
+  });
+
+  it("keeps an open row open across a refresh pass and a tab change", async () => {
+    const { app, timers } = await onFleet();
+    (rows()[0] as HTMLDetailsElement).open = true;
+    await flush();
+    expect(rows().map((row) => row.open)).toStrictEqual([true, false]);
+
+    timers.runLast();
+    await flush();
+    expect(rows().map((row) => row.open)).toStrictEqual([true, false]);
+
+    tab("Quiet").click();
+    await flush();
+    expect(rows().map((row) => row.open)).toStrictEqual([true, false]);
+
+    // And the reader can still close it: the set follows them both ways.
+    (rows()[0] as HTMLDetailsElement).open = false;
+    await flush();
+    expect(rows().map((row) => row.open)).toStrictEqual([false, false]);
+    app.stop();
+  });
+
+  it("hears nothing from a row this page did not key", async () => {
+    const { app } = await onFleet();
+    const stray = document.createElement("details");
+    stray.setAttribute("class", "project-row");
+    stray.append(document.createElement("summary"));
+    root().append(stray);
+    stray.open = true;
+    await flush();
+
+    await app.refresh();
+
+    expect(rows().map((row) => row.open)).toStrictEqual([false, false]);
+    app.stop();
+  });
+
+  it("goes to the fleet's own search box on a slash", async () => {
+    const { app } = await onFleet();
+    expect(document.activeElement).toBe(document.body);
+
+    const event = new KeyboardEvent("keydown", {
+      key: "/",
+      bubbles: true,
+      cancelable: true,
+    });
+    document.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(root().querySelector("#fleet-q"));
+    app.stop();
+  });
+
+  it("puts the caret back in the fleet's search box after a keystroke", async () => {
+    const { app } = await onFleet();
+    const input = root().querySelector("#fleet-q") as HTMLInputElement;
+    input.focus();
+    input.value = "alph";
+    input.setSelectionRange(3, 3);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+
+    const after = root().querySelector("#fleet-q") as HTMLInputElement;
+    expect(after).not.toBe(input);
+    expect(after.value).toBe("alph");
+    expect(document.activeElement).toBe(after);
+    expect(after.selectionStart).toBe(3);
     app.stop();
   });
 });
@@ -1247,7 +1471,7 @@ describe("the projects menu", () => {
     const { app, browser } = await onFleet();
     menu().open = true;
 
-    (root().querySelector(".project-card h3 a") as HTMLElement).click();
+    (root().querySelector(".row-head h3 a") as HTMLElement).click();
     await flush();
 
     expect(menu().open).toBe(false);
