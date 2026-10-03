@@ -54,14 +54,15 @@
  * line of text is ever drawn over. The paths are geometry, and the geometry is
  * the loop:
  *
- * - The viewBox is 120 units wide, and a path spans **-26 to 142** — that is one
- *   wavelength (60 units) of overhang past each edge. The drift is 60 units, so
- *   the path always has at least 26 units of its own margin inside the box at
- *   either extreme: 66 units at the left of the cycle, 86 at the right.
- * - A drift of exactly one wavelength puts each path back where it started, and
- *   because a wavelength is a whole number of periods, the wrap is seamless: the
- *   end of `fleet-drift` and the start of `wave-a`/`wave-b`/`wave-c` agree at
- *   0%, which is what makes the wrap invisible rather than a jump.
+ * - Each path is eight humps of 36 units, alternately up and down, so one
+ *   wavelength is two humps: 72 units. A path runs from x = -72 to x = 216.
+ * - The drift is exactly one wavelength, 72 units (`reverse` runs the same
+ *   range backwards), so the shift is always between -72 and 0. The viewBox is
+ *   0 to 120: at a shift of 0 the path spans -72 to 216, and at -72 it spans
+ *   -144 to 144, so both edges of the box are covered at every moment of the
+ *   cycle, and neither end of the path is ever inside it.
+ * - A shift of one wavelength draws the same curve over the box, so the end of
+ *   `fleet-drift` and its start look the same and the wrap is not a jump.
  *
  * The three loops are 19s, 27s and 37s — coprime enough that the three phases
  * only realign every 999 minutes, which is the point of three periods rather
@@ -103,7 +104,7 @@
   }
 
   to {
-    transform: translateX(-60px);
+    transform: translateX(-72px);
   }
 }
 

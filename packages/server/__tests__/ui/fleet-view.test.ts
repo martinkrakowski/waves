@@ -96,7 +96,7 @@ describe("the hero", () => {
     for (const path of paths) {
       // Each starts before the viewBox's left edge, so the drift has something
       // to come from and never uncovers a blank strip at either end.
-      expect(path.getAttribute("d")).toMatch(/^M-26 /);
+      expect(path.getAttribute("d")).toMatch(/^M-72 /);
       // Each carries the phase of the draw, and nothing else about the answer.
       expect(path.getAttribute("class")).toMatch(/^(wave-[abc]) phase-\d+$/);
     }
