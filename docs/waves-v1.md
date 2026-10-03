@@ -730,7 +730,16 @@ token anyone presented. That is the cost of the `404` rule and it is accepted.
 
 **Registration.** The body is a closed object of `id` (the project id pattern of
 section 2.1), `name` (1 to 80 characters) and an optional `repo` (an `https` URL
-of at most 200 characters); any other key is a `422`. The `201` carries the
+of at most 200 characters); any other key is a `422`. A `repo` is refused unless
+every character in it is one a URL holds unescaped —
+`A-Z a-z 0-9 - . _ ~ : / ? # [ ] @ ! $ & ' ( ) * + , ; = %` — so a placeholder
+such as `https://github.com/<owner>/<repo>` is a `422` rather than a stored URL
+(`REPO_CHARACTER_PATTERN`, `packages/contract/src/domain/project.ts:34`,
+`53`; the
+message is `expected only the characters a URL holds unescaped`). A bare `%` is
+in the set, so `b%ZZ` and a trailing `%` are the character rule's business and
+the `https` rule's after it; an internationalised host is refused, because its
+letters are not in the set. The `201` carries the
 project's token — 32 random bytes as base64url, 43 characters — and that answer
 is the only time the token exists in clear text anywhere. An id that is already
 registered is a `409`, unless the request target is exactly
@@ -884,8 +893,17 @@ The closed-object rule is what makes a version meaningful. Under `v1` a new
 today, so a reader has to be upgraded first, and the server will only treat it
 as additive once the closed key list actually gains the key. Anything else —
 removing a field, renaming one, narrowing a bound, changing a type, making an
-optional field required — needs `waves/v2` and a new `SCHEMA`. Planned additive
-fields for a future minor revision are `prs` and `backlog`.
+optional field required — needs `waves/v2` and a new `SCHEMA`. `prs` and
+`backlog` are not planned envelope fields: they are keys of the second document,
+"The project status document", and the wave envelope does not carry them.
+
+A registration body is **not** under `schema: "waves/v1"` — it carries no
+schema at all — so the project rule is versioned by the package rather than by
+the envelope schema, and a minor version may tighten it.
+
+Contract **0.2.0** adds the project status document and tightens `repo`: a new
+document, a new export and a stricter character rule, which is what a minor
+version of this package is for.
 
 ## 8. A curl example
 
