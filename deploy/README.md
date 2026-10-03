@@ -244,21 +244,29 @@ and every push reads `~/.config/waves/<id>.token` here, so a schedule anywhere
 else would mint tokens no pusher ever receives. A LaunchAgent runs it once an
 hour and once at login.
 
-1. Create the `waves-enroll` Secret as in
-   [The enrollment Secret](#the-enrollment-secret): from a 0600 file of your
-   own, never through an agent.
-
-2. Copy the same value to `~/.config/waves/enroll.token`, mode 0600, from the
-   file the Secret was made from, so it is never typed on a command line:
+1. Make the token on the Mac, where the client reads it, and create the Secret
+   from that file over stdin, so the value is never typed, never on a command
+   line and never in a file on midnight. Run these yourself, never through an
+   agent:
 
    ```sh
    umask 077
    mkdir -p -m 700 ~/.config/waves
-   ssh m cat /root/waves-enroll-token > ~/.config/waves/enroll.token
+   openssl rand -hex 32 > ~/.config/waves/enroll.token
+   ssh m 'KUBECONFIG=$HOME/.kube/config kubectl -n waves create secret generic waves-enroll --from-file=token=/dev/stdin' < ~/.config/waves/enroll.token
+   ssh m 'KUBECONFIG=$HOME/.kube/config kubectl -n waves rollout restart deploy/waves'
    ```
 
-   The directory must be yours and reachable by nobody else (`chmod 700`); the
-   client refuses anything looser, and so does `install.sh`.
+   `openssl rand -hex 32` is 64 characters the token grammar accepts, and a
+   random value cannot equal the admin token. The directory must be yours and
+   reachable by nobody else (`chmod 700`); the client refuses anything looser,
+   and so does `install.sh`. (The recipe in
+   [The enrollment Secret](#the-enrollment-secret) suits a Secret made on the
+   cluster's host; `ssh m` logs in as you, not as root, so it cannot read a
+   file under `/root` afterwards.)
+
+2. Check the server took it: the pod's log no longer opens with
+   `waves: enrollment disabled`.
 
    A file of mode 0400 is accepted as well, if you would rather it not be
    writable.
@@ -292,6 +300,19 @@ hour and once at login.
    script renders nothing at all unless `~/.config/waves/enroll.token` is there
    as a real file of mode 0600 or 0400, and it never reads it: what reaches the
    wrapper is the path, and the client reads the value.
+
+   **macOS asks for Local Network access.** A program launchd starts in the
+   background needs it to reach `waves.midnight.lan`, and until it is granted
+   every run fails with `connect EHOSTUNREACH`. Allow the prompt for `node`, or
+   switch `node` on in System Settings → Privacy & Security → Local Network, then
+   run the agent once:
+
+   ```sh
+   launchctl kickstart -k gui/$(id -u)/cloud.krakowski.waves.register-all
+   ```
+
+   A node upgrade is a new binary, so the permission may be asked for again
+   after re-running `install.sh`.
 
 5. Read `~/Library/Logs/waves-register-all.log` after the first run. Every run
    opens with one dated line and ends with the client's own summary,
