@@ -468,14 +468,17 @@ const WAVE_WORD = {
 
 /**
  * One wave's chip: its own state class, the stale one when the head says so, and
- * the state's word in a span a screen reader reads and an eye does not see. The
- * colour on the edge is beside that word rather than instead of it, which is what
- * the plan's W14 asks of a state that is shown at all.
+ * the state's word, shown to every reader. The colour on the edge is beside that
+ * word rather than instead of it, which is what the plan's W14 asks of a state
+ * that is shown at all: a word only a screen reader hears would leave a sighted
+ * reader telling a failed wave from a running one by the edge's colour alone.
  */
 function waveItem(model, head, nowMs) {
   const children = [];
   const state = waveStateOf(rowsOfWave(model.lanes, head.wave), head.stale);
-  children.push(el("span", { attrs: { class: "sr" }, text: WAVE_WORD[state] }));
+  children.push(
+    el("span", { attrs: { class: "state-word" }, text: WAVE_WORD[state] }),
+  );
   children.push(
     internalLink(
       head.wave,

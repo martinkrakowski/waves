@@ -138,6 +138,16 @@
   border-left-color: var(--amber);
 }
 
+/* The state in a word, in the muted text colour: the edge carries the colour, and
+   the word stays readable on the card in both palettes (W33's muted pair). */
+.wave-strip .state-word {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 /* -------------------------------------------------------------- the counters */
 
 /*

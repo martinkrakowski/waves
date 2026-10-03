@@ -433,7 +433,7 @@ describe("the wave strip's state classes", () => {
     // `app.css` clips away for an eye and leaves for a screen reader, and it comes
     // out of the view's own table of four literals like the class does.
     const words = (head: Partial<WaveSummary>, rows: readonly LaneRow[]) =>
-      textsOf(chipOf(head, rows), ".sr");
+      textsOf(chipOf(head, rows), ".state-word");
 
     expect(words({ stale: false }, alive)).toStrictEqual(["running"]);
     expect(words({ stale: false }, merged)).toStrictEqual(["done"]);
@@ -454,7 +454,9 @@ describe("the wave strip's state classes", () => {
       lanes: projectLanes({ waves: [head], lanes: alive }),
     });
 
-    expect(textsOf(host, ".wave-strip li.wave .sr")).toStrictEqual(["running"]);
+    expect(textsOf(host, ".wave-strip li.wave .state-word")).toStrictEqual([
+      "running",
+    ]);
     expect(host.textContent).not.toContain(payload);
   });
 });
