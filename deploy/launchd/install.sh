@@ -1,0 +1,200 @@
+#!/bin/sh
+#
+# Installs the launchd LaunchAgent that runs `waves register-all` once an hour
+# on the owner's Mac. Run it from the repository root:
+#
+#   sh deploy/launchd/install.sh https://waves.midnight.lan
+#
+# It is idempotent: it renders both templates, boots the agent out and back in,
+# and running it twice leaves the same two files and the same agent. Re-run it
+# after a node upgrade, which moves the pinned node and client paths.
+#
+# Nothing here reads, prints or copies the enrollment token. Its file is only
+# ever stat'ed, for its mode, and the token's path is what reaches the wrapper.
+
+set -eu
+
+# The character sets below are ranges, so they must not be read in a locale
+# where they are not ordered the way the C locale orders them.
+LC_ALL=C
+export LC_ALL
+
+LABEL=cloud.krakowski.waves.register-all
+TEMPLATE_URL_SET='A-Za-z0-9 ._~:/?=&%+-'
+TEMPLATE_PATH_SET='A-Za-z0-9 /._@+-'
+URL_MAX=200
+
+say() {
+  printf '%s\n' "$*"
+}
+
+# Every refusal is the same shape: one line on stderr, exit 2, and nothing
+# rendered and nothing loaded.
+refuse() {
+  printf 'install.sh: refusing: %s\n' "$1" >&2
+  exit 2
+}
+
+# The characters of $1 that the character set $2 does not hold. The sets carry
+# a space, so they cannot be a glob bracket expression — a space would end the
+# word — and `tr` is the readable way to ask.
+outside() {
+  printf '%s' "$1" | tr -d "$2"
+}
+
+# 1. The URL. One argument, https, a character set the plist and the shell can
+# hold, and a length a plist string should not exceed.
+if [ "$#" -ne 1 ]; then
+  refuse "exactly one argument is expected, the waves https URL, for example sh deploy/launchd/install.sh https://waves.midnight.lan"
+fi
+url=$1
+case "$url" in
+  https://*) ;;
+  *) refuse "the URL must start with https://, got $url" ;;
+esac
+if [ "${#url}" -gt "$URL_MAX" ]; then
+  refuse "the URL is longer than $URL_MAX characters, which is $(( ${#url} - URL_MAX )) too many"
+fi
+outside_url=$(outside "$url" "$TEMPLATE_URL_SET")
+if [ -n "$outside_url" ]; then
+  refuse "the URL holds a character this script will not put in the plist: $outside_url"
+fi
+
+# 2. The enrollment token's file. It has to be there, a real file rather than a
+# link, and mode 0600 or 0400 — the same trust check the client makes. `stat` is
+# all of it: the file is never opened, so a token that leaks into this script's
+# output, or into a process's page cache through it, is not a token this script
+# could leak.
+config="${WAVES_CONFIG_DIR:-$HOME/.config/waves}"
+token="$config/enroll.token"
+if [ -L "$token" ]; then
+  refuse "the token file $token is a symbolic link; it must be the file itself, not a link to it"
+fi
+if [ ! -f "$token" ]; then
+  refuse "no token file at $token; put a copy of the waves-enroll Secret's token there, mode 600"
+fi
+# GNU first: on Linux `stat -f` is filesystem status and answers `?` with exit
+# 0, so trying it first would accept any mode. BSD `stat -c` fails with exit 1
+# and falls through to the same command's BSD spelling.
+mode=$(stat -c %a "$token" 2>/dev/null || stat -f %Lp "$token")
+case "$mode" in
+  600 | 400) ;;
+  *) refuse "the token file $token is mode $mode; it must be 600 or 400" ;;
+esac
+
+# 3. node and the client's bin, pinned to absolute paths because launchd runs
+# with a PATH of its own. WAVES_NODE and WAVES_CLIENT move them, which is how
+# the tests point them at a stub.
+node="${WAVES_NODE:-$(command -v node || true)}"
+if [ -n "${WAVES_CLIENT:-}" ]; then
+  client=$WAVES_CLIENT
+else
+  npm_root=$(npm root -g 2>/dev/null || true)
+  if [ -z "$npm_root" ]; then
+    refuse "npm root -g did not answer; install the client first: npm i -g @hexagen-monaco/waves-client"
+  fi
+  client="$npm_root/@hexagen-monaco/waves-client/dist/cli.js"
+fi
+case "$node" in
+  /*) ;;
+  *) refuse "the node path $node is not absolute" ;;
+esac
+if [ ! -x "$node" ]; then
+  refuse "the node path $node is not an executable file"
+fi
+if [ ! -f "$client" ] || [ ! -r "$client" ]; then
+  refuse "the client at $client is not a readable file; install it with npm i -g @hexagen-monaco/waves-client"
+fi
+# The pair has to run, not merely exist: a client whose own dependencies are
+# missing would make every hourly run fail with a line about a module, which
+# says nothing about which half of the pair is wrong.
+if ! "$node" "$client" help >/dev/null 2>&1; then
+  refuse "$node $client help did not exit 0, so the pinned pair does not run"
+fi
+
+# 4. The paths that go into the rendered files. They are written into a shell
+# script and into XML, so anything a reader would have to quote is refused
+# rather than quoted: a home directory with an apostrophe in it is the case
+# that matters, and the fix for it is a directory name without one.
+support="$HOME/Library/Application Support/waves"
+wrapper="$support/register-all.sh"
+agents="$HOME/Library/LaunchAgents"
+plist="$agents/$LABEL.plist"
+logs="$HOME/Library/Logs"
+log="$logs/waves-register-all.log"
+for path in "$node" "$client" "$token" "$wrapper" "$log"; do
+  outside_path=$(outside "$path" "$TEMPLATE_PATH_SET")
+  if [ -n "$outside_path" ]; then
+    refuse "the path $path holds a character install.sh will not render: $outside_path; move it, or set WAVES_CONFIG_DIR somewhere without one"
+  fi
+done
+
+# The templates are read from beside this script, so install.sh works from any
+# working directory.
+here=$(CDPATH= cd "$(dirname "$0")" && pwd) ||
+  refuse "cannot find the directory install.sh lives in"
+wrapper_template="$here/register-all.sh.template"
+plist_template="$here/$LABEL.plist.template"
+[ -f "$wrapper_template" ] ||
+  refuse "no wrapper template at $wrapper_template"
+[ -f "$plist_template" ] ||
+  refuse "no plist template at $plist_template"
+
+# 5. The three directories and the log. umask 077 first, so the directories and
+# the log are 0700 and 0600 as they are made; the log is created here rather
+# than left to launchd, which would make it 0644 and would drop the output
+# silently when the directory was missing.
+umask 077
+mkdir -p "$support" "$agents" "$logs"
+: >>"$log"
+chmod 600 "$log"
+
+# 6. Render both templates. Each goes to a fixed temporary name in the
+# directory it belongs in and is then moved, so the rename is within one
+# directory and an interrupted run leaves the old file rather than a half
+# written one. `|` is the delimiter because step 4 proved no path holds one.
+sed -e "s|@NODE@|$node|" -e "s|@CLIENT@|$client|" -e "s|@TOKEN@|$token|" \
+  "$wrapper_template" >"$support/.register-all.sh.tmp"
+chmod 700 "$support/.register-all.sh.tmp"
+mv "$support/.register-all.sh.tmp" "$wrapper"
+
+# `&` in a URL is the one character a plist cannot hold raw. Escaping it for
+# sed and for XML in one step: sed's replacement writes `\&` as the matched
+# text, so this substitution yields the five characters `&amp;`.
+url_xml=$(printf '%s\n' "$url" | sed 's/&/\\\&amp;/g')
+sed -e "s|@URL@|$url_xml|" -e "s|@WRAPPER@|$wrapper|" -e "s|@LOG@|$log|" \
+  "$plist_template" >"$agents/.$LABEL.plist.tmp"
+chmod 644 "$agents/.$LABEL.plist.tmp"
+mv "$agents/.$LABEL.plist.tmp" "$plist"
+
+# 7. Load the agent. bootout first, so a second run replaces the loaded agent
+# instead of failing to add one that is already there, and its failure is not
+# an error: there may be nothing loaded. bootstrap right after a bootout is
+# asynchronous on macOS and can answer "Bootstrap failed: 37/5" for a moment
+# while the old one drains, so it is retried.
+launchctl="${LAUNCHCTL:-launchctl}"
+domain="gui/$(id -u)"
+"$launchctl" bootout "$domain/$LABEL" 2>/dev/null || true
+attempt=1
+while :; do
+  if "$launchctl" bootstrap "$domain" "$plist"; then
+    break
+  fi
+  if [ "$attempt" -ge 5 ]; then
+    refuse "launchctl bootstrap $domain failed $attempt times; the plist is at $plist and the log is at $log; is this a login session?"
+  fi
+  attempt=$((attempt + 1))
+  sleep 1
+done
+
+# 8. What was installed. The token's path is deliberately absent from this: the
+# owner knows where it is, and a line that printed it would be one more copy in
+# a terminal scrollback.
+say "install.sh: installed $LABEL, running hourly and at login"
+say "  wrapper  $wrapper"
+say "  plist    $plist"
+say "  log      $log"
+say "  node     $node"
+say "  client   $client"
+say "  read the log after the first run: it opens with one dated line per run"
+say "  re-run this after a node upgrade; sh deploy/launchd/uninstall.sh removes it"

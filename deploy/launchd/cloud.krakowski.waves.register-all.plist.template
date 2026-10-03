@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The hourly `waves register-all` run on the owner's Mac. deploy/launchd/install.sh
+  renders this into ~/Library/LaunchAgents, filling in the wrapper path, the URL
+  and the log path. The service is reached over https and the client already
+  reads ~/.config/waves/ca.crt, so no certificate path is set here. Nothing in
+  this file holds a token: the wrapper passes the enrollment token's path, and
+  the client reads it.
+-->
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>cloud.krakowski.waves.register-all</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>/bin/sh</string>
+      <string>@WRAPPER@</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>WAVES_URL</key>
+      <string>@URL@</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StartInterval</key>
+    <integer>3600</integer>
+    <key>StandardOutPath</key>
+    <string>@LOG@</string>
+    <key>StandardErrorPath</key>
+    <string>@LOG@</string>
+    <key>ProcessType</key>
+    <string>Background</string>
+  </dict>
+</plist>
