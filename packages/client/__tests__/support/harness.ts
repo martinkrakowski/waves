@@ -6,6 +6,7 @@ import type { CliIo } from "../../src/application/entrypoint.js";
 import type {
   Environment,
   Files,
+  HttpRequest,
   Transport,
   TransportOptions,
   TransportOutcome,
@@ -147,6 +148,8 @@ export function network(message: string, beforeBody = true): TransportOutcome {
 export interface ScriptedTransport {
   readonly factory: TransportFactory;
   readonly options: TransportOptions[];
+  /** Every request that went out, in the order it went out. */
+  readonly requests: HttpRequest[];
   readonly sent: number;
 }
 
@@ -155,12 +158,14 @@ export function scriptedTransport(
 ): ScriptedTransport {
   const remaining = [...script];
   const options: TransportOptions[] = [];
+  const requests: HttpRequest[] = [];
   const state = { sent: 0 };
   const factory: TransportFactory = (received) => {
     options.push(received);
     const transport: Transport = {
-      send: async () => {
+      send: async (request) => {
         state.sent += 1;
+        requests.push(request);
         const next = remaining.shift();
         if (next === undefined) {
           throw new Error("the scripted transport ran out of answers");
@@ -173,6 +178,7 @@ export function scriptedTransport(
   return {
     factory,
     options,
+    requests,
     get sent() {
       return state.sent;
     },
@@ -186,6 +192,7 @@ export interface Harness {
   readonly deps: UseCaseDeps;
   readonly waits: number[];
   readonly transportOptions: TransportOptions[];
+  readonly requests: HttpRequest[];
   readonly sent: () => number;
   readonly files: FakeFiles;
 }
@@ -234,6 +241,7 @@ export function harness(input: HarnessInput = {}): Harness {
     deps,
     waits,
     transportOptions: scripted.options,
+    requests: scripted.requests,
     sent: () => scripted.sent,
     files,
   };

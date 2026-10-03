@@ -9,8 +9,10 @@ import { isProjectId, validateEnvelope } from "@hexagen-monaco/waves-contract";
 import { registerSecret } from "./harness.js";
 
 export const STUB_ADMIN_TOKEN = "waves-stub-admin-t0ken-1a2b3c";
+export const STUB_ENROLL_TOKEN = "waves-stub-enroll-t0ken-4d5e6f";
 
 registerSecret(STUB_ADMIN_TOKEN);
+registerSecret(STUB_ENROLL_TOKEN);
 
 const MAX_BODY_BYTES = 1_048_576;
 const JSON_TYPE = "application/json";
@@ -165,7 +167,16 @@ export async function startStub(
       send(res, 405, "use POST");
       return;
     }
-    if (bearer(req) !== STUB_ADMIN_TOKEN) {
+    const presented = bearer(req);
+    const rotate = (req.url ?? "").includes("rotate=1");
+    if (presented === STUB_ENROLL_TOKEN) {
+      // An enrollment token creates a project that is not there, and can do
+      // nothing else: a rotation is 403 for it, as it is for a wave delete.
+      if (rotate) {
+        send(res, 403, "enrollment token cannot do this");
+        return;
+      }
+    } else if (presented !== STUB_ADMIN_TOKEN) {
       send(res, 401, "the admin token was refused", {
         "WWW-Authenticate": CHALLENGE,
       });
@@ -187,7 +198,6 @@ export async function startStub(
       send(res, 422, "the project is not one the server will store");
       return;
     }
-    const rotate = (req.url ?? "").includes("rotate=1");
     if (projects.has(id) && !rotate) {
       send(res, 409, "the project is already registered");
       return;

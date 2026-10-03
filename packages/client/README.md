@@ -19,6 +19,47 @@ WAVES_URL=https://waves.example.com \
 
 The admin token is read only from a file at mode 0600 or stricter, or from stdin with `--admin-token-stdin`; never from argv or the environment. The minted project token is written to `~/.config/waves/<id>.token` (0600) and is never printed. Registering an existing id fails unless `--rotate` is given, which replaces the token.
 
+## Register with an enrollment token
+
+An enrollment token is a second, optional server secret that can do one thing: create a project that does not exist yet. It cannot rotate a token or delete a project, so `--rotate` with an enrollment flag is refused locally, before anything is read or sent. `register` takes it in place of the admin token:
+
+```sh
+WAVES_URL=https://waves.example.com \
+  waves register my-project --name "My Project" \
+  --enrollment-token-file ~/.config/waves/enroll.token
+```
+
+`--enrollment-token-stdin` reads it from stdin instead, for an interactive run. Exactly one of `--admin-token-file`, `--admin-token-stdin`, `--enrollment-token-file` and `--enrollment-token-stdin` may be given. Both token files pass the same 0600 trust check.
+
+## Register every project in a list
+
+```sh
+WAVES_URL=https://waves.example.com \
+  waves register-all --enrollment-token-file ~/.config/waves/enroll.token \
+  --projects ~/.config/waves/projects.json --verbose
+```
+
+`register-all` reads a list of projects and registers each one that has no token file on this machine, which is the shape a schedule needs: the same command an hour later skips whatever it already did.
+
+The list is `~/.config/waves/projects.json` (`WAVES_CONFIG_DIR` overrides the directory, `--projects` the file): a JSON array of at most 64 entries, each an object with an `id` and a `name` and optionally a `repo`.
+
+```json
+[
+  {
+    "id": "client-portal",
+    "name": "Client Portal",
+    "repo": "https://github.com/me/client-portal"
+  },
+  { "id": "campaign-foundry", "name": "Campaign Foundry" }
+]
+```
+
+Every entry is checked before any request goes out, with the contract's own rules: a project id, a name the server would store, an https-only repo carrying no user or password, and no id twice. One bad entry fails the whole run with exit 2 and sends nothing. A refusal names the entry by its index in the file (`entry 3: id is not a project id`) and never quotes a value from it.
+
+Per entry, in order: a token file already there is counted as skipped and no request is made; otherwise the project is registered with the enrollment token and the token file written 0600 exactly as `register` writes it. Requests are paced at least a second apart, and a `429` is retried for the wait the server named. `--verbose` prints the skip lines; without it they are absent. The run ends with one line, `N skipped, M registered, K conflicts, J failed`, on stdout. A `409` is counted as a conflict, printed on every run until the owner resolves it, and does not fail the run.
+
+`register-all` never rotates anything, and has no `--rotate`: a token that was issued elsewhere is yours to recover with an admin rotate. A `401` or `403` stops the run after one line, because the credential is wrong for every entry and each further attempt would be charged to the server's failure allowance. Under launchd, use the file form of the flag: there is no terminal to type the token on stdin. The worst case is a long list with a server that throttles — a run can take longer than an hour — so the LaunchAgent's interval is a floor, not a promise; launchd never runs two copies of one label at once.
+
 ## Push a wave
 
 ```sh
@@ -42,7 +83,7 @@ TLS verification is always on. Plain `http://` is accepted for loopback hosts wi
 
 ## Exit codes
 
-`0` success, `1` a server or network failure (after at most two retries for network errors and 5xx, and a bounded wait on 429), `2` a usage, configuration or local-validation error.
+`0` success, `1` a server or network failure (after at most two retries for a request that never reached the server, and a bounded wait on 429), `2` a usage, configuration or local-validation error. A `register-all` run exits `2` for anything wrong with its list or its credential — having sent nothing — and `1` when a request failed or the run stopped; conflicts alone leave it at `0`.
 
 ## Licence
 

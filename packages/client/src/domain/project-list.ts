@@ -108,12 +108,21 @@ function readEntry(value: unknown, index: number, ids: Set<string>): EntryRead {
   if (rawRepo !== undefined && repo === undefined) {
     errors.push(`entry ${index}: repo must be a string`);
   }
-  // The contract's own rules, through the same function `register` uses, and
-  // only for the fields that are known to be the strings it wants. A field of
-  // the wrong type has already been named above, and asking the contract about
-  // a value the owner did not write would only say the same thing twice.
-  if (id !== undefined && name !== undefined) {
-    for (const issue of readProjectRequest({ id, name, repo })) {
+  // The contract's own rules, through the same function `register` uses. A
+  // field of the wrong type is still asked about, so one bad entry names every
+  // mistake in it rather than one per run — but the answer is dropped where the
+  // list has already said the same thing in its own words.
+  const untyped = [
+    ...(id === undefined ? ["/id"] : []),
+    ...(name === undefined ? ["/name"] : []),
+    ...(rawRepo !== undefined && repo === undefined ? ["/repo"] : []),
+  ];
+  for (const issue of readProjectRequest({
+    id: id ?? "",
+    name: name ?? "",
+    repo,
+  })) {
+    if (!untyped.includes(issue.path)) {
       errors.push(`entry ${index}: ${issue.path.slice(1)}: ${issue.message}`);
     }
   }
