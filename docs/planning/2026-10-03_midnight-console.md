@@ -49,7 +49,7 @@ A darker, more atmospheric operator console on one page.
 ### 2.1 What to keep
 
 The look as a whole: the ground, the glow and the grid, the glass cards, the
-palette, the three typefaces, the sticky blurred top bar with the wave-bar mark,
+palette, the three typefaces, the sticky blurred top bar (with the owner's mark),
 a compact live hero with its wave field, the stat cards, the project rows with a
 per-wave segmented bar that expands into wave chips, the attention cards with
 their coloured edge and kind pill, the legend footer, and the ambient motion (the
@@ -134,8 +134,8 @@ stale comment about `img-src`.
 ### U1b-tokens-shell (high)
 
 `tokens.css` (both palettes, W32, W33, the contrast test), the ground with its
-glows and grid, the sticky blurred top bar with the four-bar mark (replacing the
-current mark), the sync pill (W41) and a refresh button (a `button` that asks the
+glows and grid, the sticky blurred top bar with the owner's own mark (kept, restyled
+in the new palette, rather than the mock's four bars), the sync pill (W41) and a refresh button (a `button` that asks the
 app for a pass: `shell()` gains handlers; `app.d.ts`/`shell.d.ts` change), the
 projects menu restyled, the first-paint attribute (W34; `start()` and `draw()`
 named), and the footer legend: the five wave states added beside the three
