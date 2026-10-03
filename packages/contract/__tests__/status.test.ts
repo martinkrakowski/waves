@@ -55,6 +55,7 @@ describe("validateStatus", () => {
   });
 
   it("rejects an unknown key at the root", () => {
+    expectStatusPaths({ ...minimalStatus(), extra: true }, ["/extra"]);
     expectStatusPaths({ ...minimalStatus(), wave: "wv6" }, ["/wave"]);
     expectStatusPaths({ ...minimalStatus(), "a~/b": true }, ["/a~0~1b"]);
   });
