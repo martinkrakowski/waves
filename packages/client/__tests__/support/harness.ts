@@ -6,6 +6,7 @@ import type { CliIo } from "../../src/application/entrypoint.js";
 import type {
   Environment,
   Files,
+  HttpRequest,
   Transport,
   TransportOptions,
   TransportOutcome,
@@ -18,6 +19,7 @@ import type {
  * cannot match by accident.
  */
 export const ADMIN_TOKEN = "waves-admin-t0ken-4f19c2";
+export const ENROLL_TOKEN = "waves-enroll-t0ken-6c5d90";
 export const PROJECT_TOKEN = "waves-project-t0ken-8b7e31";
 export const CONFIG_DIR = "/home/waves/.config/waves";
 export const PROJECT = "waves-demo";
@@ -31,7 +33,7 @@ export const GENERATED_AT = "2026-02-03T04:05:06.789Z";
  * line that mentions a secret fails whichever test wrote it.
  */
 const printed: string[] = [];
-const secrets = new Set<string>([ADMIN_TOKEN, PROJECT_TOKEN]);
+const secrets = new Set<string>([ADMIN_TOKEN, ENROLL_TOKEN, PROJECT_TOKEN]);
 
 /**
  * A secret is a secret whether or not a test named it: the tokens this package
@@ -146,6 +148,8 @@ export function network(message: string, beforeBody = true): TransportOutcome {
 export interface ScriptedTransport {
   readonly factory: TransportFactory;
   readonly options: TransportOptions[];
+  /** Every request that went out, in the order it went out. */
+  readonly requests: HttpRequest[];
   readonly sent: number;
 }
 
@@ -154,12 +158,14 @@ export function scriptedTransport(
 ): ScriptedTransport {
   const remaining = [...script];
   const options: TransportOptions[] = [];
+  const requests: HttpRequest[] = [];
   const state = { sent: 0 };
   const factory: TransportFactory = (received) => {
     options.push(received);
     const transport: Transport = {
-      send: async () => {
+      send: async (request) => {
         state.sent += 1;
+        requests.push(request);
         const next = remaining.shift();
         if (next === undefined) {
           throw new Error("the scripted transport ran out of answers");
@@ -172,6 +178,7 @@ export function scriptedTransport(
   return {
     factory,
     options,
+    requests,
     get sent() {
       return state.sent;
     },
@@ -185,6 +192,7 @@ export interface Harness {
   readonly deps: UseCaseDeps;
   readonly waits: number[];
   readonly transportOptions: TransportOptions[];
+  readonly requests: HttpRequest[];
   readonly sent: () => number;
   readonly files: FakeFiles;
 }
@@ -233,6 +241,7 @@ export function harness(input: HarnessInput = {}): Harness {
     deps,
     waits,
     transportOptions: scripted.options,
+    requests: scripted.requests,
     sent: () => scripted.sent,
     files,
   };

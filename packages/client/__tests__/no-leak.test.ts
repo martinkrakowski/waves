@@ -1,4 +1,4 @@
-import { chmod, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
@@ -10,6 +10,7 @@ import {
 } from "./support/harness.js";
 import {
   STUB_ADMIN_TOKEN,
+  STUB_ENROLL_TOKEN,
   startStub,
   type Stub,
 } from "./support/stub-server.js";
@@ -20,7 +21,9 @@ import {
  */
 const secrets = new Set<string>([
   STUB_ADMIN_TOKEN,
+  STUB_ENROLL_TOKEN,
   "not-the-admin-token",
+  "not-the-enrollment-token",
   "waves-leak-t0ken-not-mine",
 ]);
 
@@ -127,6 +130,44 @@ async function register(project: string, adminText?: string): Promise<Run> {
   return result;
 }
 
+/**
+ * `register-all` over a list of the owner's, on the real filesystem and against
+ * the stub, which is the only way to see a scheduled run: there is no terminal
+ * and no command line to leak anything through.
+ */
+async function registerAll(
+  entries: readonly unknown[],
+  extra: readonly string[] = [],
+  enrollText = STUB_ENROLL_TOKEN,
+): Promise<Run> {
+  const recorded = recorder();
+  const enrollFile = join(directory, "enroll.token");
+  await writeFile(enrollFile, `${enrollText}\n`, { mode: 0o600 });
+  await mkdir(configDir, { recursive: true });
+  await chmod(configDir, 0o700);
+  await writeFile(join(configDir, "projects.json"), JSON.stringify(entries));
+  const lines: string[] = [];
+  let code = 0;
+  try {
+    code = await main(
+      ["register-all", "--enrollment-token-file", enrollFile, ...extra],
+      recorded.io,
+      {
+        env: environmentOf({
+          WAVES_URL: stub.origin,
+          WAVES_CONFIG_DIR: configDir,
+        }),
+        input: { read: async () => "" },
+        clock: { now: () => NOW },
+        sleeper: { sleep: async () => undefined },
+      },
+    );
+  } catch (error) {
+    lines.push(error instanceof Error ? error.message : String(error));
+  }
+  return { code, lines: [...lines, ...recorded.out, ...recorded.err] };
+}
+
 function expectNoSecrets(result: Run): void {
   expect(result.lines.length).toBeGreaterThan(0);
   for (const secret of secrets) {
@@ -217,6 +258,54 @@ describe("a token never leaves the file it was written to", () => {
     });
     expect(skewed.code).toBe(1);
     expectNoSecrets(skewed);
+  });
+
+  it("is not printed by a run over a list, or by one that skips it", async () => {
+    const project = "waves-leak-all";
+    const entries = [
+      { id: project, name: "Waves Demo" },
+      { id: "waves-leak-later", name: "Waves Later" },
+    ];
+    const enrolled = await registerAll(entries);
+    expect(enrolled.code).toBe(0);
+    for (const issued of [project, "waves-leak-later"]) {
+      const token = stub.tokenOf(issued);
+      if (token !== undefined) {
+        secrets.add(token);
+      }
+    }
+    expect(enrolled.lines).toContain(
+      "0 skipped, 2 registered, 0 conflicts, 0 failed",
+    );
+    expectNoSecrets(enrolled);
+    for (const line of enrolled.lines) {
+      expect(line).not.toContain(STUB_ENROLL_TOKEN);
+    }
+    expect(await readFile(tokenFile(project), "utf8")).toBe(
+      stub.tokenOf(project),
+    );
+
+    // The second run has nothing to do, and says so rather than registering the
+    // same project again.
+    const again = await registerAll(entries, ["--verbose"]);
+    expect(again.code).toBe(0);
+    expect(again.lines).toContain(
+      "2 skipped, 0 registered, 0 conflicts, 0 failed",
+    );
+    expectNoSecrets(again);
+  });
+
+  it("is not printed by a run whose credential the server refused", async () => {
+    const refused = await registerAll(
+      [{ id: "waves-leak-none", name: "None" }],
+      [],
+      "not-the-enrollment-token",
+    );
+    expect(refused.code).toBe(1);
+    expect(refused.lines).toContain(
+      "waves-leak-none: the server refused the enrollment token for this run, stopping: 401 Unauthorized\n  the admin token was refused",
+    );
+    expectNoSecrets(refused);
   });
 
   it("is not printed when the server is not there at all", async () => {
