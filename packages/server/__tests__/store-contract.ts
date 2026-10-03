@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import type { Project, StoredSnapshot } from "@hexagen-monaco/waves-contract";
+import type {
+  Project,
+  ProjectStatus,
+  StoredSnapshot,
+} from "@hexagen-monaco/waves-contract";
 
 import type { StorePort } from "../src/index.js";
 
@@ -16,6 +20,22 @@ export function project(id: string, name = id): Project {
     repo: `https://example.com/${id}.git`,
     tokenSha256: "b".repeat(64),
     registeredAt: "2026-10-01T12:00:00Z",
+  };
+}
+
+/** A project's status document, carrying both optional keys by default. */
+export function status(
+  project = "alpha",
+  overrides: Partial<ProjectStatus> = {},
+): ProjectStatus {
+  return {
+    schema: "waves-status/v1",
+    project,
+    generatedAt: "2026-10-01T12:00:00Z",
+    intervalSeconds: 10,
+    prs: { skipped: 2 },
+    backlog: { state: "recorded" },
+    ...overrides,
   };
 }
 
@@ -365,6 +385,10 @@ export function runStoreContract(createHarness: () => StoreHarness): void {
         await store.putProject(project("alpha"));
         await store.putSnapshot(snapshot("wv1"));
         await store.putSnapshot(snapshot("wv2"));
+        await store.putStatus({
+          status: status("alpha"),
+          receivedAt: "2026-10-01T12:00:01Z",
+        });
 
         await store.deleteProject("alpha");
 
@@ -374,6 +398,7 @@ export function runStoreContract(createHarness: () => StoreHarness): void {
         await expect(
           store.getSnapshot("alpha", "wv1"),
         ).resolves.toBeUndefined();
+        await expect(store.getStatus("alpha")).resolves.toBeUndefined();
       } finally {
         await dispose();
       }
@@ -435,6 +460,12 @@ export function runStoreContract(createHarness: () => StoreHarness): void {
           await expect(store.deleteSnapshot(id, "wv1")).rejects.toThrow(
             "invalid project id",
           );
+          await expect(store.getStatus(id)).rejects.toThrow(
+            "invalid project id",
+          );
+          await expect(
+            store.putStatus({ status: status(id), receivedAt: "" }),
+          ).rejects.toThrow("invalid project id");
           await expect(
             store.putSnapshot({
               envelope: { ...snapshot("wv1").envelope, project: id },
@@ -506,6 +537,94 @@ export function runStoreContract(createHarness: () => StoreHarness): void {
         ]);
       } finally {
         await dispose();
+      }
+    });
+
+    it("round-trips a status", async () => {
+      const { store, dispose } = createHarness();
+      try {
+        const stored = {
+          status: status("alpha"),
+          receivedAt: "2026-10-01T12:00:01Z",
+        };
+        await store.putStatus(stored);
+
+        await expect(store.getStatus("alpha")).resolves.toEqual(stored);
+      } finally {
+        await dispose();
+      }
+    });
+
+    it("replaces a status stored under the same project", async () => {
+      const { store, dispose } = createHarness();
+      try {
+        await store.putStatus({
+          status: status("alpha", { generatedAt: "2026-10-01T12:00:00Z" }),
+          receivedAt: "2026-10-01T12:00:01Z",
+        });
+        const later = {
+          status: status("alpha", {
+            generatedAt: "2026-10-01T13:00:00Z",
+            prs: { skipped: 7 },
+          }),
+          receivedAt: "2026-10-01T13:00:01Z",
+        };
+        await store.putStatus(later);
+
+        await expect(store.getStatus("alpha")).resolves.toEqual(later);
+      } finally {
+        await dispose();
+      }
+    });
+
+    it("returns undefined for a project that has pushed no status", async () => {
+      const { store, dispose } = createHarness();
+      try {
+        await expect(store.getStatus("alpha")).resolves.toBeUndefined();
+        await expect(store.getStatus("absent")).resolves.toBeUndefined();
+
+        await store.putStatus({
+          status: status("alpha"),
+          receivedAt: "2026-10-01T12:00:01Z",
+        });
+        await expect(store.getStatus("beta")).resolves.toBeUndefined();
+      } finally {
+        await dispose();
+      }
+    });
+
+    it("keeps a status beside a wave whose id is status, in either order", async () => {
+      // `status` is a wave id the contract accepts, so a store that filed the
+      // document under `snapshots/<project>/status.json` would have one wave
+      // overwrite the other. Whichever arrives first, the second must find its
+      // own place.
+      for (const order of ["status first", "wave first"] as const) {
+        const { store, dispose } = createHarness();
+        try {
+          const statusWrite = () =>
+            store.putStatus({
+              status: status("alpha"),
+              receivedAt: "2026-10-01T12:00:01Z",
+            });
+          const waveWrite = () => store.putSnapshot(snapshot("status"));
+          if (order === "status first") {
+            await statusWrite();
+            await waveWrite();
+          } else {
+            await waveWrite();
+            await statusWrite();
+          }
+
+          await expect(store.getStatus("alpha")).resolves.toEqual({
+            status: status("alpha"),
+            receivedAt: "2026-10-01T12:00:01Z",
+          });
+          await expect(store.listSnapshots("alpha")).resolves.toEqual([
+            snapshot("status"),
+          ]);
+        } finally {
+          await dispose();
+        }
       }
     });
   });

@@ -29,6 +29,7 @@ export { createReadModel } from "./application/read-model.js";
 export type {
   ProjectSummary,
   ReadModel,
+  StatusView,
   WaveSummary,
   WaveView,
 } from "./application/read-model.js";
@@ -37,6 +38,7 @@ export type {
   CreateOutcome,
   SnapshotHead,
   StorePort,
+  StoredStatus,
 } from "./application/ports/store.js";
 export { createWriteModel, ENROLL_CEILING } from "./application/write-model.js";
 export type { Registration, WriteModel } from "./application/write-model.js";

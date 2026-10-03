@@ -1,4 +1,7 @@
-import type { StoredSnapshot } from "@hexagen-monaco/waves-contract";
+import type {
+  ProjectStatus,
+  StoredSnapshot,
+} from "@hexagen-monaco/waves-contract";
 
 /**
  * The one field of a stored snapshot a listing needs. Keeping it apart from
@@ -10,6 +13,21 @@ export interface SnapshotHead {
   readonly receivedAt: string;
   readonly intervalSeconds: number | null;
   readonly lanes: number;
+}
+
+/**
+ * A project's own status document with the moment this service received it —
+ * the second stored thing beside a snapshot, and the same shape: what the
+ * pusher sent, and the server's own clock at the instant every staleness rule
+ * reads. `generatedAt` is stored and echoed and no rule reads it, exactly as for
+ * a wave.
+ *
+ * It lives here rather than in the contract because the contract owns the
+ * document and this service owns when it arrived.
+ */
+export interface StoredStatus {
+  readonly status: ProjectStatus;
+  readonly receivedAt: string;
 }
 
 export function snapshotHead(snapshot: StoredSnapshot): SnapshotHead {
@@ -45,4 +63,12 @@ export interface StorePort<TProject, TSnapshot> {
   listSnapshots(project: string): Promise<readonly TSnapshot[]>;
   listSnapshotHeads(project: string): Promise<readonly SnapshotHead[]>;
   deleteSnapshot(project: string, wave: string): Promise<void>;
+  /**
+   * The project's status document, or undefined when it has pushed none. The
+   * status is a whole project rather than a wave, so it takes a project and no
+   * wave: there is one of them, and its own directory beside `snapshots/` is
+   * what keeps a wave whose id is `status` from colliding with it.
+   */
+  putStatus(stored: StoredStatus): Promise<void>;
+  getStatus(project: string): Promise<StoredStatus | undefined>;
 }

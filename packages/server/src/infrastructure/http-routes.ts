@@ -16,6 +16,7 @@ export type Route =
   | { readonly kind: "project"; readonly project: string }
   | { readonly kind: "waves"; readonly project: string }
   | { readonly kind: "lanes"; readonly project: string }
+  | { readonly kind: "status"; readonly project: string }
   | { readonly kind: "wave"; readonly project: string; readonly wave: string }
   | { readonly kind: "index" }
   | { readonly kind: "file"; readonly file: StaticFile }
@@ -23,8 +24,9 @@ export type Route =
 
 /**
  * Which methods answer each path, and therefore what a 405 on it announces.
- * The two write routes on a wave and the project collection and the single
- * project are the only ones a write is allowed on; everything else is a read.
+ * The three project writes — a push, a status, a wave delete — the project
+ * collection and the single project are the only ones a write is allowed on;
+ * everything else is a read.
  */
 const ALLOWED: Readonly<Record<Route["kind"], string>> = {
   health: "GET, HEAD",
@@ -34,6 +36,7 @@ const ALLOWED: Readonly<Record<Route["kind"], string>> = {
   project: "DELETE",
   waves: "GET, HEAD",
   lanes: "GET, HEAD",
+  status: "GET, HEAD, PUT",
   wave: "GET, HEAD, PUT, DELETE",
   index: "GET, HEAD",
   file: "GET, HEAD",
@@ -42,6 +45,7 @@ const ALLOWED: Readonly<Record<Route["kind"], string>> = {
 
 export type WriteRoute =
   | { readonly kind: "push"; readonly project: string; readonly wave: string }
+  | { readonly kind: "putStatus"; readonly project: string }
   | { readonly kind: "drop"; readonly project: string; readonly wave: string }
   | { readonly kind: "register" }
   | { readonly kind: "removeProject"; readonly project: string };
@@ -65,8 +69,9 @@ export function isAdminWrite(
 /**
  * The write a method performs on a path, or undefined when the method is not a
  * write that path accepts: a 405 is then the answer, carrying that path's own
- * `Allow`. Registering and removing a project are admin writes; pushing and
- * removing a wave are project writes, answered with that project's own token.
+ * `Allow`. Registering and removing a project are admin writes; pushing a wave,
+ * writing a project's status and removing a wave are project writes, answered
+ * with that project's own token.
  */
 export function writeRouteOf(
   matched: Route,
@@ -77,6 +82,9 @@ export function writeRouteOf(
   }
   if (method === "DELETE" && matched.kind === "project") {
     return { kind: "removeProject", project: matched.project };
+  }
+  if (method === "PUT" && matched.kind === "status") {
+    return { kind: "putStatus", project: matched.project };
   }
   if (method === "PUT" && matched.kind === "wave") {
     return { kind: "push", project: matched.project, wave: matched.wave };
@@ -138,6 +146,9 @@ export function route(pathname: string, root: string): Route {
       }
       if (parts.length === 6 && parts[5] === "lanes") {
         return { kind: "lanes", project };
+      }
+      if (parts.length === 6 && parts[5] === "status") {
+        return { kind: "status", project };
       }
       if (
         parts.length === 7 &&

@@ -1,12 +1,13 @@
 import {
   isProjectId,
   type Project,
+  type ProjectStatus,
   type StoredSnapshot,
   type ValidationIssue,
   validateProject,
 } from "@hexagen-monaco/waves-contract";
 
-import type { StorePort } from "./ports/store.js";
+import type { StorePort, StoredStatus } from "./ports/store.js";
 import type { Now } from "./read-model.js";
 
 /**
@@ -135,6 +136,24 @@ export function createWriteModel(deps: WriteModelDeps) {
       };
       await store.putSnapshot(snapshot);
       return snapshot;
+    },
+
+    /**
+     * Stores a project's status document with the moment the service received
+     * it, beside `putWave` and by the same rule: the clock that stamps it is the
+     * server's, and it is the instant every staleness rule of a status reads —
+     * never the pusher's own `generatedAt`.
+     *
+     * The document is already the one the contract accepted, so there is nothing
+     * to decide here that `putWave` does not decide too.
+     */
+    async putStatus(
+      project: string,
+      status: ProjectStatus,
+    ): Promise<StoredStatus> {
+      const stored: StoredStatus = { status, receivedAt: timestampOf(now()) };
+      await store.putStatus(stored);
+      return stored;
     },
 
     /** False when there was no such wave, so the caller can answer 404. */

@@ -23,11 +23,19 @@ const PROJECT_TOKEN = "project-token-0123456789abcdefghijklmnopq";
 const VIEWER_TOKEN = "viewer-token-0123456789abcdefghijklmnop";
 const OTHER_TOKEN = "other-token-0123456789abcdefghijklmnopqr";
 const UNKNOWN_TOKEN = "unknown-token-0123456789abcdefghijklmno";
+const ADMIN_TOKEN = "admin-token-0123456789abcdefghijklmnopqr";
+const ENROLL_TOKEN = "enroll-token-0123456789abcdefghijklmnopq";
 const WAVE = "wv1";
 const RECEIVED_AT = "2026-10-01T12:01:00.000Z";
 const PUT_CAP = 1_048_576;
 
-for (const secret of [PROJECT_TOKEN, OTHER_TOKEN, UNKNOWN_TOKEN]) {
+for (const secret of [
+  PROJECT_TOKEN,
+  OTHER_TOKEN,
+  UNKNOWN_TOKEN,
+  ADMIN_TOKEN,
+  ENROLL_TOKEN,
+]) {
   watchSecret(secret);
 }
 
@@ -56,6 +64,43 @@ function envelope(wave = WAVE, project = "alpha"): Record<string, unknown> {
 
 function wavePath(wave = WAVE, project = "alpha"): string {
   return `/api/v1/projects/${project}/waves/${wave}`;
+}
+
+/** The status route, which names one project and no wave. */
+function statusPath(project = "alpha"): string {
+  return `/api/v1/projects/${project}/status`;
+}
+
+/** A status document the contract accepts, with every optional key carried. */
+function statusDocument(project = "alpha"): Record<string, unknown> {
+  return {
+    schema: "waves-status/v1",
+    project,
+    generatedAt: "2026-10-01T12:00:00Z",
+    intervalSeconds: 10,
+    prs: { skipped: 2 },
+    backlog: {
+      state: "recorded",
+      at: "2026-10-01T11:55:00Z",
+      scope: { kind: "full", plans: ["plan:verify"] },
+      git: { branch: "main", head: "0a1b2c3d4e5f60718293a4b5c6d7e8f9" },
+      premises: [{ lane: "C1", plan: "plan:verify", status: "holds" }],
+    },
+  };
+}
+
+/** `PUT` to the status path with the same framing a push uses. */
+function putStatus(
+  started: Started,
+  body: unknown,
+  options: PutOptions = {},
+): Promise<Response> {
+  return put(started, body, { ...options, path: options.path ?? statusPath() });
+}
+
+/** The bytes after the headers of a raw answer, as one string. */
+function bodyOf(raw: string): string {
+  return raw.split("\r\n\r\n").slice(1).join("\r\n\r\n");
 }
 
 /** A clock the test moves by hand, since the per-project limit is in seconds. */
@@ -355,6 +400,288 @@ describe("pushing a wave", () => {
     ]);
 
     expect(finalStatus(raw)).toBe("HTTP/1.1 400");
+  });
+});
+
+describe("writing a project's status", () => {
+  it("stores a valid document and serves it back through the read API", async () => {
+    const store = await seeded();
+    const started = await startHarness({ store });
+
+    const response = await putStatus(started, statusDocument());
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(await response.json()).toEqual({ receivedAt: RECEIVED_AT });
+    const read = await fetch(`${started.origin}${statusPath()}`);
+    expect(read.status).toBe(200);
+    expect(await read.json()).toEqual({
+      status: statusDocument(),
+      receivedAt: RECEIVED_AT,
+      stale: false,
+      staleAfterMs: 30_000,
+    });
+  });
+
+  it("replaces the document a project pushed before", async () => {
+    const store = await seeded();
+    const time = clock();
+    const started = await startHarness({ store, now: time.now });
+    expect((await putStatus(started, statusDocument())).status).toBe(200);
+    time.pass();
+
+    const response = await putStatus(started, {
+      ...statusDocument(),
+      prs: { skipped: 9 },
+    });
+
+    expect(response.status).toBe(200);
+    await expect(store.getStatus("alpha")).resolves.toEqual({
+      status: { ...statusDocument(), prs: { skipped: 9 } },
+      receivedAt: new Date(NOW_MS + 1_000).toISOString(),
+    });
+  });
+
+  it("422s a document the contract refuses, with its pointers", async () => {
+    const store = await seeded();
+    const started = await startHarness({ store });
+
+    const response = await putStatus(started, {
+      ...statusDocument(),
+      backlog: { state: "invented" },
+    });
+
+    expect(response.status).toBe(422);
+    expect(await response.json()).toEqual({
+      errors: [
+        {
+          path: "/backlog/state",
+          message: "expected one of recorded, absent, unknown",
+        },
+      ],
+    });
+    await expect(store.getStatus("alpha")).resolves.toBeUndefined();
+  });
+
+  it("422s a document for another project than the path names", async () => {
+    const store = await seeded();
+    const started = await startHarness({ store });
+
+    const response = await putStatus(started, statusDocument("beta"));
+
+    expect(response.status).toBe(422);
+    expect(await response.json()).toEqual({
+      errors: [
+        { path: "/project", message: "expected the project the path names" },
+      ],
+    });
+    await expect(store.getStatus("alpha")).resolves.toBeUndefined();
+  });
+
+  it("413s a declared length over the push cap", async () => {
+    const store = await seeded();
+    const started = await startHarness({ store });
+    const before = await store.getStatus("alpha");
+
+    const raw = await started.raw(`PUT ${statusPath()} HTTP/1.1`, [
+      "Content-Type: application/json",
+      `Authorization: Bearer ${PROJECT_TOKEN}`,
+      `Content-Length: ${PUT_CAP + 1}`,
+    ]);
+
+    expect(finalStatus(raw)).toBe("HTTP/1.1 413");
+    expect(raw).toContain("Connection: close");
+    await expect(store.getStatus("alpha")).resolves.toBe(before);
+  });
+
+  it("413s a chunked body that passes the cap, and stops reading it", async () => {
+    const store = await seeded();
+    const started = await startHarness({ store });
+
+    // The cap the read stops at, not the one the head announced: this one has no
+    // announced length at all, so nothing but the read can refuse it.
+    const result = await streamChunked(
+      started,
+      "PUT",
+      statusPath(),
+      [
+        "Content-Type: application/json",
+        `Authorization: Bearer ${PROJECT_TOKEN}`,
+        "Transfer-Encoding: chunked",
+      ],
+      PUT_CAP + 65_536,
+      65_536,
+    );
+
+    expect(result.status).toBe(413);
+    await expect(store.getStatus("alpha")).resolves.toBeUndefined();
+  });
+
+  it("400s a status body that is not utf-8, and one that is not json", async () => {
+    const store = await seeded();
+    const time = clock();
+    const started = await startHarness({ store, now: time.now });
+    const headers = [
+      "Content-Type: application/json",
+      `Authorization: Bearer ${PROJECT_TOKEN}`,
+    ];
+
+    const notUtf8 = await started.raw(
+      `PUT ${statusPath()} HTTP/1.1`,
+      [...headers, "Content-Length: 3"],
+      Buffer.from([0xc3, 0x28, 0xff]),
+    );
+    time.pass();
+    const notJson = await started.raw(
+      `PUT ${statusPath()} HTTP/1.1`,
+      [...headers, "Content-Length: 7"],
+      "{ not ]",
+    );
+
+    expect(finalStatus(notUtf8)).toBe("HTTP/1.1 400");
+    expect(bodyOf(notUtf8)).toBe('{"error":"not utf-8"}');
+    expect(finalStatus(notJson)).toBe("HTTP/1.1 400");
+    expect(bodyOf(notJson)).toBe('{"error":"bad json"}');
+  });
+
+  it.each(["POST", "DELETE"])(
+    "405s a %s on the status path, with its own Allow",
+    async (method) => {
+      const started = await startHarness({ store: await seeded() });
+
+      const response = await fetch(`${started.origin}${statusPath()}`, {
+        method,
+        headers: BEARER(PROJECT_TOKEN),
+      });
+
+      expect(response.status).toBe(405);
+      expect(response.headers.get("allow")).toBe("GET, HEAD, PUT");
+      expect(await response.json()).toEqual({ error: "method not allowed" });
+    },
+  );
+
+  it.each([
+    ["no token at all", {}],
+    ["a token of the wrong shape", { authorization: "Bearer short" }],
+    ["an unknown token", BEARER(UNKNOWN_TOKEN)],
+    ["the admin token", BEARER(ADMIN_TOKEN)],
+    ["the enrollment token", BEARER(ENROLL_TOKEN)],
+  ])("401s %s on the status path, and charges it", async (label, headers) => {
+    const store = await seeded();
+    const started = await startHarness({
+      store,
+      adminToken: ADMIN_TOKEN,
+      enrollToken: ENROLL_TOKEN,
+    });
+    const send = (extra: Record<string, string>): Promise<Response> =>
+      fetch(`${started.origin}${statusPath()}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json", ...extra },
+      });
+
+    const response = await send(headers);
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get("www-authenticate")).toBe(
+      'Bearer realm="waves"',
+    );
+    expect(response.headers.get("connection")).toBe("close");
+    await expect(store.getStatus("alpha")).resolves.toBeUndefined();
+    // Charged to the address's failure window like every other refusal of the
+    // authentication step: ten of them and the next request is not authenticated
+    // at all, so the refusals are what stops this.
+    for (let at = 0; at < 9; at += 1) {
+      expect((await send(BEARER(UNKNOWN_TOKEN))).status).toBe(401);
+    }
+    expect((await putStatus(started, statusDocument())).status).toBe(429);
+    expect(logLeaks()).toEqual([]);
+  });
+
+  it("403s another project's token, and charges it too", async () => {
+    const store = await seeded();
+    await store.putProject({
+      id: "beta",
+      name: "Beta",
+      tokenSha256: digestOf(OTHER_TOKEN),
+      registeredAt: "2026-10-01T12:00:00Z",
+    });
+    const started = await startHarness({ store });
+    const send = (): Promise<Response> =>
+      fetch(`${started.origin}${statusPath()}`, {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json",
+          ...BEARER(OTHER_TOKEN),
+        },
+      });
+
+    const response = await send();
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: "wrong project" });
+    await expect(store.getStatus("alpha")).resolves.toBeUndefined();
+    for (let at = 0; at < 9; at += 1) {
+      expect((await send()).status).toBe(403);
+    }
+    expect((await putStatus(started, statusDocument())).status).toBe(429);
+  });
+
+  it("403s a status for a project that is not registered", async () => {
+    // The same answer a push gives: the token is a project's, and it is not the
+    // one this path names, so it is "wrong project" rather than "unauthorized" —
+    // which is what every stored digest being compared says, and what a token
+    // that matched nothing at all would not be.
+    const started = await startHarness({ store: await seeded() });
+
+    const response = await putStatus(started, statusDocument("absent"), {
+      path: statusPath("absent"),
+    });
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: "wrong project" });
+  });
+
+  it("shares the project's allowance with its pushes", async () => {
+    const store = await seeded();
+    const time = clock();
+    const started = await startHarness({ store, now: time.now });
+    expect((await putStatus(started, statusDocument())).status).toBe(200);
+
+    const push = await put(started, envelope());
+
+    expect(push.status).toBe(429);
+    expect(push.headers.get("retry-after")).toBe("1");
+    time.pass();
+    expect((await put(started, envelope())).status).toBe(200);
+  });
+
+  it("leaves the admin and enrollment allowances alone", async () => {
+    // The allowance a status draws from is its own project's, so a push and an
+    // admin write a second later are both still allowed: a status cannot spend
+    // either service token's cleanup at a 429.
+    const store = await seeded();
+    const time = clock();
+    const started = await startHarness({
+      store,
+      now: time.now,
+      adminToken: ADMIN_TOKEN,
+      enrollToken: ENROLL_TOKEN,
+    });
+    expect((await putStatus(started, statusDocument())).status).toBe(200);
+
+    const registered = await fetch(`${started.origin}/api/v1/projects`, {
+      method: "POST",
+      headers: {
+        ...BEARER(ADMIN_TOKEN),
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ id: "beta", name: "Beta" }),
+    });
+    time.pass();
+    const pushed = await put(started, envelope());
+
+    expect(registered.status).toBe(201);
+    expect(pushed.status).toBe(200);
   });
 });
 
