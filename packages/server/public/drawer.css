@@ -1,12 +1,16 @@
 /*
- * The lane drawer: the dialog the project page opens over itself. Colours come
- * only from tokens.css, as everywhere else on the page.
+ * The lane drawer: the dialog the project page opens over itself, as a sheet down
+ * the reader's right edge. Every colour is a name from `tokens.css`, so both
+ * schemes read the same names and neither needs a colour literal here.
  *
- * The padding is on `.drawer` and never on the dialog, and the dialog does not
- * scroll: a click whose target is the dialog itself is a click on the backdrop,
- * and a scrollbar on the dialog would make a click on that scrollbar a click on
- * the backdrop too. The drawer scrolls instead, so a long log tail never turns
- * the frame into something a reader cannot dismiss.
+ * The sheet itself is `--bg-glass` under a blur, because nothing is drawn on the
+ * glass but the frame: the body inside it sits on an opaque `--card`, so every
+ * word a reader reads is on a colour the contrast test holds. The padding is on
+ * `.drawer` and never on the dialog, and the dialog does not scroll: a click whose
+ * target is the dialog itself is a click on the backdrop, and a scrollbar on the
+ * dialog would make a click on that scrollbar a click on the backdrop too. The
+ * drawer scrolls instead, so a long log tail never turns the frame into something
+ * a reader cannot dismiss.
  *
  * The Close control's own look is not here: it is shared with the project's
  * "Copy digest" in `app.css`, so a control that has to look like a control on
@@ -14,27 +18,62 @@
  */
 
 dialog.lane-drawer {
-  background: var(--bg-raise);
+  backdrop-filter: blur(14px);
+  background: var(--bg-glass);
   border: 1px solid var(--line);
-  border-radius: 0.6rem;
+  border-radius: var(--radius-card);
   color: var(--text);
+  /* Pinned to the right edge and the full height of the viewport, with `margin:
+     0` so the UA's centring does not pull it back to the middle. */
+  height: 100dvh;
+  inset: 0 0 0 auto;
+  margin: 0;
+  max-height: none;
   overflow: hidden;
   padding: 0;
-  width: min(46rem, calc(100vw - 2rem));
+  width: min(32rem, calc(100vw - 2rem));
 }
 
+/* The dim behind the sheet: the page's own ground, six parts in ten. */
 dialog.lane-drawer::backdrop {
-  background: rgb(0 0 0 / 55%);
+  background: color-mix(in srgb, var(--bg) 60%, transparent);
+}
+
+/*
+ * The entrance, on the dialog and on no other element: `app.js` creates the dialog
+ * once and keeps it, so a ten-second refresh replaces the body's children and the
+ * `[open]` attribute stays put. An animation keyed to the attribute therefore runs
+ * once per `showModal()` and never on a refresh, and nothing inside the drawer
+ * moves at all.
+ *
+ * `tokens.css` stops every animation under `prefers-reduced-motion: reduce`, which
+ * is how the shell's own keyframes are handled too.
+ */
+@keyframes waves-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(1.5rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+dialog.lane-drawer[open] {
+  animation: waves-slide-in 220ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 
 .drawer {
+  background: var(--card-sheen), var(--card);
   box-sizing: border-box;
-  /* The dialog's own ceiling is the viewport less 2em and 6px; `dvh` follows a
-     phone's collapsing address bar. */
-  max-height: calc(100dvh - 2rem - 6px);
+  /* The dialog's own height is the viewport; `dvh` follows a phone's collapsing
+     address bar. */
+  max-height: 100dvh;
   overflow: auto;
   overflow-wrap: anywhere;
-  padding: 1rem 1.25rem;
+  padding: 1rem 1.15rem 1.5rem;
 }
 
 .drawer header {
@@ -44,8 +83,15 @@ dialog.lane-drawer::backdrop {
 }
 
 .drawer header h2 {
-  font-size: 1.1rem;
+  font-family: var(--display);
+  font-size: 1.05rem;
+  letter-spacing: 0.01em;
   margin: 0;
+}
+
+.drawer header code {
+  color: var(--muted);
+  font-size: 0.8rem;
 }
 
 .drawer header .close {
@@ -54,17 +100,43 @@ dialog.lane-drawer::backdrop {
 
 .drawer section {
   margin-top: 1rem;
+  padding-top: 0.9rem;
+}
+
+/* A hairline between two sections and none above the first: the heading and the
+   seat line already hold the first one off the top of the sheet. */
+.drawer section + section {
+  border-top: 1px solid var(--line-soft);
 }
 
 .drawer h3 {
-  font-size: 0.95rem;
-  margin: 0 0 0.4rem;
+  color: var(--faint);
+  font-family: var(--sans);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  margin: 0 0 0.45rem;
+  text-transform: uppercase;
+}
+
+/*
+ * The seat, in the face ids are read in. Scoped to the dialog: the project page
+ * draws a seat of its own in the lane table, in the text face and a size that
+ * reads as a footnote, and a rule written here without the dialog in it would
+ * reach that one too.
+ */
+.lane-drawer .seat {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.85rem;
 }
 
 .drawer pre {
   background: var(--bg-sink);
   border: 1px solid var(--line);
-  border-radius: 0.4rem;
+  border-radius: var(--radius);
+  font-family: var(--mono);
+  font-size: 0.78rem;
   margin: 0;
   max-height: 22rem;
   overflow-x: auto;
@@ -72,60 +144,109 @@ dialog.lane-drawer::backdrop {
   white-space: pre-wrap;
 }
 
+/* ------------------------------------------------------------ what it shows */
+
+/*
+ * The comparison table on a fixed grid: every row is the same three columns
+ * whatever it carries, so a long disagreement or a long gate line wraps inside its
+ * own column instead of pushing the two halves out from under each other.
+ */
 .drawer table {
   border-collapse: collapse;
+  table-layout: fixed;
   width: 100%;
 }
 
 .drawer th,
 .drawer td {
-  border-bottom: 1px solid var(--line);
-  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid var(--line-soft);
+  padding: 0.35rem 0.45rem;
   text-align: left;
   vertical-align: top;
 }
 
 .drawer thead th {
-  color: var(--muted);
-  font-size: 0.75rem;
-  letter-spacing: 0.06em;
+  color: var(--faint);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
-.drawer tbody th {
-  font-weight: inherit;
-  white-space: nowrap;
+/*
+ * The two halves of the comparison: the row's own name on the left, then the
+ * reported and the derived side by side in two columns of the rest. The split is
+ * declared on the header row because a fixed table reads its columns off its first
+ * row, and both halves are left in the text colour — which of two facts disagree
+ * is the lane's to say, and the sheet says it in the list of disagreements below,
+ * in the legend's rose.
+ */
+.drawer thead th:first-child {
+  width: 32%;
 }
 
+.drawer tbody th {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  font-weight: inherit;
+  /* No `nowrap` on the label: on a phone the sheet is a third of a screen wide,
+     and a label that cannot wrap paints itself over the reported column beside it.
+     On a wide sheet the column has room for the longest one and nothing wraps. */
+}
+
+.drawer tbody td {
+  font-size: 0.85rem;
+}
+
+/* The terms and their values, in two columns: the key is fixed and the value takes
+   the rest. A key is a pusher's text with no length of its own, so a column sized
+   to it could push every value off the sheet. */
 .drawer dl {
   display: grid;
   gap: 0.2rem 0.75rem;
-  /* A detail key is a pusher's text with no length of its own: a column sized
-     to it could push every value off the drawer. */
   grid-template-columns: minmax(0, 12rem) 1fr;
   margin: 0;
 }
 
 .drawer dt {
-  color: var(--muted);
+  color: var(--faint);
   font-size: 0.85rem;
+  overflow-wrap: anywhere;
 }
 
 .drawer dd {
   margin: 0;
 }
 
-.drawer ul {
+/*
+ * The lane's own list of what the two halves of a push did not agree on, in the
+ * rose the legend gives a disagreement. The facts above are neutral: the list is
+ * where the disagreement is already said, so colouring these is saying it twice in
+ * the place the reader is looking.
+ */
+.lane-drawer .disagreements {
+  list-style: none;
   margin: 0;
-  padding-left: 1.1rem;
+  padding: 0;
 }
 
-.drawer li {
-  margin: 0.15rem 0;
+.lane-drawer .disagreements li {
+  border-top: 1px solid var(--line-soft);
+  color: var(--rose);
+  margin: 0;
+  padding: 0.35rem 0;
 }
 
-/* The page's own `.panel .panel-empty` and `.project .badge` rules are scoped to
-   the page and do not reach a dialog that sits outside it, so the drawer's two
+.lane-drawer .disagreements li:first-child {
+  border-top: none;
+}
+
+.drawer p {
+  margin: 0.4rem 0;
+}
+
+/* The page's own `.panel .panel-empty` and `.view.project .badge` rules are scoped
+   to the page and do not reach a dialog that sits outside it, so the drawer's two
    are declared here with the same declarations. */
 .drawer .panel-empty {
   color: var(--muted);
@@ -134,17 +255,24 @@ dialog.lane-drawer::backdrop {
 
 .drawer .badge {
   border: 1px solid currentcolor;
-  border-radius: 0.75rem;
-  font-size: 0.75rem;
-  padding: 0 0.45rem;
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  padding: 0.05rem 0.5rem;
+  /* As on the project page: `app.css` puts every badge in capitals and this is
+     where that is called off, so a reason is shown in the case it was written. */
   text-transform: none;
   white-space: nowrap;
 }
 
 .drawer .badge.reason {
-  color: var(--red);
+  color: var(--rose);
 }
 
 .drawer .badge.stale {
   color: var(--amber);
+}
+
+.drawer a {
+  color: var(--cyan);
 }

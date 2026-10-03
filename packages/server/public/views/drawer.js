@@ -120,7 +120,7 @@ function seatLine(lane, stale) {
   if (stale) {
     children.push(badge("stale", "stale"));
   }
-  return el("p", { attrs: { class: "meta" }, children });
+  return el("p", { attrs: { class: "meta seat" }, children });
 }
 
 function reasonsSection(reasons) {
@@ -130,6 +130,11 @@ function reasonsSection(reasons) {
   );
 }
 
+/**
+ * The lane's own list of what the two halves of a push did not agree on. The
+ * class is the page's own name for the list, and `drawer.css` draws it under
+ * `.lane-drawer` — the project page has a list of its own by the same name.
+ */
 function disagreementsSection(lane) {
   if (lane.disagreements.length === 0) {
     return section(
@@ -140,6 +145,7 @@ function disagreementsSection(lane) {
   return section(
     "Disagreements",
     el("ul", {
+      attrs: { class: "disagreements" },
       children: lane.disagreements.map((entry) => el("li", { text: entry })),
     }),
   );

@@ -1,33 +1,80 @@
 /*
- * The project page's own rules: the wave strip, and the lane table it sits
- * above. Colours come only from tokens.css, so both schemes read the same
- * names, and the table takes the whole width the frame has rather than the
- * reading measure the other views use — it is a table, and a table a reader
- * has to scroll sideways is a table they cannot read.
+ * The project page's own rules, in the midnight look: the heading and the lede,
+ * the wave strip as a row of segments, the counters, the panels, the lane table
+ * and the filters over it.
+ *
+ * Every colour and every measure is a name from `tokens.css`, and every rule here
+ * hangs off a class this page alone draws — `.view.project`, or the wave strip it
+ * draws — so nothing in this file reaches the fleet page or the drawer, which
+ * have stylesheets of their own. There is no colour literal in this file except
+ * `transparent`: a wash is `color-mix(in srgb, var(--token) N%, transparent)`,
+ * which is how one palette reads in both schemes. The state colours are the
+ * legend's own (`shell.css`), so a wave that reads `running` here reads `running`
+ * in the footbar: running cyan, done emerald, settled slate, failed rose, and
+ * stale amber.
+ *
+ * Text never sits on a wash: the panels and the table are opaque `--card` with
+ * the sheen drawn over the top of it, exactly as `.card` in `shell.css` is, so
+ * the pairs `contrast.test.ts` holds are the pairs a reader actually reads.
  */
 
-.view.project {
-  max-width: none;
+/* ---------------------------------------------------------------- the page */
+
+.view.project h1 {
+  font-family: var(--display);
+  font-size: 1.6rem;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  margin: 0 0 0.15rem;
 }
 
+.view.project h1 code {
+  font-size: 0.85em;
+}
+
+.view.project .lede {
+  color: var(--muted);
+  margin: 0 0 0.25rem;
+  max-width: 68ch;
+}
+
+.view.project .repo {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0 0 0.5rem;
+}
+
+/* ---------------------------------------------------------------- the strip */
+
+/*
+ * The waves as one row of segments. The pill is the whole `li` — the link, the
+ * count and the stamp are inside it — and the state colour is a three-pixel edge
+ * on its left, which is beside the words rather than instead of them: the chip
+ * still says "stale" and "past retention" in the badges it has always carried.
+ *
+ * The classes on the chip are the ones `views/project.js` picks out of its own
+ * table of four literals, one per derived wave state, plus `wave-stale` when the
+ * head says the wave has gone past its own interval.
+ */
 .wave-strip ul {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 0.4rem;
   list-style: none;
-  margin: 0 0 0.5rem;
+  margin: 0 0 0.6rem;
   padding: 0;
 }
 
 .wave-strip li {
-  align-items: baseline;
-  background: var(--bg-sink);
+  align-items: center;
+  background: var(--card-sheen), var(--card);
   border: 1px solid var(--line);
-  border-radius: 0.4rem;
+  border-left: 3px solid var(--line-strong);
+  border-radius: 999px;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem 0.5rem;
-  padding: 0.35rem 0.6rem;
+  gap: 0.35rem 0.5rem;
+  padding: 0.25rem 0.7rem;
 }
 
 .wave-strip a {
@@ -37,117 +84,134 @@
   text-decoration: none;
 }
 
+.wave-strip a:hover {
+  color: var(--cyan);
+}
+
 /* The link after the list is a control, not a wave: it has to look like a link. */
 .wave-strip > a {
-  color: var(--blue);
+  color: var(--cyan);
   font-family: inherit;
+  font-size: 0.8rem;
   text-decoration: underline;
 }
 
+/*
+ * Where the reader already is: a cyan ring on the chip that holds the current
+ * wave, or the current scope. It is drawn from the attribute that says so rather
+ * than from a class the view adds for it, because `aria-current="page"` is what a
+ * screen reader reads out too.
+ */
+.wave-strip li:has(a[aria-current="page"]) {
+  box-shadow:
+    0 0 0 1px var(--cyan),
+    0 0 0 4px color-mix(in srgb, var(--cyan) 16%, transparent);
+}
+
 .wave-strip a[aria-current="page"] {
-  color: var(--amber);
+  color: var(--cyan);
 }
 
-.project .lanes {
-  border-collapse: collapse;
-  margin-top: 0.75rem;
-  width: 100%;
+/* One edge per derived state, in the legend's order. */
+.wave-strip li.wave-running {
+  border-left-color: var(--cyan);
 }
 
-.project .lanes th {
-  border-bottom: 1px solid var(--line);
+.wave-strip li.wave-done {
+  border-left-color: var(--emerald);
+}
+
+.wave-strip li.wave-settled {
+  border-left-color: var(--slate);
+}
+
+.wave-strip li.wave-failed {
+  border-left-color: var(--rose);
+}
+
+/*
+ * And amber last, because a wave that has stopped arriving has stopped saying
+ * what its lanes are doing — the numbers below it are the ones the banner warns
+ * about, whatever the lanes last reported.
+ */
+.wave-strip li.wave-stale {
+  border-left-color: var(--amber);
+}
+
+/* The state in a word, in the muted text colour: the edge carries the colour, and
+   the word stays readable on the card in both palettes (W33's muted pair). */
+.wave-strip .state-word {
   color: var(--muted);
-  font-size: 0.75rem;
-  letter-spacing: 0.06em;
-  padding: 0.4rem 0.5rem;
-  text-align: left;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
-.project .lanes td {
-  border-bottom: 1px solid var(--line);
-  padding: 0.45rem 0.5rem;
-  vertical-align: top;
+/* -------------------------------------------------------------- the counters */
+
+/*
+ * The six numbers as small glass cards. Their grid and their base look are the
+ * fleet page's (fleet.css), which this page must not reach into: everything here
+ * is scoped to the project view and is what these two draw here.
+ */
+.view.project .kpis {
+  gap: 0.6rem;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  margin: 0 0 0.85rem;
 }
 
-.project .lanes tr.current td {
-  background: var(--bg-raise);
-}
-
-.project .lanes td > * {
-  margin-right: 0.4rem;
-}
-
-.project .seat {
-  color: var(--muted);
-  display: block;
-  font-size: 0.8rem;
-  max-width: 28rem;
-  overflow-wrap: anywhere;
-}
-
-.project .in-wave {
-  color: var(--muted);
-  display: block;
-  font-size: 0.75rem;
-}
-
-.project .mismatch,
-.project .badge.reason {
-  color: var(--red);
-}
-
-.project .badge {
-  border: 1px solid currentcolor;
-  border-radius: 0.75rem;
-  font-size: 0.75rem;
-  padding: 0 0.45rem;
-  text-transform: none;
-  white-space: nowrap;
-}
-
-.project .disagreement {
-  overflow-wrap: anywhere;
-}
-
-.project .repo,
-.project .note-inline {
-  color: var(--muted);
-  font-size: 0.85rem;
-}
-
-.project .banner {
-  border: 1px solid var(--amber);
-  border-radius: 0.5rem;
-  color: var(--amber);
-  margin: 0.75rem 0;
-  padding: 0.6rem 0.8rem;
-}
-
-.project .kpis {
-  margin: 0.75rem 0;
-}
-
-.split {
-  display: grid;
-  gap: 1rem;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
-  margin: 0.75rem 0;
-}
-
-.panel {
-  background: var(--bg-raise);
+.view.project .kpi {
+  background: var(--card-sheen), var(--card);
   border: 1px solid var(--line);
-  border-radius: 0.5rem;
-  padding: 0.75rem 1rem;
+  border-radius: var(--radius-card);
+  padding: 0.5rem 0.7rem;
 }
 
-.panel h2 {
+.view.project .kpi dt {
+  color: var(--faint);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.view.project .kpi dd {
+  font-family: var(--mono);
+  font-size: 1.5rem;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.view.project .kpi.warn dd {
+  color: var(--amber);
+}
+
+/* ---------------------------------------------------------------- the panels */
+
+.view.project .split {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  margin: 0 0 0.85rem;
+}
+
+/* The glass card, as `.card` in shell.css draws it: opaque, a hairline, the
+   radius, and the sheen over the top of it rather than under the words. */
+.view.project .panel {
+  background: var(--card-sheen), var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 0.8rem 0.9rem;
+}
+
+.view.project .panel h2 {
+  font-family: var(--display);
   font-size: 0.95rem;
+  letter-spacing: 0.01em;
   margin: 0 0 0.5rem;
 }
 
-.panel ul {
+.view.project .panel ul {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -155,118 +219,35 @@
 
 /* Not `.empty`: that class carries the padding of a line of its own on the page,
    which inside a panel is a band of nothing between the heading and the list. */
-.panel .panel-empty {
+.view.project .panel .panel-empty {
   color: var(--muted);
   margin: 0;
 }
 
-.panel.disagreements li {
+/* One disagreement to a line, each under a hairline. The words are the ones the
+   lane reported, and they are the legend's rose beside them, never instead. */
+.view.project .panel.disagreements li {
   align-items: baseline;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--line-soft);
   display: flex;
   flex-wrap: wrap;
   gap: 0.25rem 0.6rem;
-  padding: 0.35rem 0;
+  padding: 0.4rem 0;
 }
 
-.panel.disagreements li:first-child {
+.view.project .panel.disagreements li:first-child {
   border-top: none;
 }
 
-/* The status panel, which is about the project rather than about any lane. Its
-   own rules sit together because the five premise badges and the premises table
-   are the only things here a pusher's words reach. */
-.panel.status {
-  margin-top: 0.75rem;
-}
-
-.panel.status h3 {
-  color: var(--muted);
-  font-size: 0.8rem;
-  letter-spacing: 0.06em;
-  margin: 0.5rem 0 0.25rem;
-  text-transform: uppercase;
-}
-
-.panel.status .backlog p {
-  margin: 0.25rem 0;
+.view.project .disagreement,
+.view.project .mismatch {
+  color: var(--rose);
   overflow-wrap: anywhere;
 }
 
-.panel.status .plans {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  list-style: none;
-  margin: 0.35rem 0;
-  padding: 0;
-}
-
-.panel.status .plans li {
-  background: var(--bg-sink);
-  border: 1px solid var(--line);
-  border-radius: 0.4rem;
-  font-family: var(--mono);
-  font-size: 0.8rem;
-  overflow-wrap: anywhere;
-  padding: 0.15rem 0.5rem;
-}
-
-.panel.status .premises {
-  border-collapse: collapse;
-  margin-top: 0.5rem;
-  width: 100%;
-}
-
-.panel.status .premises th {
-  border-bottom: 1px solid var(--line);
-  color: var(--muted);
-  font-size: 0.75rem;
-  letter-spacing: 0.06em;
-  padding: 0.3rem 0.5rem;
-  text-align: left;
-  text-transform: uppercase;
-}
-
-.panel.status .premises td {
-  border-bottom: 1px solid var(--line);
-  overflow-wrap: anywhere;
-  padding: 0.35rem 0.5rem;
-  vertical-align: top;
-}
-
-.panel.status .premises td > * {
-  margin-right: 0.4rem;
-}
-
-/* The four premise states, and the one a value outside them is drawn as. Each is
-   a colour and never the only sign: the cell carries the state in words too. */
-.panel.status .badge {
-  border: 1px solid currentcolor;
-  border-radius: 0.75rem;
-  font-size: 0.75rem;
-  padding: 0 0.45rem;
-  white-space: nowrap;
-}
-
-.panel.status .premise-holds {
-  color: var(--teal);
-}
-
-.panel.status .premise-stale,
-.panel.status .premise-timed-out {
-  color: var(--amber);
-}
-
-.panel.status .premise-error {
-  color: var(--red);
-}
-
-.panel.status .premise-unknown {
-  color: var(--muted);
-}
-
-.panel.seats li {
+/* The seats: a name in mono, a meter of the scope and the number of lanes under
+   it, all three in a grid so a long seat wraps rather than widening the panel. */
+.view.project .panel.seats li {
   align-items: center;
   display: grid;
   gap: 0.5rem;
@@ -274,129 +255,453 @@
   padding: 0.2rem 0;
 }
 
-.panel.seats .name {
+.view.project .panel.seats .name {
   font-family: var(--mono);
   font-size: 0.8rem;
   overflow-wrap: anywhere;
 }
 
-.panel.seats meter {
-  height: 0.5rem;
+.view.project .panel.seats meter {
+  accent-color: var(--cyan);
+  height: 0.45rem;
   width: 100%;
 }
 
-.panel.seats .count,
-.stages .count {
+.view.project .panel.seats .count,
+.view.project .stages .count {
+  color: var(--muted);
   font-family: var(--mono);
+  font-size: 0.8rem;
   text-align: right;
 }
 
-.stages {
+/* ------------------------------------------------------- the status panel */
+
+/*
+ * The panel the project pushes about itself. Its rules sit together because the
+ * five premise badges and the premises table are the only things here a pusher's
+ * words reach, and because both are read as one document: the pill, the count of
+ * the rows the listing could not read and the table of premises under it.
+ */
+.view.project .panel.status {
+  margin-bottom: 0.85rem;
+}
+
+.view.project .panel.status h3 {
+  color: var(--faint);
+  font-family: var(--sans);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  margin: 0.7rem 0 0.3rem;
+  text-transform: uppercase;
+}
+
+.view.project .panel.status > p {
+  color: var(--muted);
+  margin: 0.15rem 0;
+}
+
+.view.project .panel.status .prs {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+/* Amber only where rows went unread: the view adds `warn` only then. */
+.view.project .panel.status .prs.warn {
+  color: var(--amber);
+}
+
+/* The document's own answer about itself, as a pill of its own. */
+.view.project .panel.status .pill {
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  padding: 0.05rem 0.5rem;
+  text-transform: uppercase;
+}
+
+.view.project .panel.status .backlog p {
+  margin: 0.25rem 0;
+  overflow-wrap: anywhere;
+}
+
+.view.project .panel.status .plans {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  list-style: none;
+  margin: 0.4rem 0;
+  padding: 0;
+}
+
+.view.project .panel.status .plans li {
+  background: var(--bg-sink);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+  padding: 0.15rem 0.5rem;
+}
+
+.view.project .panel.status .premises {
+  border-collapse: collapse;
+  margin-top: 0.5rem;
+  table-layout: fixed;
+  width: 100%;
+}
+
+.view.project .panel.status .premises th {
+  border-bottom: 1px solid var(--line);
+  color: var(--faint);
+  font-family: var(--sans);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  padding: 0.35rem 0.4rem;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.view.project .panel.status .premises td {
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+  padding: 0.35rem 0.4rem;
+  vertical-align: top;
+}
+
+/* The lane and the plan are ids; the status is a tag beside them. */
+.view.project .panel.status .premises td[data-label="Lane"],
+.view.project .panel.status .premises td[data-label="Plan"] {
+  font-family: var(--mono);
+}
+
+.view.project .panel.status .premises td > * {
+  margin-right: 0.3rem;
+}
+
+/*
+ * The four premise states, and the one a value outside them is drawn as. Each is
+ * a colour and never the only sign: the cell carries the state in words too.
+ */
+.view.project .panel.status .badge {
+  border: 1px solid currentcolor;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  padding: 0.05rem 0.5rem;
+  white-space: nowrap;
+}
+
+.view.project .panel.status .premise-holds {
+  color: var(--emerald);
+}
+
+.view.project .panel.status .premise-stale,
+.view.project .panel.status .premise-timed-out {
+  color: var(--amber);
+}
+
+.view.project .panel.status .premise-error {
+  color: var(--rose);
+}
+
+.view.project .panel.status .premise-unknown {
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------- the banners */
+
+/*
+ * Why the numbers may not be trusted, said before they are. Amber, because that
+ * is what the legend calls it, and a wash of it over the page ground rather than
+ * a box of its own colour: the words are what a reader reads.
+ */
+.view.project .banner.stale {
+  background: color-mix(in srgb, var(--amber) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--amber) 40%, transparent);
+  border-left: 3px solid var(--amber);
+  border-radius: var(--radius);
+  color: var(--amber);
+  font-size: 0.9rem;
+  margin: 0 0 0.85rem;
+  padding: 0.55rem 0.75rem;
+}
+
+.view.project .banner.stale span[title] {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+}
+
+/* The quiet lines under the strip and under the table: what is not listed, and
+   that the list was cut. Said, never warned about. */
+.view.project .note-inline {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin: 0 0 0.6rem;
+}
+
+.view.project .empty {
+  color: var(--muted);
+  padding: 1rem 0;
+}
+
+/* ------------------------------------------------------------- stage rail */
+
+.view.project .stages {
+  background: var(--card-sheen), var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
   list-style: none;
-  margin: 0.75rem 0;
-  padding: 0;
+  margin: 0 0 0.75rem;
+  padding: 0.6rem 0.7rem;
 }
 
-.stages li {
+.view.project .stages li {
+  align-items: baseline;
   background: var(--bg-sink);
   border: 1px solid var(--line);
-  border-radius: 0.4rem;
+  border-radius: var(--radius);
   display: flex;
   gap: 0.5rem;
-  padding: 0.3rem 0.6rem;
+  padding: 0.2rem 0.55rem;
 }
 
-.stages .name {
+.view.project .stages .name {
   color: var(--muted);
   font-size: 0.8rem;
 }
 
-.toolbar {
+/* ---------------------------------------------------------- the lane table */
+
+/*
+ * The table on a card of its own, so the hairlines between its rows and the band
+ * its header sits in have a surface to be drawn on. The overflow clips that band
+ * to the card's corners.
+ */
+.view.project .lanes-card {
+  background: var(--card-sheen), var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+.view.project .lanes {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+/*
+ * The header as a band rather than a row of labels: small, uppercase, faint and
+ * on a ground a shade above the card's, under a hairline. It is where a reader
+ * looks for which column a number is in, so it says the column names and never
+ * only its colour.
+ */
+.view.project .lanes thead th {
+  background: var(--bg-raise);
+  border-bottom: 1px solid var(--line);
+  color: var(--faint);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  padding: 0.55rem 0.6rem;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.view.project .lanes td {
+  border-bottom: 1px solid var(--line-soft);
+  /* The values in these cells are a pusher's own strings and one of them can be a
+     single unbroken word. The card clips its own corners, so a cell that cannot
+     break its text is cut off with no way to reach the rest of it — wrapping
+     keeps the card a card and keeps the whole value in the document. */
+  overflow-wrap: anywhere;
+  padding: 0.45rem 0.6rem;
+  vertical-align: top;
+}
+
+.view.project .lanes tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.view.project .lanes td > * {
+  margin-right: 0.4rem;
+}
+
+/*
+ * The row the reader chose, in a wash of cyan. The row also carries
+ * `aria-current="true"`, so this is the same answer to the same reader twice.
+ */
+.view.project .lanes tr.current td {
+  background: color-mix(in srgb, var(--cyan) 10%, transparent);
+}
+
+/* The lane id and the wave it is in, in the face numbers and ids are read in. */
+.view.project .lanes td[data-label="Lane"] > a,
+.view.project .lanes .in-wave {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+.view.project .lanes td[data-label="Lane"] > a:hover {
+  color: var(--cyan);
+}
+
+.view.project .lanes .seat {
+  color: var(--muted);
+  display: block;
+  font-size: 0.78rem;
+  max-width: 28rem;
+  overflow-wrap: anywhere;
+}
+
+/* The counts and the two timestamps, in mono: they are read against each other. */
+.view.project .lanes .meta,
+.view.project .lanes span[title] {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+}
+
+.view.project .lanes .meta {
+  color: var(--muted);
+}
+
+/*
+ * Liveness, a reason and the disagreements, in the legend's four colours, and
+ * each of them already says its state in words in the cell itself. `unknown` is
+ * amber: under a stale wave it is what an alive lane last seen is drawn as, and
+ * the banner above the table is the amber that goes with it.
+ */
+.view.project .badge {
+  border: 1px solid currentcolor;
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  padding: 0.05rem 0.5rem;
+  /* The pusher's own words, in the pusher's own case: `app.css` puts every
+     badge on the page in capitals, and this is where that is called off, as it
+     was before this page was reskinned. */
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.view.project .badge.running {
+  color: var(--cyan);
+}
+
+.view.project .badge.stopped,
+.view.project .badge.reason {
+  color: var(--rose);
+}
+
+.view.project .badge.stale,
+.view.project .badge.unknown,
+.view.project .badge.aging {
+  color: var(--amber);
+}
+
+/* -------------------------------------------------------------- the filters */
+
+.view.project .toolbar {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem 0.75rem;
-  margin: 0.75rem 0 0.25rem;
+  margin: 0 0 0.6rem;
 }
 
-.chips {
+.view.project .chips {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
 }
 
-.chips a {
+.view.project .chips a {
   border: 1px solid var(--line);
-  border-radius: 0.75rem;
+  border-radius: 999px;
   color: var(--muted);
-  font-size: 0.8rem;
-  padding: 0.1rem 0.55rem;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  padding: 0.15rem 0.6rem;
   text-decoration: none;
 }
 
-.chips a[aria-current="true"] {
+.view.project .chips a:hover {
   border-color: var(--line-strong);
   color: var(--text);
 }
 
-.toolbar label {
+.view.project .chips a[aria-current="true"] {
+  background: color-mix(in srgb, var(--cyan) 14%, transparent);
+  border-color: color-mix(in srgb, var(--cyan) 45%, transparent);
+  color: var(--cyan);
+}
+
+.view.project .toolbar label {
   color: var(--muted);
   font-size: 0.8rem;
 }
 
-.toolbar select,
-.toolbar input {
+.view.project .toolbar select,
+.view.project .toolbar input {
   background: var(--bg-sink);
   border: 1px solid var(--line);
-  border-radius: 0.4rem;
+  border-radius: var(--radius);
   color: var(--text);
   font: inherit;
+  font-size: 0.85rem;
   /* A select is as wide as its widest option, and a seat may be 128 characters. */
   max-width: min(100%, 18rem);
   min-width: 0;
-  padding: 0.25rem 0.45rem;
+  padding: 0.3rem 0.5rem;
 }
 
-.toolbar select:focus-visible,
-.toolbar input:focus-visible {
-  outline: 2px solid var(--blue);
+.view.project .toolbar select:focus-visible,
+.view.project .toolbar input:focus-visible {
+  outline: 2px solid var(--cyan);
   outline-offset: 2px;
 }
 
-.toolbar .shown {
+.view.project .toolbar .shown,
+.view.project .toolbar .copied {
   color: var(--muted);
   font-size: 0.8rem;
+}
+
+.view.project .toolbar .shown {
   margin-left: auto;
 }
 
-/* What the last copy of the digest said. Empty most of the time, and empty is
-   what keeps the toolbar the same height. */
-.toolbar .copied {
-  color: var(--muted);
-  font-size: 0.8rem;
-}
+/* ------------------------------------------------------------- the measures */
 
 /* One column below 1080px, where the panels stop fitting side by side. */
 @media (max-width: 1080px) {
-  .split {
+  .view.project .split {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 
 /* The narrow layout in app.css lays every cell out as two columns, one for its
-   data-label and one for its contents. This lane's cells hold up to four
-   children each — a link, a seat, a mismatch, a stamp — which would wrap into
-   the label column, so below the same breakpoint a cell is its own block with
-   the label on its own line above it. */
+   data-label and one for its contents. This page's cells hold up to four children
+   each — a link, a seat, a disagreement, a stamp — which would wrap into the
+   label column, so below the same breakpoint a cell is its own block with the
+   label on its own line above it. */
 @media (max-width: 44rem) {
-  .project .lanes td {
+  .view.project .lanes td {
     display: block;
   }
 
-  .project .lanes td::before {
+  .view.project .lanes td::before {
     display: block;
   }
 }

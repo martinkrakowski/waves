@@ -1,3 +1,7 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it, vi } from "vitest";
 
 import type { DrawerHandlers, DrawerModel } from "../../public/views/drawer.js";
@@ -12,6 +16,9 @@ import {
   textOf,
   textsOf,
 } from "./helpers.js";
+
+/** This file's own directory, for the two stylesheets read at the end. */
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 const REPO = "https://github.com/acme/waves";
 const PULL = "https://github.com/acme/waves/pull/42";
@@ -489,9 +496,11 @@ describe("the log tail", () => {
 
 describe("what the drawer draws, in order", () => {
   it("leads with the lane, then its reasons, and ends with the tail", () => {
+    // The seat line carries the page's own name for a seat, so `drawer.css` can
+    // draw it in mono under `.lane-drawer` without reaching the project page's.
     expect(outline(draw({ reasons: ["gate"] }))).toStrictEqual([
       "HEADER.",
-      "P.meta",
+      "P.meta seat",
       "Needs attention",
       "Disagreements",
       "Reported and derived",
@@ -500,5 +509,56 @@ describe("what the drawer draws, in order", () => {
       "Reported detail",
       "Log tail",
     ]);
+  });
+});
+
+/**
+ * The two rules of the sheet that no test of the drawn nodes can see: the glass
+ * the dialog itself is made of, and where the entrance is hung. Both are read out
+ * of the stylesheet, as `shell.test.ts` reads the shell's own.
+ */
+describe("the drawer as it is styled", () => {
+  const SHEET = readFileSync(
+    join(HERE, "..", "..", "public", "drawer.css"),
+    "utf8",
+  );
+  const TOKENS = readFileSync(
+    join(HERE, "..", "..", "public", "tokens.css"),
+    "utf8",
+  );
+
+  it("slides the dialog in when it opens, and nothing inside it", () => {
+    // `app.js` keeps one dialog and replaces only its children, so an animation
+    // keyed to `[open]` runs once per `showModal()` and an animation on anything
+    // below the dialog would replay on every ten-second refresh.
+    expect(SHEET).toMatch(
+      /dialog\.lane-drawer\[open\]\s*\{[^}]*animation:\s*waves-slide-in/,
+    );
+    expect(SHEET).toMatch(/@keyframes\s+waves-slide-in\s*\{/);
+    expect(SHEET.match(/animation:/g)).toHaveLength(1);
+  });
+
+  it("holds still under prefers-reduced-motion, in the one rule the page shares", () => {
+    // One global rule stops every animation, which is how the shell's own keyframes
+    // are held still, and the sheet's single animation sits under it with the rest
+    // of the page rather than beside it in a rule of its own to drift from it.
+    expect(TOKENS).toMatch(
+      /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{[^}]*animation:\s*none/,
+    );
+    expect(SHEET.match(/animation:/g)).toHaveLength(1);
+  });
+
+  it("draws the disagreements in rose and leaves the fact pairs alone", () => {
+    expect(SHEET).toMatch(
+      /\.lane-drawer\s+\.disagreements\s+li\s*\{[^}]*color:\s*var\(--rose\)/,
+    );
+    expect(SHEET).not.toMatch(/\.drawer\s+tbody\s+td\s*\{[^}]*color:/);
+  });
+
+  it("scopes the seat to the dialog, which the project page also draws", () => {
+    expect(SHEET).toMatch(
+      /\.lane-drawer\s+\.seat\s*\{[^}]*font-family:\s*var\(--mono\)/,
+    );
+    expect(SHEET).not.toMatch(/^\.seat\s*\{/m);
   });
 });

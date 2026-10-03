@@ -77,6 +77,20 @@ describe("the status panel", () => {
     );
   });
 
+  it("warns about unread pull-request rows only while there are some", () => {
+    // The line says the same words either way; the colour is the only thing that
+    // changes, so a document whose rows were all read must not carry the warning
+    // colour at all.
+    expect(
+      panel(statusView()).querySelectorAll(".panel.status p.prs.warn"),
+    ).toHaveLength(1);
+
+    const nothing = withDocument((document) => (document.prs = { skipped: 0 }));
+    const host = panel(nothing);
+    expect(host.querySelectorAll(".panel.status p.prs")).toHaveLength(1);
+    expect(host.querySelectorAll(".panel.status p.prs.warn")).toHaveLength(0);
+  });
+
   it("says the backlog's state, when it was written, and its scope", () => {
     const host = panel(statusView());
     const line = textsOf(host, ".panel.status .backlog p")[0] ?? "";
@@ -89,6 +103,20 @@ describe("the status panel", () => {
     expect(textsOf(host, ".panel.status .plans li")).toStrictEqual([
       "plan:verify",
     ]);
+  });
+
+  it("leads the backlog with its state in a pill of its own", () => {
+    // The state is the document's own answer about itself, so it is the one word
+    // of that line the stylesheet gives a shape to.
+    const host = panel(statusView());
+    const pill = oneOf(host, ".panel.status .backlog p .pill");
+
+    expect(textOf(pill)).toBe("recorded");
+    expect(
+      host
+        .querySelector(".panel.status .backlog p span")
+        ?.getAttribute("class"),
+    ).toBe("pill");
   });
 
   it("shows the branch and the commit as code", () => {

@@ -385,26 +385,151 @@ function allLanesItem(model) {
   });
 }
 
+/**
+ * The rows one wave's state is worked out from, and whether they are all of it.
+ *
+ * The head is the only statement of how many lanes a wave has, and the listing
+ * holds the rows its own bounds let through: `?all=1` off means every wave past
+ * retention is a head with no rows at all, `MAX_PROJECT_LANES` and
+ * `MAX_PROJECT_LANES_BYTES` stop in the middle of a wave's lanes, and
+ * `MAX_WAVES_PER_READ` leaves the waves after the bound as heads. So the count is
+ * the only completeness test there is, and a wave whose rows are not all here has
+ * no state to say: half a wave is `settled` for a hundred reasons, and a chip that
+ * guesses `settled` over a wave that is running is worse than a chip that says
+ * nothing.
+ */
+function wholeWaveOf(view, head) {
+  const rows = scopeOf(view, head.wave);
+  return rows.length === head.lanes ? rows : undefined;
+}
+
+/** A pull request that has been merged or closed has answered what it raised. */
+function prSettled(row) {
+  const state = row.derived.pr?.state;
+  return state === "merged" || state === "closed";
+}
+
+/**
+ * An exit status is a failure when it is a number and it is not zero. The two
+ * predicates above are the ones `src/domain/attention.ts` holds, written out
+ * again rather than imported: `public/` is served to the browser as it is and
+ * cannot reach into the service's own source.
+ */
+function isFailureExit(exit) {
+  return exit !== undefined && exit !== 0;
+}
+
+/**
+ * What one wave's lanes say about the wave, in the order the plan's W35 decides
+ * it in and in no other: `failed`, then `done`, then `running`, and `settled`
+ * for everything else. `src/domain/wave-state.ts` holds the same rule for the
+ * fleet route, which is answered a `state` per wave; this listing carries no
+ * such field, so the chip works it out from the rows it is already holding —
+ * the same vocabulary, the same order, and a colour beside the words the chip
+ * already says.
+ *
+ * `stale` is the head's own answer rather than the rows': a wave past its own
+ * interval has stopped saying what its lanes are doing, so an alive lane in one
+ * is `settled` and not `running`. And a row's `alive` is the view's form, where
+ * staleness has already turned a `true` into `"unknown"`, so only a `false` is
+ * known to be a lane that is not alive.
+ */
+export function waveStateOf(rows, stale) {
+  for (const row of rows) {
+    if (
+      !prSettled(row) &&
+      row.derived.alive === false &&
+      (row.reported?.event === "failed" || isFailureExit(row.derived.exit))
+    ) {
+      return "failed";
+    }
+  }
+  if (rows.length > 0 && rows.every(prSettled)) {
+    return "done";
+  }
+  if (!stale && rows.some((row) => row.derived.alive === true)) {
+    return "running";
+  }
+  return "settled";
+}
+
+/**
+ * The class each of the four states hangs its colour on, the class a stale wave
+ * carries beside the one its state gave it, and the word each state is said in
+ * for a reader who cannot see the colour. All three are this file's own
+ * literals, chosen here: a class or a word built from anything a listing carries
+ * would be an attribute or a line a pusher wrote.
+ */
+const WAVE_CLASS = {
+  failed: "wave-failed",
+  done: "wave-done",
+  running: "wave-running",
+  settled: "wave-settled",
+  stale: "wave-stale",
+};
+
+const WAVE_WORD = {
+  failed: "failed",
+  done: "done",
+  running: "running",
+  settled: "settled",
+};
+
+/**
+ * One wave's chip: the state's word, shown to every reader, and the colour on the
+ * edge beside it rather than instead of it — which is what the plan's W14 asks of a
+ * state that is shown at all, since a colour alone would leave a sighted reader
+ * telling a failed wave from a running one by the edge and nothing else.
+ *
+ * A wave the listing does not hold whole is shown with no word and no state colour:
+ * it says nothing about a state rather than guessing one, and keeps every other
+ * word it has. Its `stale` class is the head's own answer — a function of when the
+ * wave arrived and of no row at all — so that one is kept whatever the rows.
+ *
+ * The link carries the word in its accessible name as well, so a reader who is
+ * told the state by a screen reader hears it where they were about to follow the
+ * link: the visible name first, then the word.
+ */
 function waveItem(model, head, nowMs) {
-  const children = [
+  const rows = wholeWaveOf(model.lanes, head);
+  const state = rows === undefined ? undefined : waveStateOf(rows, head.stale);
+  const children = [];
+  if (state !== undefined) {
+    children.push(
+      el("span", { attrs: { class: "state-word" }, text: WAVE_WORD[state] }),
+    );
+  }
+  const here = model.wave === head.wave ? { "aria-current": "page" } : {};
+  const named =
+    state === undefined
+      ? {}
+      : { "aria-label": `${head.wave}, ${WAVE_WORD[state]}` };
+  children.push(
     internalLink(
       head.wave,
       hrefFor(projectId(model), head.wave, scopeQuery(model)),
-      model.wave === head.wave ? { "aria-current": "page" } : {},
+      { ...here, ...named },
     ),
     el("span", {
       attrs: { class: "meta" },
       text: laneCountText(head.lanes),
     }),
     stamp(head.receivedAt, nowMs),
-  ];
+  );
   if (head.stale) {
     children.push(badge("stale", "stale"));
   }
   if (!head.retained) {
     children.push(badge("past retention", "aging"));
   }
-  return el("li", { children });
+  const classes = ["wave"];
+  if (state !== undefined) {
+    classes.push(WAVE_CLASS[state]);
+  }
+  if (head.stale) {
+    classes.push(WAVE_CLASS.stale);
+  }
+  return el("li", { attrs: { class: classes.join(" ") }, children });
 }
 
 /**
@@ -1030,6 +1155,16 @@ function laneTable(model, rows, nowMs) {
   });
 }
 
+/**
+ * The table on the glass card every other panel of the page is on, so the
+ * hairlines between the rows and the band its header sits in have a surface to
+ * be drawn on. The narrow layout in `app.css` turns each row into a card of its
+ * own, and this is the card those cards sit on.
+ */
+function lanesCard(children) {
+  return el("div", { attrs: { class: "lanes-card" }, children });
+}
+
 const PAST_RETENTION =
   "This wave is past retention. Show the waves past retention to list its lanes.";
 
@@ -1109,7 +1244,7 @@ export function renderProject(model, nowMs, handlers) {
         el("p", { attrs: { class: "empty" }, text: NOTHING_MATCHES }),
       );
     } else {
-      children.push(laneTable(model, shown, nowMs));
+      children.push(lanesCard([laneTable(model, shown, nowMs)]));
     }
   } else {
     children.push(emptyMessage(model));
