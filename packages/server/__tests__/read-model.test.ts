@@ -773,6 +773,44 @@ describe("read model", () => {
 });
 
 describe("the recent waves of a project summary", () => {
+  it("skips one wave file that is not JSON, and still lists the project", async () => {
+    class CorruptWave extends MemoryStore {
+      override async getSnapshot(of: string, wave: string) {
+        if (wave === "wv2") {
+          throw new SyntaxError("Unexpected end of JSON input");
+        }
+        return super.getSnapshot(of, wave);
+      }
+    }
+    const store = new CorruptWave();
+    await store.putProject(project("alpha"));
+    await store.putSnapshot(
+      pushed("alpha", "wv1", receivedAtOf(1), [laneOf("wv1-a")]),
+    );
+    await store.putSnapshot(
+      pushed("alpha", "wv2", receivedAtOf(2), [laneOf("wv2-a")]),
+    );
+
+    const listed = await model(store).listProjects();
+
+    expect(listed[0]?.recentWaves.map((entry) => entry.wave)).toEqual(["wv1"]);
+  });
+
+  it("still fails the listing for a wave read that is not a parse error", async () => {
+    class RefusedWave extends MemoryStore {
+      override async getSnapshot(): Promise<undefined> {
+        throw new Error("EACCES");
+      }
+    }
+    const store = new RefusedWave();
+    await store.putProject(project("alpha"));
+    await store.putSnapshot(
+      pushed("alpha", "wv1", receivedAtOf(1), [laneOf("wv1-a")]),
+    );
+
+    await expect(model(store).listProjects()).rejects.toThrow("EACCES");
+  });
+
   it("lists a project's waves newest first, each with what its lanes say", async () => {
     const store = new MemoryStore();
     await store.putProject(project("alpha"));

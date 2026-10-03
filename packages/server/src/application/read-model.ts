@@ -789,11 +789,25 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
     nowMs: number,
   ): Promise<readonly RecentWave[]> => {
     const recent: RecentWave[] = [];
-    const newest = waveSummaries(heads, nowMs)
-      .filter((head) => head.retained)
-      .slice(0, MAX_RECENT_WAVES);
+    // Retention first, so a project's long tail of old heads is never sorted
+    // on the fleet's hottest read.
+    const newest = waveSummaries(
+      heads.filter((head) => isRetained(Date.parse(head.receivedAt), nowMs)),
+      nowMs,
+    ).slice(0, MAX_RECENT_WAVES);
     for (const head of newest) {
-      const entry = await cachedWave(projectId, head);
+      // One wave file that is not JSON costs this card that one segment, never
+      // the fleet listing, as a corrupt status file costs only its row. Any other
+      // failure is not about one file, and it still fails the listing.
+      let entry: CachedWave | undefined;
+      try {
+        entry = await cachedWave(projectId, head);
+      } catch (error) {
+        if (!(error instanceof SyntaxError)) {
+          throw error;
+        }
+        continue;
+      }
       if (entry !== undefined) {
         recent.push(recentWave(head, entry, nowMs));
       }
