@@ -139,7 +139,7 @@ describe("the names every other stylesheet already reads", () => {
 
   it("gives the light palette a twin of every colour the dark one holds", () => {
     const colour =
-      /^--(?:bg|card|line|text|muted|faint|cyan|emerald|amber|rose|violet|slate)/;
+      /^--(?:bg|card|line|text|muted|faint|cyan|emerald|amber|rose|violet|slate|glow)/;
     const darkNames = [...dark.keys()].filter((name) => colour.test(name));
     expect(darkNames.length).toBeGreaterThan(0);
     for (const name of darkNames) {
