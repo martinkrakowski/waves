@@ -64,7 +64,7 @@ Per entry, in order: a token file already there is counted as skipped and no req
 
 ```sh
 WAVES_URL=https://waves.example.com WAVES_PROJECT=my-project \
-  waves push --wave my-wave --file status.json --interval 10
+  waves push --wave my-wave --file lanes.json --interval 10
 ```
 
 The input is `{ "lanes": [...] }` or a full envelope; the CLI fills in `schema`, `project`, `wave`, `generatedAt` and `intervalSeconds`, and validates the envelope locally before sending. Log tails are stripped unless `--include-tails` is given, and then truncated to their last 4 KiB. `--stdin` reads the input from stdin. `waves delete --wave <wave>` removes a wave.
@@ -91,9 +91,9 @@ The input is a JSON object with two optional keys, `prs` and `backlog`, and no o
 }
 ```
 
-`{}` is a valid input and means "alive, nothing to report". The CLI fills in `schema`, `project`, `generatedAt` and `intervalSeconds` — the first two from `WAVES_PROJECT` and its own clock, whatever the input said — and validates the document locally before sending, with the same closed-object rule the server applies. Any other key in the input is refused rather than dropped, so a misspelt `backlogg` is a mistake and not a status with nothing in it. `--stdin` reads the input from stdin. The project token is read the same way a push reads it, from `~/.config/waves/<project>.token`, and is never printed.
+`{}` is a valid input and means "alive, nothing to report". The CLI fills in `schema`, `project`, `generatedAt` and `intervalSeconds` — `project` from `WAVES_PROJECT` and `generatedAt` from its own clock, whatever the input said — and validates the document locally before sending, with the same closed-object rule the server applies. Any other key in the input is refused rather than dropped, so a misspelt `backlogg` is a mistake and not a status with nothing in it. `--stdin` reads the input from stdin. The project token is read the same way a push reads it, from `~/.config/waves/<project>.token`, and is never printed.
 
-**Pacing.** The server gives a project one write a second, shared by its pushes and its status. A `429` is waited for exactly as long as the `Retry-After` header asks, up to a minute, so a status sent right after a push is slowed down rather than refused.
+**Pacing.** The server gives a project one write a second, shared by its pushes and its status. A `429` is waited for exactly as long as the `Retry-After` header asks, up to a minute, so a status sent right after a push is waited for rather than refused outright, up to three times.
 
 ## Configuration
 

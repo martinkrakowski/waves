@@ -50,8 +50,8 @@ async function readFile(path: string, files: Files): Promise<string> {
  * Sends a request that may be repeated, and answers the one reply that means it
  * was taken. This is for a write that replaces what the server already holds — a
  * snapshot, a status — so a second attempt can only store the same thing again.
- * A `delete` keeps its own loop and a registration has none, because neither of
- * those is safe to repeat.
+ * A `delete` keeps its own loop, and a registration keeps its own, which never
+ * repeats a 5xx: a registration may already have minted a token.
  *
  * Two budgets, counted apart: a server that is broken is not the same as a
  * server that is asking for patience, and neither of them should spend the
@@ -64,7 +64,7 @@ async function readFile(path: string, files: Files): Promise<string> {
  * without either use case wording a failure of its own.
  */
 export async function sendIdempotent(
-  label: string,
+  label: "push" | "status",
   request: HttpRequest,
   transport: Transport,
   deps: WaitDeps,

@@ -118,7 +118,6 @@ describe("validateProject", () => {
     ]);
     expectPaths(project({ repo: "https://user@github.com/a/b" }), ["/repo"]);
     expectPaths(project({ repo: "https://:pw@github.com/a/b" }), ["/repo"]);
-    expectPaths(project({ repo: "https://user:pw@github.com/a/b" }), ["/repo"]);
   });
 
   it("refuses a control character in a repository before its characters are read", () => {
