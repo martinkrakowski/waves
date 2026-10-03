@@ -61,6 +61,15 @@ outside_url=$(outside "$url" "$TEMPLATE_URL_SET")
 if [ -n "$outside_url" ]; then
   refuse "the URL holds a character this script will not put in the plist: $outside_url"
 fi
+# The client takes an origin and nothing else, so a path, a query or a fragment
+# is refused here rather than by every hourly run.
+rest=${url#https://}
+rest=${rest%/}
+case "$rest" in
+  "" | :* | *:*:* | *[!A-Za-z0-9.:-]*)
+    refuse "the URL must be an origin, https://host or https://host:port, with no path, query or fragment: $url"
+    ;;
+esac
 
 # 2. The enrollment token's file. It has to be there, a real file rather than a
 # link, and mode 0600 or 0400 — the same trust check the client makes. `stat` is
@@ -69,6 +78,22 @@ fi
 # could leak.
 config="${WAVES_CONFIG_DIR:-$HOME/.config/waves}"
 token="$config/enroll.token"
+uid=$(id -u)
+# The client refuses a directory of tokens that is a link, someone else's, or
+# reachable by anyone but its owner, before it reads the list. So does this, so
+# an install that succeeds is one whose hourly runs can start.
+if [ -L "$config" ] || [ ! -d "$config" ]; then
+  refuse "the config directory $config must be a directory of your own, not a link: mkdir -p -m 700 $config"
+fi
+config_owner=$(stat -c %u "$config" 2>/dev/null || stat -f %u "$config")
+if [ "$config_owner" != "$uid" ]; then
+  refuse "the config directory $config belongs to uid $config_owner, not to you ($uid)"
+fi
+config_mode=$(stat -c %a "$config" 2>/dev/null || stat -f %Lp "$config")
+case "$config_mode" in
+  *00) ;;
+  *) refuse "the config directory $config is mode $config_mode; only you may reach it: chmod 700 $config" ;;
+esac
 if [ -L "$token" ]; then
   refuse "the token file $token is a symbolic link; it must be the file itself, not a link to it"
 fi
@@ -83,6 +108,10 @@ case "$mode" in
   600 | 400) ;;
   *) refuse "the token file $token is mode $mode; it must be 600 or 400" ;;
 esac
+token_owner=$(stat -c %u "$token" 2>/dev/null || stat -f %u "$token")
+if [ "$token_owner" != "$uid" ]; then
+  refuse "the token file $token belongs to uid $token_owner, not to you ($uid)"
+fi
 
 # 3. node and the client's bin, pinned to absolute paths because launchd runs
 # with a PATH of its own. WAVES_NODE and WAVES_CLIENT move them, which is how
@@ -124,7 +153,7 @@ agents="$HOME/Library/LaunchAgents"
 plist="$agents/$LABEL.plist"
 logs="$HOME/Library/Logs"
 log="$logs/waves-register-all.log"
-for path in "$node" "$client" "$token" "$wrapper" "$log"; do
+for path in "$node" "$client" "$config" "$token" "$wrapper" "$log"; do
   outside_path=$(outside "$path" "$TEMPLATE_PATH_SET")
   if [ -n "$outside_path" ]; then
     refuse "the path $path holds a character install.sh will not render: $outside_path"
@@ -160,11 +189,14 @@ sed -e "s|@NODE@|$node|" -e "s|@CLIENT@|$client|" -e "s|@TOKEN@|$token|" \
 chmod 700 "$support/.register-all.sh.tmp"
 mv "$support/.register-all.sh.tmp" "$wrapper"
 
-# `&` in a URL is the one character a plist cannot hold raw. Escaping it for
-# sed and for XML in one step: sed's replacement writes `\&` as the matched
+# An origin holds no `&`, so this escaping never has anything to do today. It
+# stays, because `&` is the one character a plist cannot hold raw and the
+# origin rule is the kind of thing that gets relaxed. Escaping it for sed and
+# for XML in one step: sed's replacement writes `\&` as the matched
 # text, so this substitution yields the five characters `&amp;`.
 url_xml=$(printf '%s\n' "$url" | sed 's/&/\\\&amp;/g')
 sed -e "s|@URL@|$url_xml|" -e "s|@WRAPPER@|$wrapper|" -e "s|@LOG@|$log|" \
+  -e "s|@CONFIG@|$config|" \
   "$plist_template" >"$agents/.$LABEL.plist.tmp"
 chmod 644 "$agents/.$LABEL.plist.tmp"
 mv "$agents/.$LABEL.plist.tmp" "$plist"
@@ -183,7 +215,7 @@ while :; do
     break
   fi
   if [ "$attempt" -ge 5 ]; then
-    refuse "launchctl bootstrap $domain failed $attempt times; the plist is at $plist and the log is at $log; is this a login session?"
+    refuse "launchctl bootstrap $domain failed $attempt times, and the agent this replaced was already booted out, so nothing is scheduled now; the plist is at $plist and the log is at $log; run this again from a login session"
   fi
   attempt=$((attempt + 1))
   sleep 1

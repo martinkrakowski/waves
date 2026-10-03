@@ -129,6 +129,8 @@ function world(options: { readonly homeName?: string } = {}): World {
   for (const directory of [home, config, bin]) {
     mkdirSync(directory, { recursive: true });
   }
+  // The client refuses a directory of tokens anyone else can reach.
+  chmodSync(config, 0o700);
 
   const token = join(config, "enroll.token");
   writeFileSync(token, `${TOKEN_VALUE}\n`);
@@ -254,6 +256,7 @@ describe("install.sh", { timeout: 20_000 }, () => {
         "@URL@": GOOD_URL,
         "@WRAPPER@": w.wrapper,
         "@LOG@": w.log,
+        "@CONFIG@": dirname(w.token),
       }),
     );
 
@@ -279,24 +282,42 @@ describe("install.sh", { timeout: 20_000 }, () => {
     expect(result.stdout).not.toContain(w.token);
   });
 
-  it("writes a URL's & into the plist as &amp;", () => {
-    const w = world();
-    const url = "https://waves.midnight.lan?a=1&b=2";
-    const result = w.run(INSTALL, [url]);
+  it.each([
+    "https://waves.midnight.lan/api",
+    "https://waves.midnight.lan?a=1&b=2",
+    "https://waves.midnight.lan:443:1",
+    "https://",
+  ])("refuses %s, which is not an origin the client would take", (url) => {
+    refusal(world(), [url], "origin");
+  });
 
-    expect(result.status, result.stderr).toBe(0);
-    // A raw `&` in a plist string is not XML, and launchd answers a plist it
-    // cannot parse with a job that never runs and no line in the log.
+  it("accepts an origin with a port and a trailing slash", () => {
+    const w = world();
+    const url = "https://waves.midnight.lan:8443/";
+    expect(w.run(INSTALL, [url]).status).toBe(0);
+    expect(text(w.plist)).toContain(`<string>${url}</string>`);
+  });
+
+  it("hands the scheduled run the config directory it was installed with", () => {
+    const w = world();
+    expect(w.run(INSTALL, [GOOD_URL]).status).toBe(0);
     expect(text(w.plist)).toContain(
-      "<string>https://waves.midnight.lan?a=1&amp;b=2</string>",
+      `<key>WAVES_CONFIG_DIR</key>\n      <string>${dirname(w.token)}</string>`,
     );
-    expect(text(w.plist)).toBe(
-      render(PLIST_TEMPLATE, {
-        "@URL@": url.replaceAll("&", "&amp;"),
-        "@WRAPPER@": w.wrapper,
-        "@LOG@": w.log,
-      }),
-    );
+  });
+
+  it("refuses a config directory other people can reach", () => {
+    const w = world();
+    chmodSync(dirname(w.token), 0o755);
+    refusal(w, [GOOD_URL], "chmod 700");
+  });
+
+  it("refuses a config directory that is a link", () => {
+    const w = world();
+    const real = `${dirname(w.token)}-real`;
+    renameSync(dirname(w.token), real);
+    symlinkSync(real, dirname(w.token));
+    refusal(w, [GOOD_URL], "not a link");
   });
 
   it("refuses no argument", () => {
@@ -591,9 +612,7 @@ function lint(file: string): SpawnSyncReturns<string> {
 describe("the rendered plist", { timeout: 20_000 }, () => {
   it.skipIf(LINTER === undefined)("is XML a plist parser accepts", () => {
     const w = world();
-    expect(w.run(INSTALL, ["https://waves.midnight.lan?a=1&b=2"]).status).toBe(
-      0,
-    );
+    expect(w.run(INSTALL, ["https://waves.midnight.lan:8443/"]).status).toBe(0);
 
     const result = lint(w.plist);
 

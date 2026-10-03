@@ -21,6 +21,8 @@
     <dict>
       <key>WAVES_URL</key>
       <string>@URL@</string>
+      <key>WAVES_CONFIG_DIR</key>
+      <string>@CONFIG@</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>

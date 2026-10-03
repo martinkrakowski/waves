@@ -253,8 +253,12 @@ hour and once at login.
 
    ```sh
    umask 077
+   mkdir -p -m 700 ~/.config/waves
    ssh m cat /root/waves-enroll-token > ~/.config/waves/enroll.token
    ```
+
+   The directory must be yours and reachable by nobody else (`chmod 700`); the
+   client refuses anything looser, and so does `install.sh`.
 
    A file of mode 0400 is accepted as well, if you would rather it not be
    writable.
