@@ -108,9 +108,15 @@ function premisesTable(premises) {
  * optional half is left out rather than written down as nothing — an artifact that
  * carried no `git` has not said anything about a branch, and a `git: unknown` line
  * would be the panel claiming something the server never sent.
+ *
+ * The state is the one word of the three that is the document's own answer about
+ * itself, so it leads in a pill of its own. It is one of the contract's three
+ * values and it reaches the document as `textContent`; the class is this file's.
  */
 function backlogSection(backlog, nowMs) {
-  const children = [text(backlog.state)];
+  const children = [
+    el("span", { attrs: { class: "pill" }, text: backlog.state }),
+  ];
   if (backlog.at !== undefined) {
     children.push(text(" · "), stamp(backlog.at, nowMs));
   }
@@ -146,13 +152,16 @@ export function renderStatusPanel(view, nowMs) {
     el("p", { children: [stamp(view.receivedAt, nowMs)] }),
   ];
   if (status.prs !== undefined) {
+    // `warn` only when rows went unread: a document whose rows were all read has
+    // nothing to warn about, and a line that is amber with nothing behind it is
+    // a line a reader stops believing. The words are the same either way.
+    const unread = status.prs.skipped > 0;
     children.push(
       el("p", {
-        attrs: { class: "prs" },
-        text:
-          status.prs.skipped > 0
-            ? `${status.prs.skipped} PR rows could not be read`
-            : PRS_ALL_READ,
+        attrs: { class: unread ? "prs warn" : "prs" },
+        text: unread
+          ? `${status.prs.skipped} PR rows could not be read`
+          : PRS_ALL_READ,
       }),
     );
   }

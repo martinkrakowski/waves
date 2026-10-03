@@ -100,13 +100,16 @@ describe("the project's own status", () => {
     ]);
     expect(textsOf(root(), ".panel.status .premises tbody tr")).toHaveLength(2);
     // The lane table is still there, and the panel sits between the counters and
-    // the panels that are about lanes.
+    // the panels that are about lanes. The table is on the glass card the page
+    // draws it in, so the card is what the order is read off.
     const order = Array.from(
       root().querySelector(".view.project")?.children ?? [],
     );
     const counters = order.findIndex((node) => node.classList.contains("kpis"));
     const status = order.findIndex((node) => node.classList.contains("status"));
-    const table = order.findIndex((node) => node.tagName === "TABLE");
+    const table = order.findIndex((node) =>
+      node.classList.contains("lanes-card"),
+    );
     expect(counters).toBeGreaterThanOrEqual(0);
     expect(status).toBeGreaterThan(counters);
     expect(table).toBeGreaterThan(status);

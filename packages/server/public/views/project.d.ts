@@ -78,6 +78,18 @@ export declare function staleWavesOf(
   all: boolean,
 ): readonly WaveSummary[];
 
+/** The four states one wave's lanes derive, in the order the plan's W35 has. */
+export type WaveState = "failed" | "done" | "running" | "settled";
+
+/**
+ * The state of one wave from the rows the listing holds for it and the head's
+ * own staleness, in W35's order.
+ */
+export declare function waveStateOf(
+  rows: readonly LaneRow[],
+  stale: boolean,
+): WaveState;
+
 /** Whether a row is one the reader's own filter is looking for. */
 export declare function matches(row: LaneRow, query: ViewQuery): boolean;
 

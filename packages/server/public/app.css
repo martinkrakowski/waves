@@ -6,9 +6,17 @@ body {
   line-height: 1.5;
 }
 
+/*
+ * The measure of every view: the same 1240px the bars centre their own content
+ * on, so a heading, a panel and the bar's first crumb start in the same column.
+ * `main.page` (shell.css) pads the page area by 1.25rem, so a centred 1240px
+ * inside it lands on exactly the offset the bars' padding reaches:
+ * 1.25rem + (100% - 2.5rem - 1240px) / 2 === (100% - 1240px) / 2. Nothing below
+ * this rule may widen the measure for one view.
+ */
 .view {
   margin: 0 auto;
-  max-width: 64rem;
+  max-width: 1240px;
 }
 
 h1 {

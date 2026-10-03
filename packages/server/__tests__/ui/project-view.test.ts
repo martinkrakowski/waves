@@ -13,6 +13,7 @@ import {
   sortRows,
   staleWavesOf,
   stagesOf,
+  waveStateOf,
 } from "../../public/views/project.js";
 
 import type { LaneRow, WaveSummary } from "../../src/application/read-model.js";
@@ -319,6 +320,110 @@ describe("the wave strip", () => {
     expect(textsOf(host, ".note-inline")).toStrictEqual([
       "2 older waves are not listed.",
     ]);
+  });
+});
+
+/**
+ * The chip's own class per derived wave state. The colour hangs on it and the
+ * words stay where they were, so this is the whole of what the state class adds:
+ * a class out of the view's own table of five literals.
+ */
+describe("the wave strip's state classes", () => {
+  /** The chip of the one wave the listing carries, as it was drawn. */
+  function chipOf(
+    head: Partial<WaveSummary>,
+    rows: readonly LaneRow[],
+  ): HTMLElement {
+    const host = renderProjectView({
+      lanes: projectLanes({ waves: [waveSummary(head)], lanes: rows }),
+    });
+    const chips = host.querySelectorAll(".wave-strip li.wave");
+    // The "all lanes" chip leads, and it is a scope rather than a wave.
+    expect(chips).toHaveLength(1);
+    return chips[0] as HTMLElement;
+  }
+
+  const alive = [laneRow({ derived: { alive: true } })];
+  const failed = [
+    laneRow({
+      derived: { alive: false, exit: 1 },
+      reported: { stage: "build", event: "failed", ts: NOW_ISO },
+    }),
+  ];
+  const merged = [
+    laneRow({
+      derived: {
+        alive: false,
+        pr: { number: 7, state: "merged", checks: "pass" },
+      },
+    }),
+  ];
+  const stopped = [laneRow({ derived: { alive: false } })];
+
+  it.each([
+    ["running", { stale: false }, alive],
+    ["done", { stale: false }, merged],
+    ["settled", { stale: false }, stopped],
+    ["failed", { stale: false }, failed],
+  ])("gives a %s wave its own class", (state, head, rows) => {
+    expect(chipOf(head, rows).getAttribute("class")).toBe(`wave wave-${state}`);
+  });
+
+  it("gives a stale wave the stale class beside the one its lanes derived", () => {
+    // A stale wave's liveness reads `unknown` rather than `running`, so the state
+    // it derives is `settled` — and the stale class is what says the numbers
+    // below it may be old. The chip still says "stale" in words in its badge.
+    const chip = chipOf({ stale: true }, [
+      laneRow({ derived: { alive: "unknown" } }),
+    ]);
+
+    expect(chip.getAttribute("class")).toBe("wave wave-settled wave-stale");
+    expect(textsOf(chip, ".badge.stale")).toStrictEqual(["stale"]);
+  });
+
+  it("gives the scope chip no state class at all", () => {
+    const host = renderProjectView({ lanes: projectLanes({ lanes: alive }) });
+
+    expect(host.querySelectorAll(".wave-strip li.wave")).toHaveLength(1);
+    expect(
+      (host.querySelector(".wave-strip li") as HTMLElement).getAttribute(
+        "class",
+      ),
+    ).toBeNull();
+  });
+
+  it("keeps a payload in a wave's own id out of every class", () => {
+    // The shape check would have refused this listing, so the only way to see
+    // what the chip does with an id it was never meant to draw is to hand it one.
+    const payload = '<img src=x onerror="alert(1)">';
+    const chip = chipOf({ wave: payload }, [
+      laneRow({ wave: payload, derived: { alive: true } }),
+    ]);
+
+    expect(chip.getAttribute("class")).toBe("wave wave-running");
+    for (const node of chip.querySelectorAll("*")) {
+      for (const value of Array.from(node.getAttributeNames()).map((name) =>
+        node.getAttribute(name),
+      )) {
+        expect(value).not.toContain(payload);
+      }
+    }
+    expect(textsOf(chip, "a")).toStrictEqual([payload]);
+  });
+
+  it("takes no class from a state the listing's own shape does not carry", () => {
+    // A head carrying a `state` of its own, which this route never answers: the
+    // class still comes out of the view's table, and a string nobody chose can
+    // never be an attribute.
+    const payload = "<svg onload=alert(1)>";
+    const head = { ...waveSummary(), state: payload } as WaveSummary;
+    const host = renderProjectView({
+      lanes: projectLanes({ waves: [head], lanes: alive }),
+    });
+
+    expect(
+      (oneOf(host, ".wave-strip li.wave") as HTMLElement).getAttribute("class"),
+    ).toBe("wave wave-running");
   });
 });
 
@@ -1559,6 +1664,121 @@ describe("staleWavesOf", () => {
     expect(
       staleWavesOf(projectLanes({ waves: [] }), undefined, false),
     ).toStrictEqual([]);
+  });
+});
+
+describe("waveStateOf", () => {
+  it("calls a wave nothing alive in and nothing merged settled", () => {
+    expect(waveStateOf([laneRow({ derived: { alive: false } })], false)).toBe(
+      "settled",
+    );
+  });
+
+  it("calls a wave with a lane alive running, and never a stale one", () => {
+    const alive = [laneRow({ derived: { alive: true } })];
+
+    expect(waveStateOf(alive, false)).toBe("running");
+    // A wave past its own interval has stopped saying what its lanes are doing.
+    expect(waveStateOf(alive, true)).toBe("settled");
+  });
+
+  it("calls a wave whose pull requests are all answered done", () => {
+    // Closed counts as answered, exactly as merged does.
+    expect(
+      waveStateOf(
+        [
+          laneRow({
+            derived: {
+              alive: false,
+              pr: { number: 7, state: "merged", checks: "pass" },
+            },
+          }),
+          laneRow({
+            id: "wv-b",
+            derived: {
+              alive: false,
+              pr: { number: 8, state: "closed", checks: "pass" },
+            },
+          }),
+        ],
+        false,
+      ),
+    ).toBe("done");
+  });
+
+  it("calls a wave with no lanes at all settled rather than done", () => {
+    expect(waveStateOf([], false)).toBe("settled");
+  });
+
+  it("calls a wave with a lane that failed and is not alive failed", () => {
+    expect(
+      waveStateOf(
+        [
+          laneRow({
+            derived: { alive: false },
+            reported: { stage: "build", event: "failed", ts: NOW_ISO },
+          }),
+        ],
+        false,
+      ),
+    ).toBe("failed");
+  });
+
+  it("calls a wave whose lane exited non-zero and is not alive failed", () => {
+    expect(
+      waveStateOf([laneRow({ derived: { alive: false, exit: 3 } })], false),
+    ).toBe("failed");
+  });
+
+  it("calls a lane that reported a failure and is still alive neither failed nor done", () => {
+    // A lane still running has not finished failing, and its pull request is
+    // open, so the wave is running.
+    expect(
+      waveStateOf(
+        [
+          laneRow({
+            derived: { alive: true },
+            reported: { stage: "build", event: "failed", ts: NOW_ISO },
+          }),
+        ],
+        false,
+      ),
+    ).toBe("running");
+  });
+
+  it("calls a lane whose pull request is answered, however it looks, not failed", () => {
+    // The exclusion a failing lane is measured against comes first: an answered
+    // pull request answers no reasons, and the wave is done.
+    expect(
+      waveStateOf(
+        [
+          laneRow({
+            derived: {
+              alive: false,
+              exit: 1,
+              pr: { number: 7, state: "merged", checks: "pass" },
+            },
+            reported: { stage: "build", event: "failed", ts: NOW_ISO },
+          }),
+        ],
+        false,
+      ),
+    ).toBe("done");
+  });
+
+  it("does not call an exit of zero a failure", () => {
+    expect(
+      waveStateOf([laneRow({ derived: { alive: false, exit: 0 } })], false),
+    ).toBe("settled");
+  });
+
+  it("treats a lane's unknown liveness as neither alive nor failed", () => {
+    // Staleness has turned a `true` into an `unknown`, so nothing is known to be
+    // running and nothing is known to have failed.
+    const unknown = [laneRow({ derived: { alive: "unknown" } })];
+
+    expect(waveStateOf(unknown, false)).toBe("settled");
+    expect(waveStateOf(unknown, true)).toBe("settled");
   });
 });
 

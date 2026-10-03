@@ -385,6 +385,84 @@ function allLanesItem(model) {
   });
 }
 
+/**
+ * The rows the listing holds for one wave, which is what the chip's state is
+ * decided from. The listing holds every row of every wave it carries heads for,
+ * so this is the whole of the wave as far as this page is concerned.
+ */
+function rowsOfWave(view, wave) {
+  return view.lanes.filter((row) => row.wave === wave);
+}
+
+/** A pull request that has been merged or closed has answered what it raised. */
+function prSettled(row) {
+  const state = row.derived.pr?.state;
+  return state === "merged" || state === "closed";
+}
+
+/**
+ * An exit status is a failure when it is a number and it is not zero. The two
+ * predicates above are the ones `src/domain/attention.ts` holds, written out
+ * again rather than imported: `public/` is served to the browser as it is and
+ * cannot reach into the service's own source.
+ */
+function isFailureExit(exit) {
+  return exit !== undefined && exit !== 0;
+}
+
+/**
+ * What one wave's lanes say about the wave, in the order the plan's W35 decides
+ * it in and in no other: `failed`, then `done`, then `running`, and `settled`
+ * for everything else. `src/domain/wave-state.ts` holds the same rule for the
+ * fleet route, which is answered a `state` per wave; this listing carries no
+ * such field, so the chip works it out from the rows it is already holding —
+ * the same vocabulary, the same order, and a colour beside the words the chip
+ * already says.
+ *
+ * `stale` is the head's own answer rather than the rows': a wave past its own
+ * interval has stopped saying what its lanes are doing, so an alive lane in one
+ * is `settled` and not `running`. And a row's `alive` is the view's form, where
+ * staleness has already turned a `true` into `"unknown"`, so only a `false` is
+ * known to be a lane that is not alive.
+ */
+export function waveStateOf(rows, stale) {
+  for (const row of rows) {
+    if (
+      !prSettled(row) &&
+      row.derived.alive === false &&
+      (row.reported?.event === "failed" || isFailureExit(row.derived.exit))
+    ) {
+      return "failed";
+    }
+  }
+  if (rows.length > 0 && rows.every(prSettled)) {
+    return "done";
+  }
+  if (!stale && rows.some((row) => row.derived.alive === true)) {
+    return "running";
+  }
+  return "settled";
+}
+
+/**
+ * The class each of the four states hangs its colour on, and the class a stale
+ * wave carries beside the one its state gave it. Both are this file's own
+ * literals and the state is chosen here: a class built from anything a listing
+ * carries would be an attribute a pusher wrote.
+ */
+const WAVE_CLASS = {
+  failed: "wave-failed",
+  done: "wave-done",
+  running: "wave-running",
+  settled: "wave-settled",
+  stale: "wave-stale",
+};
+
+/**
+ * One wave's chip: its own state class, plus the stale one when the head says so.
+ * The badge inside the chip is still what says "stale" in words — the class is
+ * the colour beside that word, never instead of it.
+ */
 function waveItem(model, head, nowMs) {
   const children = [
     internalLink(
@@ -404,7 +482,11 @@ function waveItem(model, head, nowMs) {
   if (!head.retained) {
     children.push(badge("past retention", "aging"));
   }
-  return el("li", { children });
+  const state = waveStateOf(rowsOfWave(model.lanes, head.wave), head.stale);
+  const classes = head.stale
+    ? `wave ${WAVE_CLASS[state]} ${WAVE_CLASS.stale}`
+    : `wave ${WAVE_CLASS[state]}`;
+  return el("li", { attrs: { class: classes }, children });
 }
 
 /**
@@ -1030,6 +1112,16 @@ function laneTable(model, rows, nowMs) {
   });
 }
 
+/**
+ * The table on the glass card every other panel of the page is on, so the
+ * hairlines between the rows and the band its header sits in have a surface to
+ * be drawn on. The narrow layout in `app.css` turns each row into a card of its
+ * own, and this is the card those cards sit on.
+ */
+function lanesCard(children) {
+  return el("div", { attrs: { class: "lanes-card" }, children });
+}
+
 const PAST_RETENTION =
   "This wave is past retention. Show the waves past retention to list its lanes.";
 
@@ -1109,7 +1201,7 @@ export function renderProject(model, nowMs, handlers) {
         el("p", { attrs: { class: "empty" }, text: NOTHING_MATCHES }),
       );
     } else {
-      children.push(laneTable(model, shown, nowMs));
+      children.push(lanesCard([laneTable(model, shown, nowMs)]));
     }
   } else {
     children.push(emptyMessage(model));
