@@ -235,6 +235,86 @@ kubectl -n waves delete secret waves-enroll
 kubectl -n waves rollout restart deploy/waves
 ```
 
+### Automatic registration
+
+`waves register-all` reads the list you keep at `~/.config/waves/projects.json`
+and registers every project in it that has no token file on this machine. It
+runs on the Mac that pushes: registration answers with a project's token once,
+and every push reads `~/.config/waves/<id>.token` here, so a schedule anywhere
+else would mint tokens no pusher ever receives. A LaunchAgent runs it once an
+hour and once at login.
+
+1. Create the `waves-enroll` Secret as in
+   [The enrollment Secret](#the-enrollment-secret): from a 0600 file of your
+   own, never through an agent.
+
+2. Copy the same value to `~/.config/waves/enroll.token`, mode 0600, from the
+   file the Secret was made from, so it is never typed on a command line:
+
+   ```sh
+   umask 077
+   mkdir -p -m 700 ~/.config/waves
+   ssh m cat /root/waves-enroll-token > ~/.config/waves/enroll.token
+   ```
+
+   The directory must be yours and reachable by nobody else (`chmod 700`); the
+   client refuses anything looser, and so does `install.sh`.
+
+   A file of mode 0400 is accepted as well, if you would rather it not be
+   writable.
+
+3. Write `~/.config/waves/projects.json`, the list you maintain:
+
+   ```json
+   [
+     {
+       "id": "client-portal",
+       "name": "Client Portal",
+       "repo": "https://github.com/…"
+     }
+   ]
+   ```
+
+   `campaign-foundry` may be listed too: its token is already on this machine, so
+   it is counted as skipped and no request is made for it.
+
+4. Install the client, then the LaunchAgent:
+
+   ```sh
+   npm i -g @hexagen-monaco/waves-client@0.2.0
+   sh deploy/launchd/install.sh https://waves.midnight.lan
+   ```
+
+   The URL is the one argument `install.sh` takes and has to be `https`. The
+   first run starts at once, so `~/.config/waves/ca.crt` has to be there
+   already (see [Trusting the midnight CA](#trusting-the-midnight-ca)): without
+   it every entry fails on the certificate. The
+   script renders nothing at all unless `~/.config/waves/enroll.token` is there
+   as a real file of mode 0600 or 0400, and it never reads it: what reaches the
+   wrapper is the path, and the client reads the value.
+
+5. Read `~/Library/Logs/waves-register-all.log` after the first run. Every run
+   opens with one dated line and ends with the client's own summary,
+   `N skipped, M registered, K conflicts, J failed`. A `409` is printed on every
+   run until it is resolved and is not a failure of the job.
+
+6. To rotate the enrollment token: delete the Secret, create it again from a new
+   0600 file, `kubectl -n waves rollout restart deploy/waves`, and replace
+   `~/.config/waves/enroll.token`. Runs between the restart and the local
+   replacement abort on a 401, which the log says.
+
+7. After a node upgrade, re-run
+   `sh deploy/launchd/install.sh https://waves.midnight.lan`; it is idempotent.
+   `sh deploy/launchd/uninstall.sh` boots the agent out and removes the plist
+   and the wrapper, and leaves the log, `~/.config/waves` and every token alone.
+
+macOS never rotates that log — launchd only ever appends to it — so if it grows,
+truncate it by hand:
+
+```sh
+: > ~/Library/Logs/waves-register-all.log
+```
+
 ### Deploy-time checks
 
 Run these after the first deploy of the write path, in this order:

@@ -1,0 +1,38 @@
+#!/bin/sh
+#
+# The `waves register-all` run the LaunchAgent schedules. Rendered by
+# deploy/launchd/install.sh from register-all.sh.template, with the three
+# absolute paths below filled in; re-run install.sh after a node upgrade, which
+# moves both the node and the client's bin.
+#
+# launchd sends this script's stdout and stderr to the plist's StandardOutPath
+# and StandardErrorPath, so every line below lands in
+# ~/Library/Logs/waves-register-all.log. The token is never printed: the client
+# is given its path and reads it.
+
+set -eu
+
+node='@NODE@'
+client='@CLIENT@'
+token='@TOKEN@'
+
+stamp() {
+  date -u +%Y-%m-%dT%H:%M:%SZ
+}
+
+# A missing path is the one failure the owner must see: an nvm upgrade moves
+# both of them, and a job that says nothing leaves an hour of silence to guess
+# at. Name the path and the way out, then exit 1 rather than exec a client that
+# is not there.
+for path in "$node" "$client"; do
+  if [ ! -e "$path" ]; then
+    echo "$(stamp) waves register-all: $path is gone; re-run deploy/launchd/install.sh" >&2
+    exit 1
+  fi
+done
+
+echo "$(stamp) waves register-all: run"
+
+# exec, so the log ends with the client's own exit code and launchd's view of
+# the run is the run's, not this script's.
+exec "$node" "$client" register-all --enrollment-token-file "$token"
