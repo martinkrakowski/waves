@@ -163,10 +163,12 @@ describe("the wave strip", () => {
 
   it("counts every lane of the response beside all lanes", () => {
     const host = renderProjectView({ lanes: LISTING });
+    // Each wave chip leads with its own state, in a span a screen reader reads and
+    // an eye does not see, so the edge colour is never the only sign of the state.
     expect(textsOf(host, ".wave-strip li")).toStrictEqual([
       "all lanes3 lanes",
-      "w-32 lanesjust now",
-      "w-21 lane10m agostale",
+      "runningw-32 lanesjust now",
+      "settledw-21 lane10m agostale",
     ]);
   });
 
@@ -424,6 +426,36 @@ describe("the wave strip's state classes", () => {
     expect(
       (oneOf(host, ".wave-strip li.wave") as HTMLElement).getAttribute("class"),
     ).toBe("wave wave-running");
+  });
+
+  it("says the state in a word as well as in a colour, and never says a payload", () => {
+    // W14: a state shown at all is said in words. The word leads the chip in a span
+    // `app.css` clips away for an eye and leaves for a screen reader, and it comes
+    // out of the view's own table of four literals like the class does.
+    const words = (head: Partial<WaveSummary>, rows: readonly LaneRow[]) =>
+      textsOf(chipOf(head, rows), ".sr");
+
+    expect(words({ stale: false }, alive)).toStrictEqual(["running"]);
+    expect(words({ stale: false }, merged)).toStrictEqual(["done"]);
+    expect(words({ stale: false }, stopped)).toStrictEqual(["settled"]);
+    expect(words({ stale: false }, failed)).toStrictEqual(["failed"]);
+    // A stale wave is `settled` by what its lanes say, and the badge beside the
+    // word is what says it has gone stale.
+    expect(
+      words({ stale: true }, [laneRow({ derived: { alive: "unknown" } })]),
+    ).toStrictEqual(["settled"]);
+
+    // A head carrying a `state` of its own, which this route never answers: the
+    // word is still one this file wrote, and the string nobody chose is nowhere in
+    // the text a reader — or a screen reader — is given.
+    const payload = "<svg onload=alert(1)>";
+    const head = { ...waveSummary(), state: payload } as WaveSummary;
+    const host = renderProjectView({
+      lanes: projectLanes({ waves: [head], lanes: alive }),
+    });
+
+    expect(textsOf(host, ".wave-strip li.wave .sr")).toStrictEqual(["running"]);
+    expect(host.textContent).not.toContain(payload);
   });
 });
 

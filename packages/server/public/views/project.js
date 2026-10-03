@@ -445,10 +445,11 @@ export function waveStateOf(rows, stale) {
 }
 
 /**
- * The class each of the four states hangs its colour on, and the class a stale
- * wave carries beside the one its state gave it. Both are this file's own
- * literals and the state is chosen here: a class built from anything a listing
- * carries would be an attribute a pusher wrote.
+ * The class each of the four states hangs its colour on, the class a stale wave
+ * carries beside the one its state gave it, and the word each state is said in
+ * for a reader who cannot see the colour. All three are this file's own
+ * literals, chosen here: a class or a word built from anything a listing carries
+ * would be an attribute or a line a pusher wrote.
  */
 const WAVE_CLASS = {
   failed: "wave-failed",
@@ -458,13 +459,24 @@ const WAVE_CLASS = {
   stale: "wave-stale",
 };
 
+const WAVE_WORD = {
+  failed: "failed",
+  done: "done",
+  running: "running",
+  settled: "settled",
+};
+
 /**
- * One wave's chip: its own state class, plus the stale one when the head says so.
- * The badge inside the chip is still what says "stale" in words — the class is
- * the colour beside that word, never instead of it.
+ * One wave's chip: its own state class, the stale one when the head says so, and
+ * the state's word in a span a screen reader reads and an eye does not see. The
+ * colour on the edge is beside that word rather than instead of it, which is what
+ * the plan's W14 asks of a state that is shown at all.
  */
 function waveItem(model, head, nowMs) {
-  const children = [
+  const children = [];
+  const state = waveStateOf(rowsOfWave(model.lanes, head.wave), head.stale);
+  children.push(el("span", { attrs: { class: "sr" }, text: WAVE_WORD[state] }));
+  children.push(
     internalLink(
       head.wave,
       hrefFor(projectId(model), head.wave, scopeQuery(model)),
@@ -475,14 +487,13 @@ function waveItem(model, head, nowMs) {
       text: laneCountText(head.lanes),
     }),
     stamp(head.receivedAt, nowMs),
-  ];
+  );
   if (head.stale) {
     children.push(badge("stale", "stale"));
   }
   if (!head.retained) {
     children.push(badge("past retention", "aging"));
   }
-  const state = waveStateOf(rowsOfWave(model.lanes, head.wave), head.stale);
   const classes = head.stale
     ? `wave ${WAVE_CLASS[state]} ${WAVE_CLASS.stale}`
     : `wave ${WAVE_CLASS[state]}`;
