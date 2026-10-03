@@ -943,10 +943,15 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
      * One project's own status document, or undefined when it has pushed none
      * or does not exist. Both are the same `404` at the route — a project the
      * server has never heard of and one that has said nothing about itself are
-     * not two things a reader can be told apart — and neither is looked up
-     * twice: the store's answer is the whole answer.
+     * not two things a reader can be told apart. The project is looked up first,
+     * as the wave list does: a status write that finished after its project was
+     * deleted leaves a file the registry no longer vouches for, and it is never
+     * served.
      */
     async getStatus(projectId: string): Promise<StatusView | undefined> {
+      if ((await store.getProject(projectId)) === undefined) {
+        return undefined;
+      }
       const stored = await store.getStatus(projectId);
       if (stored === undefined) {
         return undefined;

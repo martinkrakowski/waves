@@ -540,6 +540,25 @@ export function runStoreContract(createHarness: () => StoreHarness): void {
       }
     });
 
+    it("clears a status left under an id when a new project takes that id", async () => {
+      const { store, dispose } = createHarness();
+      try {
+        // A status write that finished after its project was deleted.
+        await store.putStatus({
+          status: status("alpha"),
+          receivedAt: "2026-10-01T12:00:01Z",
+        });
+
+        await expect(
+          store.createProject(project("alpha"), Number.POSITIVE_INFINITY),
+        ).resolves.toBe("created");
+
+        await expect(store.getStatus("alpha")).resolves.toBeUndefined();
+      } finally {
+        await dispose();
+      }
+    });
+
     it("round-trips a status", async () => {
       const { store, dispose } = createHarness();
       try {

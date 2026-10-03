@@ -845,7 +845,7 @@ it.
 `packages/server/src/application/write-model.ts:16`, `152-177`;
 `packages/contract/src/domain/project.ts:16-21`;
 `mintToken`, `packages/server/src/infrastructure/digest.ts:19`;
-`deleteProject`, `packages/server/src/infrastructure/file-store.ts:158-179`)
+`deleteProject`, `packages/server/src/infrastructure/file-store.ts:160-181`)
 
 Under the enrollment token a registration is one serialized store operation that
 answers `created`, `exists` or `ceiling`, so two concurrent enrollments of one
@@ -986,10 +986,13 @@ wave id the contract accepts — would have overwritten the document, or the
 document the wave. Deleting a project removes the file with its waves, and does
 not create the directory to remove from it (`StoredStatus`,
 `packages/server/src/application/ports/store.ts:28-31`; `FileStore.putStatus`,
-`…/file-store.ts:262-273`). A document naming a project that is not registered
-is a `403` `{"error":"wrong project"}`, not a `404`: the token is a real
-project's, it is simply not this path's, which is what step 7 says for a wave
-too.
+`…/file-store.ts:264-275`). A path naming a project that is not registered is
+`401` for an unknown token and `403` `{"error":"wrong project"}` for another
+project's token, as step 7 says for a wave; a document naming a project other
+than the path's is the `422` above. A status write that finishes after its
+project was deleted leaves a file nothing serves: the read route answers `404`
+for a project the registry does not hold, and registering the id again removes
+the file.
 
 ## 6. TLS and trust
 

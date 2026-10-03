@@ -521,6 +521,14 @@ describe("read model", () => {
     expect(await model(store).getStatus("absent")).toBeUndefined();
   });
 
+  it("never serves a status its registry does not vouch for", async () => {
+    // A status write that finished after its project was deleted.
+    const store = new MemoryStore();
+    await store.putStatus({ status: status("alpha"), receivedAt: RECEIVED_AT });
+
+    expect(await model(store).getStatus("alpha")).toBeUndefined();
+  });
+
   it("answers a status fresh inside its own window, and with the default past it", async () => {
     const store = new MemoryStore();
     await store.putProject(project("alpha"));

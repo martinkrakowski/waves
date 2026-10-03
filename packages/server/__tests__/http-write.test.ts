@@ -404,6 +404,11 @@ describe("pushing a wave", () => {
 });
 
 describe("writing a project's status", () => {
+  // Every status test ends with no watched secret in the log, whatever it answered.
+  afterEach(() => {
+    expect(logLeaks()).toEqual([]);
+  });
+
   it("stores a valid document and serves it back through the read API", async () => {
     const store = await seeded();
     const started = await startHarness({ store });

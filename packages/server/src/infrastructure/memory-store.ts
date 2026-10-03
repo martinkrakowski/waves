@@ -53,6 +53,8 @@ export class MemoryStore implements StorePort<Project, StoredSnapshot> {
       return "ceiling";
     }
     this.#projects.set(project.id, structuredClone(project));
+    // A status left by an earlier project of the same id is not this one's.
+    this.#statuses.delete(project.id);
     return "created";
   }
 

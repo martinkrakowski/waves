@@ -148,6 +148,11 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
         this.#projectsPath(),
         serialiseProjects(projects),
       );
+      // A status written for an earlier project of the same id — a status write
+      // that finished after that project was deleted — is not this project's.
+      if (await this.#checkedStatusDir()) {
+        await rm(this.#statusPath(project.id), { force: true });
+      }
       return "created";
     });
   }
