@@ -426,6 +426,23 @@ describe("register-all", () => {
     ]);
   });
 
+  it("lets a bug out with its stack rather than calling it a failed entry", async () => {
+    await expect(
+      runAll({
+        entries: [
+          { id: ONE, name: "One" },
+          { id: TWO, name: "Two" },
+        ],
+        script: [created(TWO, ISSUED_TWO)],
+        port: {
+          exists: async () => {
+            throw new TypeError("a bug, not a file");
+          },
+        },
+      }),
+    ).rejects.toThrow(TypeError);
+  });
+
   it("reports a token file it cannot even look at, and still summarises", async () => {
     const result = await runAll({
       entries: [

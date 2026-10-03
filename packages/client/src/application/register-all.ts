@@ -2,7 +2,7 @@ import { reasonPhrase, serverFailure } from "../domain/reply.js";
 import type { Command } from "../domain/args.js";
 import { readProjectList, type ProjectEntry } from "../domain/project-list.js";
 import { EXIT_FAILURE, EXIT_OK, UsageError } from "./errors.js";
-import type { UseCaseDeps } from "./ports.js";
+import { FileRefusal, type UseCaseDeps } from "./ports.js";
 import {
   readCredential,
   requestRegistration,
@@ -106,7 +106,10 @@ export async function registerAll(
         break;
       }
     } catch (error) {
-      if (!(error instanceof Error)) {
+      // Only a file the adapter refused is this entry's line: anything else is a
+      // bug in this package, and it travels out with its stack rather than being
+      // dressed up as one failed entry while the rest of the list is still sent.
+      if (!(error instanceof FileRefusal)) {
         throw error;
       }
       // The run has already spent a request, and a summary the owner can read is

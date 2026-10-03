@@ -94,7 +94,7 @@ describe("readProjectList", () => {
 
   it("wants no key a project does not have", () => {
     expect(errorsOf(list({ id: "one", name: "One", branch: "main" }))).toEqual([
-      "entry 0: branch is not a key a project has",
+      "entry 0: holds a key a project does not have",
     ]);
   });
 
@@ -168,7 +168,7 @@ describe("readProjectList", () => {
       ),
     ).toEqual([
       "entry 0: id is not a project id",
-      "entry 1: branch is not a key a project has",
+      "entry 1: holds a key a project does not have",
       "entry 2: name: expected at least 1 characters",
       "entry 3: repo must not carry a user or a password",
       "entry 4: id must be a string",
