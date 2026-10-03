@@ -1,4 +1,5 @@
-import { isLaneId, isProjectId, isWaveId } from "./ids.js";
+import { readIntervalSeconds, readProjectId } from "./fields.js";
+import { isLaneId, isWaveId } from "./ids.js";
 import { SCHEMA } from "./model.js";
 import type {
   CheckStatus,
@@ -28,7 +29,6 @@ import {
   readEnum,
   readInteger,
   readIntegerAtLeast,
-  readIntegerInRange,
   readNumberAtLeast,
   readNumberInRange,
   readOptional,
@@ -66,8 +66,6 @@ const PULL_REQUEST_KEYS = ["number", "state", "checks", "unresolvedThreads"];
 const DIFF_KEYS = ["files", "insertions", "deletions"];
 const LOG_KEYS = ["bytes", "mtimeMs", "tail"];
 
-const MIN_INTERVAL_SECONDS = 1;
-const MAX_INTERVAL_SECONDS = 300;
 const MAX_LANES = 200;
 const MAX_SEAT_CHARS = 128;
 const MAX_DETAIL_BYTES = 8192;
@@ -96,18 +94,6 @@ const TAIL_RULE: StringRule = {
 const REVIEW_RULE: StringRule = { maxChars: MAX_REVIEW_CHARS };
 const DISAGREEMENT_RULE: StringRule = { maxChars: MAX_DISAGREEMENT_CHARS };
 
-function readProjectId(ctx: Collector, value: unknown, path: string): string {
-  if (typeof value !== "string") {
-    ctx.add(path, "expected a project id");
-    return "";
-  }
-  if (!isProjectId(value)) {
-    ctx.add(path, "expected 1 to 63 characters of a-z, 0-9 and -");
-    return "";
-  }
-  return value;
-}
-
 function readWaveId(ctx: Collector, value: unknown, path: string): string {
   if (typeof value !== "string") {
     ctx.add(path, "expected a wave id");
@@ -130,24 +116,6 @@ function readLaneId(ctx: Collector, value: unknown, path: string): string {
     return "";
   }
   return value;
-}
-
-function readIntervalSeconds(
-  ctx: Collector,
-  value: unknown,
-  path: string,
-): number | null {
-  if (value === null) {
-    return null;
-  }
-  const seconds = readIntegerInRange(
-    ctx,
-    value,
-    path,
-    MIN_INTERVAL_SECONDS,
-    MAX_INTERVAL_SECONDS,
-  );
-  return seconds ?? null;
 }
 
 interface DetailBudget {

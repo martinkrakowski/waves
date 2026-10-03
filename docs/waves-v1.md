@@ -39,7 +39,7 @@ exactly `ENVELOPE_KEYS`
 `project` and `wave` patterns are `PROJECT_ID_PATTERN` and `WAVE_ID_PATTERN` in
 `packages/contract/src/domain/ids.ts:7`, `9`; `lane.id` uses the wave pattern.
 `intervalSeconds` is required as a key but `null` is a legal value
-(`readIntervalSeconds`, `packages/contract/src/domain/envelope.ts:135`).
+(`readIntervalSeconds`, `packages/contract/src/domain/fields.ts:28`).
 
 ### 2.2 A lane
 
@@ -79,15 +79,15 @@ a string of at most 4096 bytes in which tab and newline are allowed. Omitting a
 key inside a nested object that is present is an error, because the reader
 validates each field rather than defaulting it — except the explicitly optional
 ones above.
-(`packages/contract/src/domain/envelope.ts:51-67`, `233-421`)
+(`packages/contract/src/domain/envelope.ts:51-67`, `201-389`)
 
 ### 2.3 Count caps
 
-- `lanes` at most 200 (`MAX_LANES`, `packages/contract/src/domain/envelope.ts:71`).
-- `disagreements` at most 20 per lane (`MAX_DISAGREEMENTS`, `…/envelope.ts:76`).
-- `detail` at most 256 keys in total, nested (`MAX_DETAIL_KEYS`, `…/envelope.ts:79`).
+- `lanes` at most 200 (`MAX_LANES`, `packages/contract/src/domain/envelope.ts:69`).
+- `disagreements` at most 20 per lane (`MAX_DISAGREEMENTS`, `…/envelope.ts:74`).
+- `detail` at most 256 keys in total, nested (`MAX_DETAIL_KEYS`, `…/envelope.ts:77`).
 - `detail` at most 8 levels deep, counting the `detail` object itself as level 1
-  (`MAX_DETAIL_DEPTH`, `…/envelope.ts:78`).
+  (`MAX_DETAIL_DEPTH`, `…/envelope.ts:76`).
 
 ### 2.4 `reported`
 
@@ -119,21 +119,21 @@ though the pattern matches. (`packages/contract/src/domain/validation.ts:20`,
   1 048 576 bytes, else one error at the root (`MAX_INPUT_BYTES`,
   `packages/contract/src/domain/validation.ts:17`).
 - `reported.detail` must be at most 8 KiB = 8192 bytes re-serialised
-  (`MAX_DETAIL_BYTES`, `packages/contract/src/domain/envelope.ts:73`).
+  (`MAX_DETAIL_BYTES`, `packages/contract/src/domain/envelope.ts:71`).
 - `derived.log.tail` must be at most 4 KiB = 4096 bytes, measured as bytes and
-  not characters (`MAX_TAIL_BYTES`, `…/envelope.ts:74`).
+  not characters (`MAX_TAIL_BYTES`, `…/envelope.ts:72`).
 - Any character below `0x20`, and `0x7f`, is a control character and is refused
   in every string the validator reads — keys of `detail` included, where the
   message is `a key contains a control character`. Tab and newline survive only
   where the rule allows line breaks: `log.tail` and `detail` string values.
-  (`packages/contract/src/domain/validation.ts:58-81`, `…/envelope.ts:184-186`)
+  (`packages/contract/src/domain/validation.ts:58-81`, `…/envelope.ts:152-154`)
 - The keys `__proto__`, `constructor` and `prototype` are refused anywhere
   inside `detail`, at any depth (`FORBIDDEN_DETAIL_KEYS`,
-  `packages/contract/src/domain/envelope.ts:81`).
+  `packages/contract/src/domain/envelope.ts:79`).
 - `detail` may hold any JSON value — strings, numbers, booleans, `null`,
   arrays, objects. The only rules on it are the byte cap, the depth cap, the key
   budget, the control-character rule and the reserved keys.
-  (`detailProblem`, `packages/contract/src/domain/envelope.ts:157-231`)
+  (`detailProblem`, `packages/contract/src/domain/envelope.ts:125-199`)
 
 ### 2.7 A minimal valid envelope
 
@@ -763,7 +763,7 @@ HTTP on its port and never asks for a client certificate
 
 Every envelope declares `schema: "waves/v1"` and the validator refuses
 anything else (`SCHEMA`, `packages/contract/src/domain/model.ts:3`;
-`packages/contract/src/domain/envelope.ts:552`).
+`packages/contract/src/domain/envelope.ts:520`).
 
 The closed-object rule is what makes a version meaningful. Under `v1` a new
 **optional** field is an additive minor change: old readers refuse to accept it

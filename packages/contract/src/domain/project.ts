@@ -1,4 +1,4 @@
-import { isProjectId } from "./ids.js";
+import { readProjectId } from "./fields.js";
 import type { Project } from "./model.js";
 import {
   type Collector,
@@ -19,18 +19,6 @@ const MAX_REPO_CHARS = 200;
 const NAME_RULE: StringRule = { minChars: 1, maxChars: MAX_NAME_CHARS };
 const REPO_RULE: StringRule = { maxChars: MAX_REPO_CHARS };
 const TOKEN_RULE: StringRule = { pattern: /^[0-9a-f]{64}$/ };
-
-function readProjectId(ctx: Collector, value: unknown, path: string): string {
-  if (typeof value !== "string") {
-    ctx.add(path, "expected a project id");
-    return "";
-  }
-  if (!isProjectId(value)) {
-    ctx.add(path, "expected 1 to 63 characters of a-z, 0-9 and -");
-    return "";
-  }
-  return value;
-}
 
 function isHttpsUrl(text: string): boolean {
   try {
