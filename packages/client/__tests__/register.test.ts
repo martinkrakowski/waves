@@ -11,6 +11,7 @@ import {
 import {
   ADMIN_TOKEN,
   CONFIG_DIR,
+  ENROLL_TOKEN,
   PROJECT,
   PROJECT_TOKEN,
   fakeFiles,
@@ -26,6 +27,11 @@ type RegisterCommand = Extract<Command, { readonly kind: "register" }>;
 /** A readable admin token file, which every test past the token check needs. */
 const ADMIN_FILE = {
   "/run/secrets/admin": { text: `${ADMIN_TOKEN}\n`, mode: 0o600 },
+};
+
+/** The same file, for the token that may only create what is not there yet. */
+const ENROLL_FILE = {
+  "/run/secrets/enroll": { text: `${ENROLL_TOKEN}\n`, mode: 0o600 },
 };
 
 interface Sent {
@@ -62,7 +68,10 @@ function command(overrides: Partial<RegisterCommand> = {}): RegisterCommand {
     id: PROJECT,
     name: "Waves Demo",
     rotate: false,
-    adminToken: { kind: "file", path: "/run/secrets/admin" },
+    credential: {
+      role: "admin",
+      source: { kind: "file", path: "/run/secrets/admin" },
+    },
     ...overrides,
   };
 }
@@ -103,7 +112,10 @@ describe("register", () => {
     });
 
     expect(
-      await register(command({ adminToken: { kind: "stdin" } }), built.deps),
+      await register(
+        command({ credential: { role: "admin", source: { kind: "stdin" } } }),
+        built.deps,
+      ),
     ).toBe(0);
     expect(built.out).toEqual([
       `registered ${PROJECT}; token saved to ${tokenPath}`,
@@ -202,9 +214,143 @@ describe("register", () => {
       stdin: "\n",
     });
     await expect(
-      register(command({ adminToken: { kind: "stdin" } }), built.deps),
+      register(
+        command({ credential: { role: "admin", source: { kind: "stdin" } } }),
+        built.deps,
+      ),
     ).rejects.toThrow("no admin token on stdin");
     expect(built.sent()).toBe(0);
+  });
+
+  it("registers with an enrollment token, and never asks for a rotation", async () => {
+    const sent: Sent[] = [];
+    const built = harness({
+      files: ENROLL_FILE,
+      script: [reply(201, `{"id":"${PROJECT}","token":"${PROJECT_TOKEN}"}`)],
+    });
+    const deps = {
+      ...built.deps,
+      transport: (options: TransportOptions) => ({
+        send: async (request: HttpRequest) => {
+          sent.push({ options, request });
+          return reply(201, `{"id":"${PROJECT}","token":"${PROJECT_TOKEN}"}`);
+        },
+      }),
+    };
+
+    expect(
+      await register(
+        command({
+          credential: {
+            role: "enrollment",
+            source: { kind: "file", path: "/run/secrets/enroll" },
+          },
+        }),
+        deps,
+      ),
+    ).toBe(0);
+    expect(sent[0]?.request).toEqual({
+      method: "POST",
+      url: "http://127.0.0.1:8080/api/v1/projects",
+      bearer: ENROLL_TOKEN,
+      body: `{"id":"${PROJECT}","name":"Waves Demo"}`,
+    });
+    expect(built.files.writes).toEqual([
+      { path: tokenPath, secret: PROJECT_TOKEN },
+    ]);
+  });
+
+  it("takes an enrollment token on stdin, and names the role it wanted", async () => {
+    const built = harness({
+      script: [reply(201, `{"id":"${PROJECT}","token":"${PROJECT_TOKEN}"}`)],
+      stdin: `${ENROLL_TOKEN}\n`,
+    });
+
+    expect(
+      await register(
+        command({
+          credential: {
+            role: "enrollment",
+            source: { kind: "stdin" },
+          },
+        }),
+        built.deps,
+      ),
+    ).toBe(0);
+    expect(built.out).toEqual([
+      `registered ${PROJECT}; token saved to ${tokenPath}`,
+    ]);
+
+    const empty = harness({
+      script: [reply(201, '{"token":"t"}')],
+      stdin: " ",
+    });
+    await expect(
+      register(
+        command({
+          credential: { role: "enrollment", source: { kind: "stdin" } },
+        }),
+        empty.deps,
+      ),
+    ).rejects.toThrow("no enrollment token on stdin");
+    expect(empty.sent()).toBe(0);
+  });
+
+  it("refuses an enrollment token file that is not there", async () => {
+    const built = harness({ script: [reply(201, '{"token":"t"}')] });
+    await expect(
+      register(
+        command({
+          credential: {
+            role: "enrollment",
+            source: { kind: "file", path: "/run/secrets/enroll" },
+          },
+        }),
+        built.deps,
+      ),
+    ).rejects.toThrow(
+      "cannot read the enrollment token at /run/secrets/enroll",
+    );
+    expect(built.sent()).toBe(0);
+  });
+
+  it("retries a 429 for the wait the server named", async () => {
+    const built = harness({
+      script: [
+        reply(429, '{"error":"slow down"}', { "retry-after": "2" }),
+        reply(201, `{"id":"${PROJECT}","token":"${PROJECT_TOKEN}"}`),
+      ],
+      files: ADMIN_FILE,
+    });
+
+    expect(await register(command(), built.deps)).toBe(0);
+    expect(built.sent()).toBe(2);
+    expect(built.waits).toEqual([2000]);
+    expect(built.files.writes).toEqual([
+      { path: tokenPath, secret: PROJECT_TOKEN },
+    ]);
+  });
+
+  it("gives up on a 429 that never stops, and on one it cannot wait out", async () => {
+    const throttled = reply(429, '{"error":"slow down"}');
+    const busy = harness({
+      script: [throttled, throttled, throttled, throttled],
+      files: ADMIN_FILE,
+    });
+    await expect(register(command(), busy.deps)).rejects.toThrow(
+      "register failed: 429 Too Many Requests",
+    );
+    expect(busy.sent()).toBe(4);
+    expect(busy.files.writes).toEqual([]);
+
+    const forever = harness({
+      script: [reply(429, "", { "retry-after": "61" })],
+      files: ADMIN_FILE,
+    });
+    await expect(register(command(), forever.deps)).rejects.toThrow(
+      "register failed: 429 Too Many Requests; the server asked to wait 61s",
+    );
+    expect(forever.sent()).toBe(1);
   });
 
   it("refuses a 201 without a token", async () => {

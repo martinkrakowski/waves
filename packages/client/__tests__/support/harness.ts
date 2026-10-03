@@ -18,6 +18,7 @@ import type {
  * cannot match by accident.
  */
 export const ADMIN_TOKEN = "waves-admin-t0ken-4f19c2";
+export const ENROLL_TOKEN = "waves-enroll-t0ken-6c5d90";
 export const PROJECT_TOKEN = "waves-project-t0ken-8b7e31";
 export const CONFIG_DIR = "/home/waves/.config/waves";
 export const PROJECT = "waves-demo";
@@ -31,7 +32,7 @@ export const GENERATED_AT = "2026-02-03T04:05:06.789Z";
  * line that mentions a secret fails whichever test wrote it.
  */
 const printed: string[] = [];
-const secrets = new Set<string>([ADMIN_TOKEN, PROJECT_TOKEN]);
+const secrets = new Set<string>([ADMIN_TOKEN, ENROLL_TOKEN, PROJECT_TOKEN]);
 
 /**
  * A secret is a secret whether or not a test named it: the tokens this package

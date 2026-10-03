@@ -51,7 +51,10 @@ describe("register", () => {
       name: "Waves Demo",
       repo: undefined,
       rotate: false,
-      adminToken: { kind: "file", path: "/run/secrets/admin" },
+      credential: {
+        role: "admin",
+        source: { kind: "file", path: "/run/secrets/admin" },
+      },
     });
   });
 
@@ -73,7 +76,41 @@ describe("register", () => {
       name: "Waves Demo",
       repo: "https://github.com/example/waves.git",
       rotate: true,
-      adminToken: { kind: "stdin" },
+      credential: { role: "admin", source: { kind: "stdin" } },
+    });
+  });
+
+  it("takes an enrollment token as well, which is a third way in", () => {
+    expect(
+      commandOf([
+        "register",
+        "client-portal",
+        "--name",
+        "Client Portal",
+        "--enrollment-token-file",
+        "/run/secrets/enroll",
+      ]),
+    ).toEqual({
+      kind: "register",
+      id: "client-portal",
+      name: "Client Portal",
+      repo: undefined,
+      rotate: false,
+      credential: {
+        role: "enrollment",
+        source: { kind: "file", path: "/run/secrets/enroll" },
+      },
+    });
+    expect(
+      commandOf([
+        "register",
+        "client-portal",
+        "--name",
+        "Client Portal",
+        "--enrollment-token-stdin",
+      ]),
+    ).toMatchObject({
+      credential: { role: "enrollment", source: { kind: "stdin" } },
     });
   });
 
@@ -148,21 +185,134 @@ describe("register", () => {
     ).toBe("register");
   });
 
-  it("takes the admin token from one place only", () => {
-    expect(errorOf(["register", "waves-demo", "--name", "n"])).toBe(
-      "give --admin-token-file or --admin-token-stdin",
+  it("takes a credential from exactly one of the four flags", () => {
+    const base = ["register", "waves-demo", "--name", "n"];
+    expect(errorOf([...base])).toBe(
+      "give --admin-token-file, --admin-token-stdin, --enrollment-token-file or --enrollment-token-stdin",
     );
+    expect(
+      errorOf([
+        ...base,
+        "--admin-token-stdin",
+        "--admin-token-file",
+        "/run/secrets/admin",
+      ]),
+    ).toBe(
+      "give only one of --admin-token-file, --admin-token-stdin, --enrollment-token-file and --enrollment-token-stdin",
+    );
+    expect(
+      errorOf([
+        ...base,
+        "--admin-token-file",
+        "/run/secrets/admin",
+        "--enrollment-token-file",
+        "/run/secrets/enroll",
+      ]),
+    ).toBe(
+      "give only one of --admin-token-file, --admin-token-stdin, --enrollment-token-file and --enrollment-token-stdin",
+    );
+    expect(
+      errorOf([...base, "--admin-token-stdin", "--enrollment-token-stdin"]),
+    ).toBe(
+      "give only one of --admin-token-file, --admin-token-stdin, --enrollment-token-file and --enrollment-token-stdin",
+    );
+  });
+
+  it("will not rotate with an enrollment token, before anything is sent", () => {
+    const message =
+      "--rotate needs the admin token; an enrollment token can only register a new project";
     expect(
       errorOf([
         "register",
         "waves-demo",
         "--name",
         "n",
-        "--admin-token-stdin",
-        "--admin-token-file",
-        "/run/secrets/admin",
+        "--rotate",
+        "--enrollment-token-file",
+        "/run/secrets/enroll",
       ]),
-    ).toBe("give only one of --admin-token-file and --admin-token-stdin");
+    ).toBe(message);
+    expect(
+      errorOf([
+        "register",
+        "waves-demo",
+        "--name",
+        "n",
+        "--rotate",
+        "--enrollment-token-stdin",
+      ]),
+    ).toBe(message);
+    // The admin token is the one that can replace a token, so this is not one.
+    expect(
+      commandOf([
+        "register",
+        "waves-demo",
+        "--name",
+        "n",
+        "--rotate",
+        "--admin-token-stdin",
+      ]).kind,
+    ).toBe("register");
+  });
+});
+
+describe("register-all", () => {
+  it("reads an enrollment token, a list and the verbosity", () => {
+    expect(
+      commandOf([
+        "register-all",
+        "--enrollment-token-file",
+        "/run/secrets/enroll",
+        "--projects",
+        "/elsewhere/list.json",
+        "--verbose",
+      ]),
+    ).toEqual({
+      kind: "register-all",
+      credential: {
+        role: "enrollment",
+        source: { kind: "file", path: "/run/secrets/enroll" },
+      },
+      projects: "/elsewhere/list.json",
+      verbose: true,
+    });
+    expect(commandOf(["register-all", "--enrollment-token-stdin"])).toEqual({
+      kind: "register-all",
+      credential: { role: "enrollment", source: { kind: "stdin" } },
+      projects: undefined,
+      verbose: false,
+    });
+  });
+
+  it("takes an enrollment token from one place only", () => {
+    expect(errorOf(["register-all"])).toBe(
+      "give --enrollment-token-file or --enrollment-token-stdin",
+    );
+    expect(
+      errorOf([
+        "register-all",
+        "--enrollment-token-stdin",
+        "--enrollment-token-file",
+        "/run/secrets/enroll",
+      ]),
+    ).toBe(
+      "give only one of --enrollment-token-file and --enrollment-token-stdin",
+    );
+  });
+
+  it("takes no admin token, no rotation and no project id", () => {
+    expect(
+      errorOf(["register-all", "--admin-token-file", "/run/secrets/admin"]),
+    ).toBe("--admin-token-file is not a register-all option");
+    expect(errorOf(["register-all", "--admin-token-stdin"])).toBe(
+      "--admin-token-stdin is not a register-all option",
+    );
+    expect(
+      errorOf(["register-all", "--enrollment-token-stdin", "--rotate"]),
+    ).toBe("--rotate is not a register-all option");
+    expect(
+      errorOf(["register-all", "waves-demo", "--enrollment-token-stdin"]),
+    ).toBe("register-all takes no positional arguments");
   });
 });
 

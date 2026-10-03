@@ -7,6 +7,9 @@ export const USAGE = [
   "usage:",
   "  waves register <id> --name <name> [--repo <https-url>] [--rotate]",
   "                 (--admin-token-file <path> | --admin-token-stdin)",
+  "                 | (--enrollment-token-file <path> | --enrollment-token-stdin)",
+  "  waves register-all (--enrollment-token-file <path> | --enrollment-token-stdin)",
+  "                     [--projects <path>] [--verbose]",
   "  waves push --wave <wave> (--file <path> | --stdin)",
   "                [--interval <1-300>] [--include-tails]",
   "  waves delete --wave <wave>",
@@ -16,12 +19,25 @@ export const USAGE = [
   "which WAVES_CONFIG_DIR overrides.",
 ].join("\n");
 
-/** Where the admin token comes from. Never from argv and never from the environment. */
-export type AdminTokenSource =
+/** Where a token comes from. Never from argv and never from the environment. */
+export type TokenSource =
   { readonly kind: "file"; readonly path: string } | { readonly kind: "stdin" };
 
 export type InputSource =
   { readonly kind: "file"; readonly path: string } | { readonly kind: "stdin" };
+
+/**
+ * A token and what it is allowed to do, which is the only thing that separates
+ * the two: the admin token does everything, and an enrollment token can only
+ * create a project that is not there yet. The role is carried with the source
+ * rather than worked out where the token is read, so the file or stdin a
+ * credential came from is a question with the same answer for both roles and
+ * only the wording of a refusal differs.
+ */
+export interface Credential {
+  readonly role: "admin" | "enrollment";
+  readonly source: TokenSource;
+}
 
 export type Command =
   | { readonly kind: "help" }
@@ -31,7 +47,14 @@ export type Command =
       readonly name: string;
       readonly repo?: string;
       readonly rotate: boolean;
-      readonly adminToken: AdminTokenSource;
+      readonly credential: Credential;
+    }
+  | {
+      readonly kind: "register-all";
+      readonly credential: Credential;
+      /** The list to read, or `undefined` for the one in the config directory. */
+      readonly projects: string | undefined;
+      readonly verbose: boolean;
     }
   | {
       readonly kind: "push";
@@ -46,10 +69,52 @@ export type ParseResult =
   | { readonly ok: true; readonly command: Command }
   | { readonly ok: false; readonly error: string };
 
+/** The two flags one role's token may come from, and what it would mean. */
+interface CredentialChoice {
+  readonly role: Credential["role"];
+  /** Takes a path, so it is a value flag rather than a switch. */
+  readonly file: string;
+  readonly stdin: string;
+}
+
+const ADMIN_CHOICE: CredentialChoice = {
+  role: "admin",
+  file: "--admin-token-file",
+  stdin: "--admin-token-stdin",
+};
+const ENROLLMENT_CHOICE: CredentialChoice = {
+  role: "enrollment",
+  file: "--enrollment-token-file",
+  stdin: "--enrollment-token-stdin",
+};
+const ADMIN_FLAGS: readonly string[] = [ADMIN_CHOICE.file, ADMIN_CHOICE.stdin];
+const ENROLLMENT_FLAGS: readonly string[] = [
+  ENROLLMENT_CHOICE.file,
+  ENROLLMENT_CHOICE.stdin,
+];
+const CREDENTIAL_FLAGS: readonly string[] = [
+  ...ADMIN_FLAGS,
+  ...ENROLLMENT_FLAGS,
+];
+
+const ROTATE = "--rotate";
+
+/**
+ * `--rotate` asks the server for a token it will only ever send once, so it is
+ * refused here rather than sent: an enrollment token cannot replace a token, and
+ * a request that would invalidate a token the user still depends on must not
+ * leave the machine. This is a parse error, so it is exit 2, before any file is
+ * opened and before any byte goes out.
+ */
+const ROTATE_NEEDS_ADMIN =
+  "--rotate needs the admin token; an enrollment token can only register a new project";
+
 const VALUE_FLAGS = [
   "--name",
   "--repo",
   "--admin-token-file",
+  "--enrollment-token-file",
+  "--projects",
   "--wave",
   "--file",
   "--interval",
@@ -58,6 +123,8 @@ const VALUE_FLAGS = [
 const SWITCH_FLAGS = [
   "--rotate",
   "--admin-token-stdin",
+  "--enrollment-token-stdin",
+  "--verbose",
   "--stdin",
   "--include-tails",
 ] as const;
@@ -66,8 +133,12 @@ const REGISTER_FLAGS: readonly string[] = [
   "--name",
   "--repo",
   "--rotate",
-  "--admin-token-file",
-  "--admin-token-stdin",
+  ...CREDENTIAL_FLAGS,
+];
+const REGISTER_ALL_FLAGS: readonly string[] = [
+  "--projects",
+  "--verbose",
+  ...ENROLLMENT_FLAGS,
 ];
 const PUSH_FLAGS: readonly string[] = [
   "--wave",
@@ -99,7 +170,12 @@ export function parseArgv(argv: readonly string[]): ParseResult {
   if (head === "help" || HELP_FLAGS.includes(head)) {
     return { ok: true, command: { kind: "help" } };
   }
-  if (head !== "register" && head !== "push" && head !== "delete") {
+  if (
+    head !== "register" &&
+    head !== "register-all" &&
+    head !== "push" &&
+    head !== "delete"
+  ) {
     return { ok: false, error: `unknown command ${head}` };
   }
   const tokens = tokenize(argv);
@@ -108,6 +184,9 @@ export function parseArgv(argv: readonly string[]): ParseResult {
   }
   if (head === "register") {
     return readRegister(tokens);
+  }
+  if (head === "register-all") {
+    return readRegisterAll(tokens);
   }
   if (head === "push") {
     return readPush(tokens);
@@ -181,9 +260,9 @@ function readRegister(tokens: Tokens): ParseResult {
   if (repo !== undefined && carriesCredentials(repo)) {
     return { ok: false, error: "--repo must not carry a user or a password" };
   }
-  const adminToken = readAdminTokenSource(tokens);
-  if (typeof adminToken === "string") {
-    return { ok: false, error: adminToken };
+  const credential = readRegisterCredential(tokens);
+  if (typeof credential === "string") {
+    return { ok: false, error: credential };
   }
   return {
     ok: true,
@@ -192,24 +271,106 @@ function readRegister(tokens: Tokens): ParseResult {
       id,
       name,
       repo,
-      rotate: tokens.switches.has("--rotate"),
-      adminToken,
+      rotate: tokens.switches.has(ROTATE),
+      credential,
     },
   };
 }
 
-function readAdminTokenSource(tokens: Tokens): AdminTokenSource | string {
-  const path = tokens.values.get("--admin-token-file");
-  const fromStdin = tokens.switches.has("--admin-token-stdin");
-  if (path !== undefined && fromStdin) {
-    return "give only one of --admin-token-file and --admin-token-stdin";
+function readRegisterAll(tokens: Tokens): ParseResult {
+  const unused = firstUnused(tokens, REGISTER_ALL_FLAGS);
+  if (unused !== undefined) {
+    return { ok: false, error: `${unused} is not a register-all option` };
   }
-  if (path === undefined) {
-    return fromStdin
-      ? { kind: "stdin" }
-      : "give --admin-token-file or --admin-token-stdin";
+  if (tokens.positionals.length !== 0) {
+    return { ok: false, error: "register-all takes no positional arguments" };
   }
-  return { kind: "file", path };
+  const credential = readCredential(tokens, [ENROLLMENT_CHOICE]);
+  if (typeof credential === "string") {
+    return { ok: false, error: credential };
+  }
+  return {
+    ok: true,
+    command: {
+      kind: "register-all",
+      credential,
+      projects: tokens.values.get("--projects"),
+      verbose: tokens.switches.has("--verbose"),
+    },
+  };
+}
+
+interface Candidate {
+  readonly choice: CredentialChoice;
+  readonly source: TokenSource;
+}
+
+/**
+ * Every credential flag the caller gave, with the source it stands for. Both
+ * flags of one role are reported rather than the first one only, because a user
+ * who gave two needs to be told which pair was the mistake.
+ */
+function candidates(
+  tokens: Tokens,
+  choices: readonly CredentialChoice[],
+): Candidate[] {
+  const found: Candidate[] = [];
+  for (const choice of choices) {
+    const path = tokens.values.get(choice.file);
+    if (path !== undefined) {
+      found.push({ choice, source: { kind: "file", path } });
+    }
+    if (tokens.switches.has(choice.stdin)) {
+      found.push({ choice, source: { kind: "stdin" } });
+    }
+  }
+  return found;
+}
+
+/**
+ * `a, b and c` — the shape a refusal needs when it names the flags it was given.
+ * The last one is separated so that `give only one of a, b and c` reads as a
+ * sentence rather than as a list.
+ */
+function listOf(flags: readonly string[], last: string): string {
+  return `${flags.slice(0, -1).join(", ")} ${last} ${flags.slice(-1).join("")}`;
+}
+
+/**
+ * Exactly one of the flags a command accepts, from exactly one role. A token
+ * given twice is a mistake about where it is, and saying so before anything is
+ * read is the whole point: a credential is never opened for a command line that
+ * cannot work.
+ */
+function readCredential(
+  tokens: Tokens,
+  choices: readonly CredentialChoice[],
+): Credential | string {
+  const flags = choices.flatMap((choice) => [choice.file, choice.stdin]);
+  const [first, ...rest] = candidates(tokens, choices);
+  if (first === undefined) {
+    return `give ${listOf(flags, "or")}`;
+  }
+  if (rest.length > 0) {
+    return `give only one of ${listOf(flags, "and")}`;
+  }
+  return { role: first.choice.role, source: first.source };
+}
+
+/**
+ * `register` takes either role, and the two never meet: an admin token is the
+ * owner's, an enrollment token is a run's. What the role forbids is checked
+ * here, where nothing has been read and nothing has been sent.
+ */
+function readRegisterCredential(tokens: Tokens): Credential | string {
+  const credential = readCredential(tokens, [ADMIN_CHOICE, ENROLLMENT_CHOICE]);
+  if (typeof credential === "string") {
+    return credential;
+  }
+  if (credential.role === "enrollment" && tokens.switches.has(ROTATE)) {
+    return ROTATE_NEEDS_ADMIN;
+  }
+  return credential;
 }
 
 function readPush(tokens: Tokens): ParseResult {
@@ -302,6 +463,7 @@ function readInterval(raw: string | undefined): number | null | string {
 export const COMMAND_NAME: Readonly<Record<Command["kind"], string>> = {
   help: WAVES,
   register: `${WAVES} register`,
+  "register-all": `${WAVES} register-all`,
   push: `${WAVES} push`,
   delete: `${WAVES} delete`,
 };
