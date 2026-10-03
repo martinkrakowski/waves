@@ -1246,6 +1246,39 @@ describe("the sync pill", () => {
     app.stop();
   });
 
+  it("keeps the clock of the data on screen when the new data will not draw", async () => {
+    // The second pass loads, records its time, and then its draw throws (the
+    // view reads the clock, which fails once): the old data goes back on screen,
+    // and so must the old time.
+    let now = NOW_MS;
+    let armed = 0;
+    const { app } = harness({
+      fetchImpl: fetchStub(listing(projectCard())),
+      clock: () => {
+        now += 3_600_000;
+        if (armed === 1) {
+          armed = 2;
+          return now;
+        }
+        if (armed === 2) {
+          armed = 0;
+          throw new Error("the view could not be drawn");
+        }
+        return now;
+      },
+    });
+    app.start();
+    await flush();
+    const first = textOf(root().querySelector(".sync"));
+
+    armed = 1;
+    await app.refresh();
+
+    expect(textOf(root().querySelector(".note"))).toBe(OFFLINE);
+    expect(textOf(root().querySelector(".sync"))).toBe(first);
+    app.stop();
+  });
+
   it("keeps the clock at the first answer when every later pass fails", async () => {
     const { app } = harness({
       fetchImpl: fetchStub(() => ({ status: 404 })),

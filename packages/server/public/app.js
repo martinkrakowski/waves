@@ -817,6 +817,7 @@ export function createApp(deps) {
   async function refresh() {
     const mine = generation;
     const previous = data;
+    const previousSyncedAt = syncedAt;
     try {
       const next = await load();
       if (next === undefined) {
@@ -838,6 +839,8 @@ export function createApp(deps) {
         return false;
       }
       data = previous;
+      // The time belongs to the data on screen, and the new data never was.
+      syncedAt = previousSyncedAt;
       note = OFFLINE_NOTE;
       // A failed pass is not a reason to leave the arrow turning: the reader was
       // told no, and the frame says so with the note as well as with the icon.
