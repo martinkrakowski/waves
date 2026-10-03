@@ -1,5 +1,5 @@
 /**
- * The view's query string: the six parameters a URL may carry, each with the
+ * The view's query string: the seven parameters a URL may carry, each with the
  * rule it has to pass. A parameter that is absent, empty or fails its rule is
  * simply not in the result — it is never echoed back into the page, and it is
  * never passed on. Nothing here displays a value; that is a view's business, and
@@ -11,6 +11,14 @@ import { isWaveId } from "./patterns.js";
 /** The reasons a lane can be asked about, in the order the URL writes them. */
 const REASONS = ["failed", "disagreement", "checks", "gate", "exit", "silent"];
 
+/**
+ * The tabs the fleet page is divided into, in the order it offers them. Absent
+ * means every project, and `all` is never written: a filter that names its own
+ * absence is one more thing to parse, and `/?tab=` means nothing to a reader who
+ * copies the address.
+ */
+export const TABS = ["active", "flagged", "quiet"];
+
 /** The contract's stage shape, and its own vocabulary length. */
 const STAGE = /^[a-z][a-z-]{0,31}$/;
 
@@ -18,7 +26,7 @@ const SEAT_MAX = 128;
 const Q_MAX = 80;
 
 /** The order `formatQuery` writes in, whatever order the keys arrived in. */
-const ORDER = ["reason", "stage", "seat", "q", "lane", "all"];
+const ORDER = ["tab", "reason", "stage", "seat", "q", "lane", "all"];
 
 /**
  * A string of printable characters: nothing below U+0020 and not U+007F. A
@@ -54,6 +62,10 @@ function first(params, name) {
 export function parseQuery(search) {
   const query = { all: false };
   const params = new URLSearchParams(search);
+  const tab = oneOf(first(params, "tab"), TABS);
+  if (tab !== undefined) {
+    query.tab = tab;
+  }
   const reason = oneOf(first(params, "reason"), REASONS);
   if (reason !== undefined) {
     query.reason = reason;

@@ -25,7 +25,7 @@ describe("the page entry point", () => {
       "/api/v1/projects",
       "/api/v1/attention",
     ]);
-    expect(textsOf(root(), ".project-card h3 a")).toStrictEqual(["Alpha"]);
+    expect(textsOf(root(), ".row-head h3 a")).toStrictEqual(["Alpha"]);
     app.stop();
   });
 });

@@ -5,6 +5,7 @@ import { createApp } from "../../public/app.js";
 import type { ProjectCard } from "../../public/api.js";
 import { el } from "../../public/dom.js";
 import { shell } from "../../public/shell.js";
+import type { FleetHandlers } from "../../public/views/fleet.js";
 import { renderFleet } from "../../public/views/fleet.js";
 import type { ProjectHandlers } from "../../public/views/project.js";
 import { renderProject } from "../../public/views/project.js";
@@ -25,6 +26,8 @@ import {
   NOW_MS,
   projectCard,
   projectLanes,
+  recentWave,
+  statusFacts,
   statusView,
   waveSummary,
   waveView,
@@ -56,16 +59,16 @@ const REPO_PAYLOADS = [
 const TEXT_PAYLOADS = [IMG, SCRIPT, HANDLER, CLOSING_DETAILS] as const;
 
 /**
- * How many times one payload appears in the rendered *text* of a project card:
+ * How many times one payload appears in the rendered *text* of a project row:
  * the name, the id and the repository. `lastPush` is fed the payload too, and
- * reaches the document as a `title` attribute instead, which `CARD_TITLES`
+ * reaches the document as a `title` attribute instead, which `ROW_TITLES`
  * counts; `assertNoInjectedMarkup` only checks attribute *names*. The payload is
- * also the project's id here, which is why the card links nothing at all.
+ * also the project's id here, which is why the row links nothing at all.
  */
-const CARD_OCCURRENCES = 3;
+const ROW_OCCURRENCES = 3;
 
-/** The `title` attributes in that card that hold the payload: `lastPush`. */
-const CARD_TITLES = 1;
+/** The `title` attributes in that row that hold the payload: `lastPush`. */
+const ROW_TITLES = 1;
 
 function documentText(): string {
   return document.body.textContent ?? "";
@@ -264,68 +267,134 @@ async function bootProject(
   return app;
 }
 
+/** The handlers the fleet is drawn with here: nothing in this block asks. */
+const NO_HANDLERS_FLEET: FleetHandlers = { onSearch() {} };
+
 describe("the fleet page against stored markup", () => {
-  it("renders every field of every card as text", () => {
+  /**
+   * A fleet drawn over the given projects, so that the payloads below are walked
+   * through the view rather than through the app. A row is a `details` for a
+   * project whose id the app owns and a static summary for one whose id it does
+   * not, and both are walked here.
+   */
+  function drawFleet(
+    projects: readonly ProjectCard[],
+    search?: string,
+  ): HTMLElement {
+    const host = freshRoot();
+    host.append(
+      renderFleet(
+        {
+          projects,
+          attention: attentionView(),
+          query:
+            search === undefined ? { all: false } : { all: false, q: search },
+          open: new Set<string>(),
+        },
+        NOW_MS,
+        NO_HANDLERS_FLEET,
+      ),
+    );
+    assertNoInjectedMarkup();
+    return host;
+  }
+
+  it("renders every field of every row as text", () => {
     for (const payload of TEXT_PAYLOADS) {
-      freshRoot();
-      const host = document.getElementById("root") as HTMLElement;
-      host.append(
-        renderFleet(
-          { projects: [projectWith(payload)], attention: attentionView() },
-          NOW_MS,
-        ),
-      );
-      assertNoInjectedMarkup();
+      const host = drawFleet([projectWith(payload)]);
       expect(host.querySelectorAll("img")).toHaveLength(0);
       expect(host.querySelectorAll("script")).toHaveLength(0);
       // The id is not one the app owns, so there is nothing to link to and the
-      // name is plain text: a card a reader can read and cannot click.
-      expect(host.querySelectorAll("h3 a")).toHaveLength(0);
-      const heading = oneOf(host, "h3");
-      expect(textOf(heading?.firstChild as Element)).toBe(payload);
-      expect(textsOf(host, ".facts dd code")).toStrictEqual([payload]);
-      expect(textsOf(host, ".facts dd span[title]")).toStrictEqual(["unknown"]);
-      expectVerbatim(payload, CARD_OCCURRENCES, CARD_TITLES);
+      // name is plain text: a row a reader can read and cannot click.
+      expect(host.querySelectorAll(".row-head h3 a")).toHaveLength(0);
+      expect(host.querySelectorAll("details")).toHaveLength(0);
+      expect(textsOf(host, ".row-head h3")).toStrictEqual([payload]);
+      expect(textsOf(host, ".row-id code")).toStrictEqual([payload]);
+      expect(textsOf(host, ".row-caption span[title]")).toStrictEqual([
+        "unknown",
+      ]);
+      expectVerbatim(payload, ROW_OCCURRENCES, ROW_TITLES);
+    }
+  });
+
+  it("renders a wave's id and the status fact's own strings as text", () => {
+    for (const payload of TEXT_PAYLOADS) {
+      const host = drawFleet([
+        projectCard({
+          recentWaves: [
+            recentWave({ wave: payload, state: "done", lanes: 2, merged: 1 }),
+          ],
+          // `backlogState` is a contract value and the shape check refuses a
+          // payload in it, so the status fact's own string here is the receive
+          // time — which reaches the document as the relative time beside it.
+          status: statusFacts({ receivedAt: payload, prsSkipped: undefined }),
+        }),
+      ]);
+      expect(host.querySelectorAll("img")).toHaveLength(0);
+      expect(host.querySelectorAll("script")).toHaveLength(0);
+      // Three places a reader could read the wave id as text: the segment's own
+      // hidden words, the caption's "newest", and the chip's link. The chip's
+      // address carries it percent-encoded, which is why it is not a fourth.
+      expect(textsOf(host, ".wave-bar .seg .sr")).toStrictEqual([
+        `${payload}: done`,
+      ]);
+      expect(textsOf(host, ".row-caption")).toStrictEqual([
+        `1/1 waves done · newest ${payload} done · last push 2m ago`,
+      ]);
+      expect(textsOf(host, ".wave-chips a")).toStrictEqual([payload]);
+      expect(host.querySelector(".wave-chips a")?.getAttribute("href")).toBe(
+        `/p/alpha/w/${encodeURIComponent(payload)}`,
+      );
+      expect(textsOf(host, ".row-facts dd")).toStrictEqual([
+        "backlog recorded · unknown",
+      ]);
+      expectVerbatim(payload, 3, 1);
     }
   });
 
   it("never turns a hostile repository into a link", () => {
     for (const payload of REPO_PAYLOADS) {
-      freshRoot();
-      const host = document.getElementById("root") as HTMLElement;
-      host.append(
-        renderFleet(
-          {
-            projects: [projectCard({ repo: payload })],
-            attention: attentionView(),
-          },
-          NOW_MS,
-        ),
-      );
-      assertNoInjectedMarkup();
+      const host = drawFleet([projectCard({ repo: payload })]);
       expect(host.querySelectorAll("a[href^='javascript:']")).toHaveLength(0);
       expect(host.querySelectorAll("a[href^='data:']")).toHaveLength(0);
       expect(host.querySelectorAll("a[href*='@']")).toHaveLength(0);
-      expect(textsOf(host, ".facts dd")[1]).toBe(payload);
+      // The project's own page is the only link, and it is the app's own path.
+      expect(host.querySelectorAll(".row-id a")).toHaveLength(0);
+      expect(textsOf(host, ".row-id")).toStrictEqual([`${payload} · alpha`]);
       expectVerbatim(payload, 1, 0);
     }
   });
 
   it("keeps a hostile project id out of every link and every attribute", () => {
-    freshRoot();
-    const host = document.getElementById("root") as HTMLElement;
-    host.append(
-      renderFleet(
-        { projects: [projectCard({ id: SCRIPT })], attention: attentionView() },
-        NOW_MS,
-      ),
-    );
-    assertNoInjectedMarkup();
-    expect(host.querySelectorAll("h3 a")).toHaveLength(0);
+    const host = drawFleet([projectCard({ id: SCRIPT })]);
+    expect(host.querySelectorAll(".row-head h3 a")).toHaveLength(0);
     for (const value of attributeValues()) {
       expect(value).not.toContain(SCRIPT);
     }
     expectVerbatim(SCRIPT, 1, 0);
+  });
+
+  it("keeps a hostile search out of every class, key and address", () => {
+    const host = drawFleet(
+      [projectCard(), projectCard({ id: "beta", name: "Beta" })],
+      SCRIPT,
+    );
+    // The rows are filtered away, so what is left is what the address drew, and
+    // none of it is keyed by what the address said. The one attribute that does
+    // carry it is the search box's own `value`, which is a control's value and
+    // never markup — the same exception the project's own box has.
+    expect(host.querySelectorAll("article.project")).toHaveLength(0);
+    expect(textsOf(host, ".fleet-projects .empty")).toStrictEqual([
+      "No project matches.",
+    ]);
+    expect(host.querySelector("#fleet-q")?.getAttribute("value")).toBe(SCRIPT);
+    expect(documentText()).not.toContain(SCRIPT);
+    for (const anchor of Array.from(host.querySelectorAll("a[href]"))) {
+      expect(anchor.getAttribute("href")).not.toContain(SCRIPT);
+    }
+    for (const element of Array.from(host.querySelectorAll("[class]"))) {
+      expect(element.getAttribute("class")).not.toContain(SCRIPT);
+    }
   });
 
   it("renders a lane's seat as text", () => {
@@ -339,8 +408,11 @@ describe("the fleet page against stored markup", () => {
             attention: attentionView({
               lanes: [attentionLane({ seat: payload })],
             }),
+            query: { all: false },
+            open: new Set<string>(),
           },
           NOW_MS,
+          NO_HANDLERS_FLEET,
         ),
       );
       assertNoInjectedMarkup();
@@ -976,7 +1048,7 @@ describe("the copy digest against stored markup", () => {
 });
 
 describe("the query string against stored markup", () => {
-  const KEYS = ["reason", "stage", "seat", "q", "lane", "all"] as const;
+  const KEYS = ["reason", "stage", "seat", "q", "lane", "all", "tab"] as const;
 
   it.each(KEYS)("keeps a payload in %s out of the document", async (key) => {
     for (const payload of TEXT_PAYLOADS) {
@@ -989,7 +1061,17 @@ describe("the query string against stored markup", () => {
       expect(root().querySelectorAll("img")).toHaveLength(0);
       expect(root().querySelectorAll("script")).toHaveLength(0);
       expect(documentText()).not.toContain(payload);
-      expect(textsOf(root(), ".project-card h3 a")).toStrictEqual(["Alpha"]);
+      // `q` and `tab` are the fleet's own two filters, and a `q` a reader typed
+      // filters the rows; every other parameter is a project's, which the fleet
+      // ignores, and a `tab` that is not one of the three is dropped as it is on
+      // every other route.
+      if (key === "q") {
+        expect(textsOf(root(), ".fleet-projects .empty")).toStrictEqual([
+          "No project matches.",
+        ]);
+      } else {
+        expect(textsOf(root(), ".row-head h3 a")).toStrictEqual(["Alpha"]);
+      }
       app.stop();
     }
   });

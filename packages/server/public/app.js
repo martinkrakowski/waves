@@ -5,11 +5,12 @@ import { el } from "./dom.js";
 import { drawableProjectLanes } from "./project-lanes.js";
 import { drawableProjects } from "./projects.js";
 import { isProjectId, isWaveId } from "./patterns.js";
-import { parseQuery } from "./query.js";
+import { formatQuery, parseQuery } from "./query.js";
 import { shell } from "./shell.js";
 import { drawableStatus } from "./status.js";
 import { renderDrawer } from "./views/drawer.js";
 import { renderFleet } from "./views/fleet.js";
+import { rowIdOf } from "./views/fleet-rows.js";
 import {
   hrefFor,
   filterRows,
@@ -90,6 +91,14 @@ export function createApp(deps) {
   let data = undefined;
   let note = "";
   let menuOpen = false;
+  /**
+   * Which project rows the reader has opened, as the project ids they are drawn
+   * from. A `Set` and not one boolean, because rows open one at a time; and
+   * never cleared, because unlike the menu this is the reader's own place in the
+   * page: a ten-second refresh and a change of tab are both reasons to redraw
+   * the rows, and neither is a reason to close them again.
+   */
+  const openRows = new Set();
   /**
    * What the last copy of the digest said. Cleared by every navigation, in both
    * of its branches: an address that changed is a page the note is no longer
@@ -308,8 +317,14 @@ export function createApp(deps) {
     }
     if (data.kind === "projects") {
       return renderFleet(
-        { projects: data.projects, attention: data.attention },
+        {
+          projects: data.projects,
+          attention: data.attention,
+          query,
+          open: openRows,
+        },
         clock(),
+        fleetHandlers(),
       );
     }
     if (data.kind === "project") {
@@ -326,6 +341,29 @@ export function createApp(deps) {
       );
     }
     return el("p", { attrs: { class: "empty" }, text: "No such project." });
+  }
+
+  /**
+   * The one thing the fleet page asks for: the text in its search box, which is
+   * a navigation like every other filter on this page, and is replaced rather
+   * than pushed for the same reason as the one on a project's page — a reader
+   * typing one word must not fill the history with one entry per keystroke. The
+   * tab is carried along unchanged, so narrowing the fleet with a search and then
+   * choosing a tab keeps both.
+   */
+  function fleetHandlers() {
+    return {
+      onSearch: (text) => {
+        navigate(
+          `/${formatQuery({
+            tab: query.tab,
+            q: text === "" ? undefined : text,
+            all: false,
+          })}`,
+          { replace: true },
+        );
+      },
+    };
   }
 
   /**
@@ -895,10 +933,16 @@ export function createApp(deps) {
    * Reading it starts no generation: only a pass that is about to be asked for
    * needs one, and a change of what is drawn — a wave, a filter, a lane — asks
    * for nothing new.
+   *
+   * `tab` leaves the query on every route but the fleet's, so that it can never
+   * be carried into a link a project's page draws: a tab is the fleet's own
+   * filter and means nothing on a project's waves, and a link that carried it
+   * would promise a project page something it does not have (W39).
    */
   function read() {
     route = routeOf(location.pathname);
-    query = parseQuery(location.search);
+    const parsed = parseQuery(location.search);
+    query = route.kind === "projects" ? parsed : { ...parsed, tab: undefined };
   }
 
   /** Whether a route is another wave of the project already on screen. */
@@ -906,6 +950,17 @@ export function createApp(deps) {
     return (
       was.kind === "project" && now.kind === "project" && was.id === now.id
     );
+  }
+
+  /**
+   * Whether the route is the fleet on both sides of a navigation. The fleet asks
+   * for no route parameters at all: its two filters are read out of the answer
+   * already in hand, so a change of tab or of search is a question the data on
+   * screen can answer, while the reader's own `all` only changes lanes the fleet
+   * never asks for.
+   */
+  function sameFleet(was, now) {
+    return was.kind === "projects" && now.kind === "projects";
   }
 
   /**
@@ -917,7 +972,9 @@ export function createApp(deps) {
    * of the same listing, and the page is redrawn from the data in hand: no
    * request, no new generation, and no note cleared. A page that is offline
    * stays marked offline through a filter, because no pass follows to say
-   * otherwise; the next one will.
+   * otherwise; the next one will. The fleet is the same case for a second
+   * reason: it asks for no route parameters at all, so a change of tab or of
+   * search there is also a question the answer in hand can answer.
    *
    * In every other case the route or the listing is not the one on screen, so
    * what belonged to the route being left is forgotten, the note with it — a
@@ -937,7 +994,11 @@ export function createApp(deps) {
     // about a view that is no longer on screen.
     copied = "";
     copyCount += 1;
-    if (data !== undefined && sameProject(was, route) && wasAll === query.all) {
+    if (
+      data !== undefined &&
+      ((sameProject(was, route) && wasAll === query.all) ||
+        sameFleet(was, route))
+    ) {
       draw();
       return;
     }
@@ -946,6 +1007,9 @@ export function createApp(deps) {
     // The lanes on screen were asked for under one `all`. Under the other they
     // are a different list, so they are not kept: a table of retained waves
     // beside a strip that says every wave is shown would be two answers at once.
+    // The fleet is never cleared by a fleet-to-fleet navigation either — the
+    // branch above has already answered with the data it is holding, and the
+    // only fleet navigation that reaches this line had none to keep.
     if (!sameProject(was, route) || wasAll !== query.all) {
       data = undefined;
     }
@@ -1074,19 +1138,40 @@ export function createApp(deps) {
   }
 
   /**
-   * The reader opened or closed the projects menu themselves, and the state has
-   * to follow them: `draw()` reads nothing from the document, so a redraw on the
-   * ten-second pass would otherwise shut a menu the reader is reading.
+   * The reader opened or closed the projects menu, or one of the fleet's own
+   * rows, and the state has to follow them: `draw()` reads nothing from the
+   * document, so a redraw on the ten-second pass would otherwise shut a menu a
+   * reader is reading, or close the row they opened.
    *
    * `toggle` does not bubble, so it is taken in the capture phase, and only the
-   * shell's own menu is heard: another `details` on the page is not this menu.
-   * Nothing is drawn here — a native control has already moved itself, and the
-   * next draw says the same thing.
+   * shell's own menu and the fleet's own rows are heard: another `details` on the
+   * page is not one of them, and neither is a row whose summary carries no key of
+   * this page's own shape. A row's id is read from that key rather than from its
+   * class name, so a row's identity is a value the view held to `isProjectId`
+   * and not a string this file assembled. Nothing is drawn here — a native
+   * control has already moved itself, and the next draw says the same thing.
    */
   function onToggle(event) {
     const node = event.target;
-    if (node.tagName === "DETAILS" && node.getAttribute("class") === "menu") {
+    if (node.tagName !== "DETAILS") {
+      return;
+    }
+    const cls = node.getAttribute("class");
+    if (cls === "menu") {
       menuOpen = node.open;
+      return;
+    }
+    if (cls !== "project-row") {
+      return;
+    }
+    const id = rowIdOf(node);
+    if (id === undefined) {
+      return;
+    }
+    if (node.open) {
+      openRows.add(id);
+    } else {
+      openRows.delete(id);
     }
   }
 

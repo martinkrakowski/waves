@@ -73,6 +73,23 @@ function recentWavesOf(project) {
   );
 }
 
+/**
+ * `repo` is absent or a string, and the rule is the contract's own: a project
+ * registration reads it through `readOptional`, so `undefined` is absence and
+ * anything else has to be an https URL, and a stored project never carries a
+ * `null` in place of either (`readOptional`, `readProject`,
+ * `packages/contract/src/domain/validation.ts:151-161`,
+ * `packages/contract/src/domain/project.ts:82`).
+ *
+ * The fleet's search lowercases this field, so a summary carrying a number or an
+ * object here is not a project the page can draw: without this rule the page
+ * would throw inside a draw the first time a reader searched, which is a whole
+ * page lost to one field of one entry.
+ */
+function repoOf(project) {
+  return project.repo === undefined || typeof project.repo === "string";
+}
+
 function present(project) {
   return (
     project !== null &&
@@ -82,6 +99,7 @@ function present(project) {
     typeof project.waves === "number" &&
     typeof project.lanes === "number" &&
     typeof project.stale === "boolean" &&
+    repoOf(project) &&
     recentWavesOf(project) &&
     statusOf(project)
   );

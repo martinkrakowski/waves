@@ -309,9 +309,9 @@ arrived. The reason is the bound above: a status's window is capped at 300 s, an
 a project that pushes a status once per run would be badged stale nearly every
 time a reader looked, so a badge about it would be a badge that is almost always
 on and never actionable. The received time is the fact behind the badge, and it
-is what is drawn instead — on the fleet card's `status` row and in the status
+is what is drawn instead — on the fleet row's own status line and in the status
 panel, never as a warning (`statusFact`,
-`packages/server/public/views/fleet.js:104-117`; the panel's own note,
+`packages/server/public/views/fleet-rows.js:141-154`; the panel's own note,
 `packages/server/public/views/status-panel.js:14-19`).
 
 A minimal valid status document, carrying neither key:
@@ -751,6 +751,70 @@ and `HEAD` apply here as they do for every other read.
 `packages/server/src/infrastructure/http-routes.ts:31-43`, `124`;
 `readModel.getStatus`, `packages/server/src/infrastructure/http-server.ts:133-136`;
 `getStatus`, `packages/server/src/application/read-model.ts:947-958`)
+
+#### 5.1.3 The status page's own query string
+
+The three page routes — `/`, `/p/<id>` and `/p/<id>/w/<wave>` — are the static
+file, so **the server never reads their query string**: it is ignored on every
+one of them, exactly as on every read route but `…/lanes` (section 5.1.1). What
+the page does with it is the page's business, and it is worth writing down here
+because the answer it draws is a function of the URL.
+
+The page reads seven parameters, each with the rule it has to pass, and one that
+is absent, empty or fails its rule is simply not there — never echoed back into
+the page and never passed on (`parseQuery`,
+`packages/server/public/query.js:62-91`):
+
+| parameter | reads on   | value                                                      |
+| --------- | ---------- | ---------------------------------------------------------- |
+| `tab`     | `/`        | `active`, `flagged` or `quiet`; absent means every project |
+| `q`       | every page | up to 80 printable characters, case-insensitively          |
+| `reason`  | a project  | one of the six reasons of section 5.1                      |
+| `stage`   | a project  | the contract's stage shape, 1 to 32 characters of `[a-z-]` |
+| `seat`    | a project  | up to 128 printable characters                             |
+| `lane`    | a project  | the pusher's own lane id shape; opens the drawer           |
+| `all`     | a project  | `1` widens a listing to the waves past the retention       |
+
+**`?tab=`** is the fleet's own filter and is dropped on every other route, so it
+can never be carried into a link a project's page draws: a tab says nothing about
+a project's waves, and a link that carried it would promise the page something it
+does not have (`read`, `packages/server/public/app.js:942-946`; the same rule in
+the plan's W39). It is never written as `all` — a filter that names its own
+absence is one more thing to parse.
+
+The three tabs partition the fleet, and the partition is decided from the answer
+already in hand, in this order:
+
+- **`flagged`** — the newest entry of the project's `recentWaves` is `failed`, or
+  the project has attention (the attention view's count for it is above zero).
+- **`active`** — not flagged, and some entry of `recentWaves` is `running`.
+- **`quiet`** — everything else.
+
+**Staleness is deliberately not one of the three tests.** Every project's pushes
+stop eventually, and every finished wave goes stale when they do
+(`2026-10-02_next-waves.md:138`), so a rule that read "stale" as "flagged" would
+put the whole fleet under one tab on any quiet day and leave `active` and `quiet`
+permanently empty. Staleness is still said, where it is about the project rather
+than about the fleet: the row's own `stale` pill, and the caption of the projects
+stat card (`tabOf`, `packages/server/public/views/fleet-model.js:31-42`).
+
+**`?q=`** on `/` is a substring of a project's **name**, **id** or **repository**,
+matched without regard to case, and a project that registered no repository is not
+matched by a search for one. It is the same `q` key, the same box and the same
+`searchText` cleaning a project's page uses, and both carry `data-key="q"` so `/`
+finds them and a redraw puts the caret back where the reader left it.
+
+**Neither asks for anything.** The fleet's two reads are the project list and the
+attention view, and they depend on no route parameter at all, so a change of tab
+or of search redraws from the answer in hand: `reread()`'s draw-only condition
+gains "the route is the fleet before and after" (`sameFleet`,
+`packages/server/public/app.js:962-964`, `988-1015`). A tab is a link and a
+keystroke replaces the address rather than pushing onto it, so neither fills the
+history with one entry per word.
+
+(`TABS`, `packages/server/public/query.js:14-20`; `formatQuery`,
+`…/query.js:93-104`; `renderFleet`, `packages/server/public/views/fleet.js:418-436`;
+`fleetHandlers`, `packages/server/public/app.js:354-367`)
 
 ### 5.2 The optional viewer token
 

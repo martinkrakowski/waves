@@ -12,8 +12,11 @@ function parsed(search: string): ViewQuery {
 describe("parseQuery", () => {
   it("takes every parameter that passes its rule", () => {
     expect(
-      parsed("?reason=gate&stage=plan-review&seat=s1&q=fix&lane=wv-a&all=1"),
+      parsed(
+        "?tab=flagged&reason=gate&stage=plan-review&seat=s1&q=fix&lane=wv-a&all=1",
+      ),
     ).toStrictEqual({
+      tab: "flagged",
       reason: "gate",
       stage: "plan-review",
       seat: "s1",
@@ -100,8 +103,26 @@ describe("parseQuery", () => {
   it("takes the first value when a parameter repeats", () => {
     expect(parsed("?reason=exit&reason=gate").reason).toBe("exit");
     expect(parsed("?seat=s1&seat=s2").seat).toBe("s1");
+    expect(parsed("?tab=quiet&tab=flagged").tab).toBe("quiet");
+    // The first of a repeated tab is the one that passes, even when the second
+    // is the only one that is a tab at all.
+    expect(parsed("?tab=all&tab=active").tab).toBeUndefined();
     expect(parsed("?all=1&all=0").all).toBe(true);
     expect(parsed("?all=0&all=1").all).toBe(false);
+  });
+
+  it("takes a tab only from the three the fleet page offers", () => {
+    for (const tab of ["active", "flagged", "quiet"] as const) {
+      expect(parsed(`?tab=${tab}`).tab).toBe(tab);
+    }
+    // `all` is what no tab means, and it is never written: a filter that names
+    // its own absence is one more thing to parse.
+    expect(parsed("?tab=all").tab).toBeUndefined();
+    expect(parsed("?tab=FLAGGED").tab).toBeUndefined();
+    expect(parsed("?tab=Flagged").tab).toBeUndefined();
+    expect(parsed("?tab=flagged%20").tab).toBeUndefined();
+    expect(parsed("?tab=merged").tab).toBeUndefined();
+    expect(parsed("?tab=").tab).toBeUndefined();
   });
 
   it("reads all as true only for all=1", () => {
@@ -128,9 +149,10 @@ describe("formatQuery", () => {
         seat: "s1",
         stage: "plan",
         reason: "gate",
+        tab: "quiet",
         all: true,
       }),
-    ).toBe("?reason=gate&stage=plan&seat=s1&q=fix&lane=wv-a&all=1");
+    ).toBe("?tab=quiet&reason=gate&stage=plan&seat=s1&q=fix&lane=wv-a&all=1");
   });
 
   it("writes only the keys that are there, and all only when it is true", () => {
@@ -149,6 +171,10 @@ describe("the round trip", () => {
   const TABLE: readonly ViewQuery[] = [
     EMPTY,
     { all: true },
+    { tab: "active", all: false },
+    { tab: "flagged", all: true },
+    { tab: "quiet", all: false },
+    { tab: "quiet", q: "alpha", all: false },
     { reason: "failed", all: false },
     { reason: "silent", all: true },
     { stage: "plan-review", all: false },
@@ -166,6 +192,7 @@ describe("the round trip", () => {
       seat: "seat one & two",
       q: "gate fail",
       lane: "wv-a",
+      tab: "active",
       all: true,
     },
   ];
