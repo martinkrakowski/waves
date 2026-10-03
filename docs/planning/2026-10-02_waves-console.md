@@ -354,7 +354,7 @@ and K2's size test runs at the route's own cap.
 
 | candidate                                              | note                                                                                                                                                           |
 | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Self-hosted IBM Plex                                   | Needs `font-src 'self'` in the CSP, `.woff2` in the static allow-list and the font files in the repository. A visual nicety; decide after the console is live. |
+| Self-hosted IBM Plex                                   | **Done 2026-10-03 by W31 of `2026-10-03_midnight-console.md`**, superseding W10: Inter, Space Grotesk and JetBrains Mono, self-hosted, each under the OFL 1.1. |
 | A rate limit on the read routes                        | The write path has one; the read path never has. Worth its own decision now that two routes parse wave files.                                                  |
 | Server-sent events                                     | The console polls every ten seconds, as today.                                                                                                                 |
 | A per-project vocabulary (stage to role, seat parsing) | W12 rules it out of the service. A project that wants it can push `planReview` and `risk` strings, which the drawer shows.                                     |

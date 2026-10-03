@@ -712,8 +712,8 @@ project token and no viewer token.
 
 Every response this service writes carries
 `Content-Security-Policy: default-src 'none'; script-src 'self'; style-src
-'self'; connect-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none';
-frame-ancestors 'none'`, `X-Content-Type-Options: nosniff` and
+'self'; connect-src 'self'; img-src 'self'; font-src 'self'; object-src 'none';
+base-uri 'none'; frame-ancestors 'none'`, `X-Content-Type-Options: nosniff` and
 `Referrer-Policy: no-referrer`, plus its own `Content-Type` and `Content-Length`
 unless it is a `204` (`BASE_HEADERS` and `send`,
 `packages/server/src/infrastructure/http-security.ts:14-18`, `68-89`). A path
@@ -725,6 +725,11 @@ write pipeline also carry
 `answer`, `packages/server/src/infrastructure/http-write.ts:292-302`). The `405`
 that an `OPTIONS` or `PATCH` gets on `/readyz` carries no `Cache-Control`; a
 `PUT`, `POST` or `DELETE` on it is the write pipeline's `405` and does.
+
+`font-src 'self'` is why the three families `public/fonts.css` declares are
+served from this origin and from nowhere else: a `.woff2` is an allow-listed
+static file answered as `font/woff2` with these same headers, so a viewer's
+browser asks this service for a glyph and never a font host.
 
 There is **no CORS**: no `Access-Control-Allow-Origin` is ever sent, no
 `OPTIONS` preflight is answered — an `OPTIONS` request is a `405`, or a `401`
