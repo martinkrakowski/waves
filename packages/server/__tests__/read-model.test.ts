@@ -10,9 +10,11 @@ import {
   MAX_LISTED_WAVES,
   MAX_PROJECT_LANES,
   MAX_PROJECT_LANES_BYTES,
+  MAX_RECENT_WAVES,
   MAX_WAVES_PER_READ,
   utf8Length,
 } from "../src/application/read-model.js";
+import type { SnapshotHead } from "../src/application/ports/store.js";
 import { MemoryStore } from "../src/infrastructure/memory-store.js";
 import { project, snapshot, status, withLanes } from "./store-contract.js";
 
@@ -258,6 +260,27 @@ class ReplacedStore extends WaryStore {
   }
 }
 
+/**
+ * A store whose heads under-report the lanes of the wave they describe: the
+ * snapshot holds two lanes and the head says one. It is the one answer a store
+ * can give when a push lands between the heads a request read and the snapshot
+ * it then asks for, and a summary that took `lanes` from the head beside
+ * `merged` from the snapshot would answer `merged: 2` with `lanes: 1`, which
+ * the page's shape check refuses — taking the whole project list down for a
+ * poll over one push.
+ */
+class ShortHeadStore extends MemoryStore {
+  override async listSnapshotHeads(
+    of: string,
+  ): Promise<readonly SnapshotHead[]> {
+    const heads = await super.listSnapshotHeads(of);
+    return heads.map((head) => ({
+      ...head,
+      lanes: Math.max(0, head.lanes - 1),
+    }));
+  }
+}
+
 function model(store: MemoryStore, nowMs: number = NOW_MS) {
   return createReadModel({
     store,
@@ -289,6 +312,16 @@ describe("read model", () => {
         lanes: 0,
         lastPush: "2026-10-01T12:00:01Z",
         stale: false,
+        recentWaves: [
+          {
+            wave: "wv1",
+            receivedAt: RECEIVED_AT,
+            lanes: 0,
+            state: "settled",
+            stale: false,
+            merged: 0,
+          },
+        ],
       },
       {
         id: "beta",
@@ -299,6 +332,7 @@ describe("read model", () => {
         lanes: 0,
         lastPush: undefined,
         stale: false,
+        recentWaves: [],
       },
     ]);
     expect(JSON.stringify(projects)).not.toContain("tokenSha256");
@@ -735,6 +769,266 @@ describe("read model", () => {
       ...lane,
       derived: { ...lane.derived, alive: "unknown" },
     });
+  });
+});
+
+describe("the recent waves of a project summary", () => {
+  it("skips one wave file that is not JSON, and still lists the project", async () => {
+    class CorruptWave extends MemoryStore {
+      override async getSnapshot(of: string, wave: string) {
+        if (wave === "wv2") {
+          throw new SyntaxError("Unexpected end of JSON input");
+        }
+        return super.getSnapshot(of, wave);
+      }
+    }
+    const store = new CorruptWave();
+    await store.putProject(project("alpha"));
+    await store.putSnapshot(
+      pushed("alpha", "wv1", receivedAtOf(1), [laneOf("wv1-a")]),
+    );
+    await store.putSnapshot(
+      pushed("alpha", "wv2", receivedAtOf(2), [laneOf("wv2-a")]),
+    );
+
+    const listed = await model(store).listProjects();
+
+    expect(listed[0]?.recentWaves.map((entry) => entry.wave)).toEqual(["wv1"]);
+  });
+
+  it("still fails the listing for a wave read that is not a parse error", async () => {
+    class RefusedWave extends MemoryStore {
+      override async getSnapshot(): Promise<undefined> {
+        throw new Error("EACCES");
+      }
+    }
+    const store = new RefusedWave();
+    await store.putProject(project("alpha"));
+    await store.putSnapshot(
+      pushed("alpha", "wv1", receivedAtOf(1), [laneOf("wv1-a")]),
+    );
+
+    await expect(model(store).listProjects()).rejects.toThrow("EACCES");
+  });
+
+  it("lists a project's waves newest first, each with what its lanes say", async () => {
+    const store = new MemoryStore();
+    await store.putProject(project("alpha"));
+    // Oldest push first, so the answer's order is the model's and not the
+    // order the store happened to answer its heads in.
+    await store.putSnapshot(
+      pushed("alpha", "wv1", receivedAtOf(1), [laneOf("wv1-a")]),
+    );
+    await store.putSnapshot(
+      pushed("alpha", "wv2", receivedAtOf(2), [
+        // Every pull request answered, and only one of them merged: a closed
+        // pull request is answered too, so the wave is `done`, and `merged`
+        // counts the merged one alone. Both lanes reported what they did, which
+        // is what puts a reported event into the wave's state at all.
+        laneOf("wv2-a", {
+          reported: {
+            stage: "review",
+            event: "settled",
+            ts: "2026-10-01T12:00:00Z",
+          },
+          derived: {
+            alive: false,
+            exit: 0,
+            pr: { number: 7, state: "merged", checks: "pass" },
+          },
+        }),
+        laneOf("wv2-b", {
+          reported: {
+            stage: "review",
+            event: "settled",
+            ts: "2026-10-01T12:00:00Z",
+          },
+          derived: {
+            alive: false,
+            exit: 0,
+            pr: { number: 8, state: "closed", checks: "pass" },
+          },
+        }),
+      ]),
+    );
+    await store.putSnapshot(
+      pushed("alpha", "wv3", receivedAtOf(3), [
+        laneOf("wv3-a", {
+          derived: {
+            alive: true,
+            pr: { number: 9, state: "merged", checks: "pass" },
+          },
+        }),
+        laneOf("wv3-b", { derived: { alive: true } }),
+      ]),
+    );
+
+    const projects = await model(store).listProjects();
+
+    expect(projects[0]?.recentWaves).toEqual([
+      {
+        wave: "wv3",
+        receivedAt: receivedAtOf(3),
+        lanes: 2,
+        state: "running",
+        stale: false,
+        merged: 1,
+      },
+      {
+        wave: "wv2",
+        receivedAt: receivedAtOf(2),
+        lanes: 2,
+        state: "done",
+        stale: false,
+        merged: 1,
+      },
+      {
+        wave: "wv1",
+        receivedAt: receivedAtOf(1),
+        lanes: 1,
+        state: "failed",
+        stale: false,
+        merged: 0,
+      },
+    ]);
+  });
+
+  it("answers a wave the store is past retaining nowhere, and reads none of it", async () => {
+    const store = new WaryStore("wv-absent");
+    await store.putProject(project("alpha"));
+    await store.putSnapshot(
+      pushed("alpha", "wv1", receivedAtOf(1), [laneOf("wv1-a")]),
+    );
+    await store.putSnapshot(
+      pushed("alpha", "wv2", agoFrom(NOW_MS, 15 * DAY_MS), [laneOf("wv2-a")]),
+    );
+
+    const projects = await model(store).listProjects();
+
+    // `waves` still counts every head the store holds, and `lanes` only the
+    // retained ones, as they always have: the recent waves are a subset of the
+    // same list and never change what the summary already said.
+    expect(projects[0]?.waves).toBe(2);
+    expect(projects[0]?.lanes).toBe(1);
+    expect(projects[0]?.recentWaves.map((wave) => wave.wave)).toEqual(["wv1"]);
+    expect(store.asked).toEqual(["wv1"]);
+  });
+
+  it("answers nothing for a project that has pushed no wave at all", async () => {
+    const store = new WaryStore("wv-absent");
+    await store.putProject(project("alpha"));
+
+    const projects = await model(store, NOW_MS + 15 * DAY_MS).listProjects();
+
+    expect(projects[0]?.recentWaves).toEqual([]);
+    expect(store.asked).toEqual([]);
+  });
+
+  it("lists at most MAX_RECENT_WAVES, newest first", async () => {
+    const store = new WaryStore("wv-absent");
+    await filled(store, "alpha", MAX_RECENT_WAVES + 1, (wave) => [
+      laneOf(`${wave}-a`),
+    ]);
+
+    const projects = await model(store).listProjects();
+
+    const listed = projects[0]?.recentWaves ?? [];
+    expect(listed).toHaveLength(MAX_RECENT_WAVES);
+    expect(listed[0]?.wave).toBe(
+      `wv${String(MAX_RECENT_WAVES + 1).padStart(3, "0")}`,
+    );
+    expect(listed[MAX_RECENT_WAVES - 1]?.wave).toBe("wv002");
+    expect(listed.map((wave) => wave.wave)).not.toContain("wv001");
+    // The wave the bound left out is never read: its head already said how many
+    // lanes it holds, and a summary that cannot list it does not need them.
+    expect(store.asked).toHaveLength(MAX_RECENT_WAVES);
+  });
+
+  it("skips a wave whose snapshot has gone since the head was read", async () => {
+    const store = new WaryStore("wv2");
+    await store.putProject(project("alpha"));
+    for (const index of [1, 2, 3]) {
+      await store.putSnapshot(
+        pushed("alpha", `wv${index}`, receivedAtOf(index), [
+          laneOf(`wv${index}-a`),
+        ]),
+      );
+    }
+
+    const projects = await model(store).listProjects();
+
+    expect(projects[0]?.recentWaves.map((wave) => wave.wave)).toEqual([
+      "wv3",
+      "wv1",
+    ]);
+    expect(store.asked).toEqual(["wv3", "wv2", "wv1"]);
+    expect(store.wholeLists).toBe(0);
+  });
+
+  it("counts a wave's lanes from the snapshot, not from the head it chose", async () => {
+    const store = new ShortHeadStore();
+    await store.putProject(project("alpha"));
+    // Two lanes, both merged, and a head that says one lane: the summary has to
+    // keep `merged <= lanes` whatever the head claimed.
+    await store.putSnapshot(
+      pushed("alpha", "wv1", RECEIVED_AT, [
+        laneOf("wv1-a", {
+          derived: {
+            alive: false,
+            exit: 0,
+            pr: { number: 7, state: "merged", checks: "pass" },
+          },
+        }),
+        laneOf("wv1-b", {
+          derived: {
+            alive: false,
+            exit: 0,
+            pr: { number: 8, state: "merged", checks: "pass" },
+          },
+        }),
+      ]),
+    );
+
+    const [wave] = (await model(store).listProjects())[0]?.recentWaves ?? [];
+
+    expect(wave?.lanes).toBe(2);
+    expect(wave?.merged).toBe(2);
+    expect(wave?.merged).toBeLessThanOrEqual(wave?.lanes ?? -1);
+  });
+
+  it("calls a wave of a stale interval stale whatever the head said", async () => {
+    const store = new ReplacedStore("wv-absent");
+    await store.putProject(project("alpha"));
+    await store.putSnapshot(
+      pushed("alpha", "wv1", RECEIVED_AT, [laneOf("wv1-a")]),
+    );
+
+    // The head's own ten-second interval is long past, and the snapshot that
+    // answers says five minutes and arrived two seconds later: it is the push
+    // the answer is about, so its own clock is the one that decides.
+    const [wave] =
+      (await model(store, RECEIVED_AT_MS + 100_000).listProjects())[0]
+        ?.recentWaves ?? [];
+
+    expect(wave?.receivedAt).toBe("2026-10-01T12:00:03.000Z");
+    expect(wave?.stale).toBe(false);
+  });
+
+  it("reads each snapshot once across two polls of the fleet", async () => {
+    const store = new WaryStore("wv-absent");
+    await filled(store, "alpha", 3, (wave) => [laneOf(`${wave}-a`)]);
+    const read = model(store);
+
+    await read.listProjects();
+    const second = await read.listProjects();
+
+    // The second poll finds nothing new, so it parses nothing: what changed
+    // between the two is nothing at all.
+    expect(second[0]?.recentWaves).toStrictEqual(
+      (await read.listProjects())[0]?.recentWaves,
+    );
+    expect(store.asked).toEqual(["wv003", "wv002", "wv001"]);
+    expect(store.wholeLists).toBe(0);
   });
 });
 

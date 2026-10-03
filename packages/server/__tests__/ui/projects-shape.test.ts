@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { drawableProjects } from "../../public/projects.js";
 
-import { projectCard, statusFacts } from "./fixtures.js";
+import { projectCard, recentWave, statusFacts } from "./fixtures.js";
 
 /**
  * The only question `projects.js` answers now: whether a response is a list the
@@ -13,6 +13,26 @@ describe("drawableProjects", () => {
   it("takes a list of projects, and an empty one", () => {
     expect(drawableProjects([projectCard()])).toBe(true);
     expect(drawableProjects([])).toBe(true);
+  });
+
+  it("takes a summary with recent waves, and one with none at all", () => {
+    expect(drawableProjects([projectCard()])).toBe(true);
+    expect(
+      drawableProjects([
+        projectCard({
+          recentWaves: [recentWave(), recentWave({ wave: "w-2" })],
+        }),
+      ]),
+    ).toBe(true);
+    expect(
+      drawableProjects([
+        projectCard({
+          recentWaves: Array.from({ length: 12 }, (_unused, at) =>
+            recentWave({ wave: `w-${at}` }),
+          ),
+        }),
+      ]),
+    ).toBe(true);
   });
 
   it("takes a project with a status, and one without", () => {
@@ -41,6 +61,59 @@ describe("drawableProjects", () => {
       false,
     );
     expect(drawableProjects([{ ...projectCard(), lanes: "6" }])).toBe(false);
+  });
+
+  it("refuses a recent wave it could not draw rather than drawing half of it", () => {
+    const broken = [
+      null,
+      "w-3",
+      {},
+      { ...recentWave(), wave: 7 },
+      { ...recentWave(), wave: "" },
+      // A wave id the page has no path for, and one with a slash in it.
+      { ...recentWave(), wave: "a b" },
+      { ...recentWave(), wave: "../escape" },
+      { ...recentWave(), receivedAt: undefined },
+      { ...recentWave(), receivedAt: 1_759_320_000_000 },
+      { ...recentWave(), lanes: -1 },
+      { ...recentWave(), lanes: 1.5 },
+      { ...recentWave(), lanes: "2" },
+      { ...recentWave(), lanes: Number.MAX_SAFE_INTEGER + 2 },
+      { ...recentWave(), merged: -1 },
+      { ...recentWave(), merged: "1" },
+      // More merged pull requests than lanes: a ring the page would draw as more
+      // than all of them, which is a broken endpoint, not a card to guess at.
+      { ...recentWave(), lanes: 1, merged: 2 },
+      { ...recentWave(), state: undefined },
+      { ...recentWave(), state: "queued" },
+      { ...recentWave(), state: "Failed" },
+      { ...recentWave(), stale: undefined },
+      { ...recentWave(), stale: "false" },
+    ];
+    for (const wave of broken) {
+      expect(
+        drawableProjects([projectCard({ recentWaves: [wave as never] })]),
+        String(JSON.stringify(wave)),
+      ).toBe(false);
+    }
+  });
+
+  it("refuses a recent wave list that is not one, or is longer than the bound", () => {
+    for (const list of [undefined, null, {}, "w-3", { w: "w-3" }, [{ w: 7 }]]) {
+      expect(
+        drawableProjects([projectCard({ recentWaves: list as never })]),
+        String(JSON.stringify(list)),
+      ).toBe(false);
+    }
+    expect(
+      drawableProjects([
+        projectCard({
+          recentWaves: Array.from({ length: 13 }, (_unused, at) =>
+            recentWave({ wave: `w-${at}` }),
+          ),
+        }),
+      ]),
+    ).toBe(false);
   });
 
   it("refuses a status it could not read, rather than showing half of it", () => {

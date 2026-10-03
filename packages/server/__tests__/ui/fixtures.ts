@@ -5,6 +5,7 @@ import type {
   LaneRow,
   LaneView,
   ProjectLanesView,
+  RecentWave,
   StatusView,
   WaveSummary,
   WaveView,
@@ -41,6 +42,24 @@ export function projectCard(overrides: Partial<ProjectCard> = {}): ProjectCard {
     lanes: 6,
     lastPush: "2026-04-01T11:58:00.000Z",
     stale: false,
+    recentWaves: [],
+    ...overrides,
+  };
+}
+
+/**
+ * One entry of a project's `recentWaves`. `state` and `stale` are the two facts
+ * the fleet page reads a wave's row by, and `merged` is a count of lanes, so the
+ * default carries one of each rather than only the required keys.
+ */
+export function recentWave(overrides: Partial<RecentWave> = {}): RecentWave {
+  return {
+    wave: "w-3",
+    receivedAt: NOW_ISO,
+    lanes: 2,
+    state: "running",
+    stale: false,
+    merged: 1,
     ...overrides,
   };
 }

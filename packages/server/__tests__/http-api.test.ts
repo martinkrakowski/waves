@@ -290,6 +290,16 @@ describe("the API surface", () => {
         lanes: 1,
         lastPush: "2026-10-01T12:00:01Z",
         stale: true,
+        recentWaves: [
+          {
+            wave: "wv1",
+            receivedAt: "2026-10-01T12:00:01Z",
+            lanes: 1,
+            state: "settled",
+            stale: true,
+            merged: 0,
+          },
+        ],
       },
     ]);
     expect(body).not.toContain("tokenSha256");
