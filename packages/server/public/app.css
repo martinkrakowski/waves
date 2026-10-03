@@ -53,11 +53,12 @@ small {
 }
 
 /*
- * For a word only a reader using a screen reader needs: the state a colour is
- * carrying, or a word the visible half of a row cannot spare room for. Clipped
- * rather than hidden, so it is still in the document and still read out, and out
- * of the flow so it never moves what an eye reads. Every view shares it, which is
- * why it lives here with the rest of the views' own rules.
+ * For a word only a reader using a screen reader needs: the fleet page's
+ * segmented wave bar, where a segment is too narrow to hold its state in letters,
+ * is what this is for. Clipped rather than `display: none`, so it is still in the
+ * document and still read out, and out of the flow so it never moves what an eye
+ * reads. Every view shares it, which is why it lives here with the rest of the
+ * views' own rules rather than in one stylesheet.
  */
 .sr {
   clip-path: inset(50%);

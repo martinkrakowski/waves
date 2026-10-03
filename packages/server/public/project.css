@@ -519,6 +519,11 @@
 
 .view.project .lanes td {
   border-bottom: 1px solid var(--line-soft);
+  /* The values in these cells are a pusher's own strings and one of them can be a
+     single unbroken word. The card clips its own corners, so a cell that cannot
+     break its text is cut off with no way to reach the rest of it — wrapping
+     keeps the card a card and keeps the whole value in the document. */
+  overflow-wrap: anywhere;
   padding: 0.45rem 0.6rem;
   vertical-align: top;
 }
@@ -583,6 +588,10 @@
   font-size: 0.68rem;
   letter-spacing: 0.04em;
   padding: 0.05rem 0.5rem;
+  /* The pusher's own words, in the pusher's own case: `app.css` puts every
+     badge on the page in capitals, and this is where that is called off, as it
+     was before this page was reskinned. */
+  text-transform: none;
   white-space: nowrap;
 }
 

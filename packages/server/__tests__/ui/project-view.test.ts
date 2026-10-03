@@ -163,12 +163,13 @@ describe("the wave strip", () => {
 
   it("counts every lane of the response beside all lanes", () => {
     const host = renderProjectView({ lanes: LISTING });
-    // Each wave chip leads with its own state, in a span a screen reader reads and
-    // an eye does not see, so the edge colour is never the only sign of the state.
+    // No state word here: this listing's heads claim fewer lanes than the rows
+    // beside them, which is a partial wave, and a partial wave says nothing about
+    // its state.
     expect(textsOf(host, ".wave-strip li")).toStrictEqual([
       "all lanes3 lanes",
-      "runningw-32 lanesjust now",
-      "settledw-21 lane10m agostale",
+      "w-32 lanesjust now",
+      "w-21 lane10m agostale",
     ]);
   });
 
@@ -326,18 +327,26 @@ describe("the wave strip", () => {
 });
 
 /**
- * The chip's own class per derived wave state. The colour hangs on it and the
- * words stay where they were, so this is the whole of what the state class adds:
- * a class out of the view's own table of five literals.
+ * The chip's own class and word per derived wave state: a colour on the edge and a
+ * word beside it, both out of the view's own tables of literals, and neither of
+ * them at all for a wave the listing does not hold whole.
  */
 describe("the wave strip's state classes", () => {
-  /** The chip of the one wave the listing carries, as it was drawn. */
+  /**
+   * The chip of the one wave the listing carries, as it was drawn. The head's own
+   * lane count is what the view measures the rows against, so it is set to the
+   * rows handed over — a head that claims three lanes with one row listed is a
+   * partial wave, which is what the next test asks for on purpose.
+   */
   function chipOf(
     head: Partial<WaveSummary>,
     rows: readonly LaneRow[],
   ): HTMLElement {
     const host = renderProjectView({
-      lanes: projectLanes({ waves: [waveSummary(head)], lanes: rows }),
+      lanes: projectLanes({
+        waves: [waveSummary({ lanes: rows.length, ...head })],
+        lanes: rows,
+      }),
     });
     const chips = host.querySelectorAll(".wave-strip li.wave");
     // The "all lanes" chip leads, and it is a scope rather than a wave.
@@ -383,6 +392,31 @@ describe("the wave strip's state classes", () => {
     expect(textsOf(chip, ".badge.stale")).toStrictEqual(["stale"]);
   });
 
+  it("gives a wave the listing does not hold whole no state at all", () => {
+    // The head says the wave has three lanes and the listing holds one, which is
+    // what every bound in `listLanes` leaves behind: `?all=1` off past the
+    // retention, the row and byte caps stopping mid-wave, the wave-read bound, or
+    // a snapshot gone between the heads and the rows. Half a wave is `settled` for
+    // a hundred reasons, so the chip says nothing about a state — and keeps every
+    // other word it has.
+    const chip = chipOf({ lanes: 3 }, alive);
+
+    expect(chip.getAttribute("class")).toBe("wave");
+    expect(chip.querySelectorAll(".state-word")).toHaveLength(0);
+    expect(textsOf(chip, "a")).toStrictEqual(["w-3"]);
+    expect(textsOf(chip, ".meta")).toStrictEqual(["3 lanes"]);
+  });
+
+  it("keeps the stale class on a wave it holds no rows of", () => {
+    // Staleness is a function of when the wave arrived and of no row at all, so it
+    // is answered whether the rows are here or not.
+    const chip = chipOf({ lanes: 3, stale: true }, []);
+
+    expect(chip.getAttribute("class")).toBe("wave wave-stale");
+    expect(chip.querySelectorAll(".state-word")).toHaveLength(0);
+    expect(textsOf(chip, ".badge.stale")).toStrictEqual(["stale"]);
+  });
+
   it("gives the scope chip no state class at all", () => {
     const host = renderProjectView({ lanes: projectLanes({ lanes: alive }) });
 
@@ -404,13 +438,43 @@ describe("the wave strip's state classes", () => {
 
     expect(chip.getAttribute("class")).toBe("wave wave-running");
     for (const node of chip.querySelectorAll("*")) {
-      for (const value of Array.from(node.getAttributeNames()).map((name) =>
-        node.getAttribute(name),
-      )) {
-        expect(value).not.toContain(payload);
+      for (const name of node.getAttributeNames()) {
+        // The id is the link's own text and its accessible name, both of which are
+        // inert: nothing else may carry it, above all no class and no `href`.
+        if (name === "aria-label") {
+          continue;
+        }
+        expect(node.getAttribute(name)).not.toContain(payload);
       }
     }
     expect(textsOf(chip, "a")).toStrictEqual([payload]);
+  });
+
+  it("names the wave's link with the wave and then the state word", () => {
+    // The visible name first, so the label a screen reader reads contains the text
+    // on the chip, and then the state the edge's colour is carrying.
+    const host = renderProjectView({
+      lanes: projectLanes({
+        waves: [waveSummary({ lanes: 1 })],
+        lanes: alive,
+      }),
+    });
+
+    expect(
+      oneOf(host, ".wave-strip li.wave a")?.getAttribute("aria-label"),
+    ).toBe("w-3, running");
+  });
+
+  it("names a wave it holds no state for by its own name alone", () => {
+    // No state word to read out, so the label would say nothing the visible text
+    // does not: the link is left with the name it already shows.
+    const host = renderProjectView({
+      lanes: projectLanes({ waves: [waveSummary({ lanes: 3 })], lanes: alive }),
+    });
+
+    const link = oneOf(host, ".wave-strip li.wave a");
+    expect(link?.getAttribute("aria-label")).toBeNull();
+    expect(textOf(link)).toBe("w-3");
   });
 
   it("takes no class from a state the listing's own shape does not carry", () => {
@@ -418,7 +482,10 @@ describe("the wave strip's state classes", () => {
     // class still comes out of the view's table, and a string nobody chose can
     // never be an attribute.
     const payload = "<svg onload=alert(1)>";
-    const head = { ...waveSummary(), state: payload } as WaveSummary;
+    const head = {
+      ...waveSummary({ lanes: 1 }),
+      state: payload,
+    } as WaveSummary;
     const host = renderProjectView({
       lanes: projectLanes({ waves: [head], lanes: alive }),
     });
@@ -429,9 +496,9 @@ describe("the wave strip's state classes", () => {
   });
 
   it("says the state in a word as well as in a colour, and never says a payload", () => {
-    // W14: a state shown at all is said in words. The word leads the chip in a span
-    // `app.css` clips away for an eye and leaves for a screen reader, and it comes
-    // out of the view's own table of four literals like the class does.
+    // W14: a state shown at all is said in words. The word leads the chip, to every
+    // reader, and comes out of the view's own table of four literals like the class
+    // does — so a colour is never the only sign of a state.
     const words = (head: Partial<WaveSummary>, rows: readonly LaneRow[]) =>
       textsOf(chipOf(head, rows), ".state-word");
 
@@ -447,9 +514,12 @@ describe("the wave strip's state classes", () => {
 
     // A head carrying a `state` of its own, which this route never answers: the
     // word is still one this file wrote, and the string nobody chose is nowhere in
-    // the text a reader — or a screen reader — is given.
+    // the text a reader is given.
     const payload = "<svg onload=alert(1)>";
-    const head = { ...waveSummary(), state: payload } as WaveSummary;
+    const head = {
+      ...waveSummary({ lanes: 1 }),
+      state: payload,
+    } as WaveSummary;
     const host = renderProjectView({
       lanes: projectLanes({ waves: [head], lanes: alive }),
     });

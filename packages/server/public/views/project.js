@@ -386,12 +386,21 @@ function allLanesItem(model) {
 }
 
 /**
- * The rows the listing holds for one wave, which is what the chip's state is
- * decided from. The listing holds every row of every wave it carries heads for,
- * so this is the whole of the wave as far as this page is concerned.
+ * The rows one wave's state is worked out from, and whether they are all of it.
+ *
+ * The head is the only statement of how many lanes a wave has, and the listing
+ * holds the rows its own bounds let through: `?all=1` off means every wave past
+ * retention is a head with no rows at all, `MAX_PROJECT_LANES` and
+ * `MAX_PROJECT_LANES_BYTES` stop in the middle of a wave's lanes, and
+ * `MAX_WAVES_PER_READ` leaves the waves after the bound as heads. So the count is
+ * the only completeness test there is, and a wave whose rows are not all here has
+ * no state to say: half a wave is `settled` for a hundred reasons, and a chip that
+ * guesses `settled` over a wave that is running is worse than a chip that says
+ * nothing.
  */
-function rowsOfWave(view, wave) {
-  return view.lanes.filter((row) => row.wave === wave);
+function wholeWaveOf(view, head) {
+  const rows = scopeOf(view, head.wave);
+  return rows.length === head.lanes ? rows : undefined;
 }
 
 /** A pull request that has been merged or closed has answered what it raised. */
@@ -467,23 +476,39 @@ const WAVE_WORD = {
 };
 
 /**
- * One wave's chip: its own state class, the stale one when the head says so, and
- * the state's word, shown to every reader. The colour on the edge is beside that
- * word rather than instead of it, which is what the plan's W14 asks of a state
- * that is shown at all: a word only a screen reader hears would leave a sighted
- * reader telling a failed wave from a running one by the edge's colour alone.
+ * One wave's chip: the state's word, shown to every reader, and the colour on the
+ * edge beside it rather than instead of it — which is what the plan's W14 asks of a
+ * state that is shown at all, since a colour alone would leave a sighted reader
+ * telling a failed wave from a running one by the edge and nothing else.
+ *
+ * A wave the listing does not hold whole is shown with no word and no state colour:
+ * it says nothing about a state rather than guessing one, and keeps every other
+ * word it has. Its `stale` class is the head's own answer — a function of when the
+ * wave arrived and of no row at all — so that one is kept whatever the rows.
+ *
+ * The link carries the word in its accessible name as well, so a reader who is
+ * told the state by a screen reader hears it where they were about to follow the
+ * link: the visible name first, then the word.
  */
 function waveItem(model, head, nowMs) {
+  const rows = wholeWaveOf(model.lanes, head);
+  const state = rows === undefined ? undefined : waveStateOf(rows, head.stale);
   const children = [];
-  const state = waveStateOf(rowsOfWave(model.lanes, head.wave), head.stale);
-  children.push(
-    el("span", { attrs: { class: "state-word" }, text: WAVE_WORD[state] }),
-  );
+  if (state !== undefined) {
+    children.push(
+      el("span", { attrs: { class: "state-word" }, text: WAVE_WORD[state] }),
+    );
+  }
+  const here = model.wave === head.wave ? { "aria-current": "page" } : {};
+  const named =
+    state === undefined
+      ? {}
+      : { "aria-label": `${head.wave}, ${WAVE_WORD[state]}` };
   children.push(
     internalLink(
       head.wave,
       hrefFor(projectId(model), head.wave, scopeQuery(model)),
-      model.wave === head.wave ? { "aria-current": "page" } : {},
+      { ...here, ...named },
     ),
     el("span", {
       attrs: { class: "meta" },
@@ -497,10 +522,14 @@ function waveItem(model, head, nowMs) {
   if (!head.retained) {
     children.push(badge("past retention", "aging"));
   }
-  const classes = head.stale
-    ? `wave ${WAVE_CLASS[state]} ${WAVE_CLASS.stale}`
-    : `wave ${WAVE_CLASS[state]}`;
-  return el("li", { attrs: { class: classes }, children });
+  const classes = ["wave"];
+  if (state !== undefined) {
+    classes.push(WAVE_CLASS[state]);
+  }
+  if (head.stale) {
+    classes.push(WAVE_CLASS.stale);
+  }
+  return el("li", { attrs: { class: classes.join(" ") }, children });
 }
 
 /**

@@ -189,7 +189,9 @@ dialog.lane-drawer[open] {
   font-family: var(--mono);
   font-size: 0.75rem;
   font-weight: inherit;
-  white-space: nowrap;
+  /* No `nowrap` on the label: on a phone the sheet is a third of a screen wide,
+     and a label that cannot wrap paints itself over the reported column beside it.
+     On a wide sheet the column has room for the longest one and nothing wraps. */
 }
 
 .drawer tbody td {
@@ -257,6 +259,9 @@ dialog.lane-drawer[open] {
   font-family: var(--mono);
   font-size: 0.68rem;
   padding: 0.05rem 0.5rem;
+  /* As on the project page: `app.css` puts every badge in capitals and this is
+     where that is called off, so a reason is shown in the case it was written. */
+  text-transform: none;
   white-space: nowrap;
 }
 
