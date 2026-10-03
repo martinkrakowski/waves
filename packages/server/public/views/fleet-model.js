@@ -108,3 +108,55 @@ export function totals(projects, attention) {
 function sum(counts) {
   return counts.reduce((total, count) => total + count, 0);
 }
+
+/**
+ * **The phase of an ambient animation**, as the twelve class names `fleet.css`
+ * phases the field's three loops and the running segments' sheen with.
+ *
+ * `draw()` replaces every node on the ten-second pass and on every navigation,
+ * so an animation drawn at 0% each time starts again at 0% each time and the page
+ * jumps four times a minute. An inline `animation-delay` would say otherwise and
+ * is not available: the CSP's `style-src` is `'self'` and `style` is not in
+ * `dom.js`'s attribute table. So the phase goes into the markup as a class, and
+ * each delay in the stylesheet is a twelfth of that animation's period.
+ *
+ * Each animation is phased over **its own** period, which is why the period is a
+ * parameter rather than a constant here: one phase over a 37s cycle would leave
+ * a 19s loop a seventh of a cycle away from where it was, and a redraw would jump
+ * it. Every period the two view modules pass is a whole number of seconds, so
+ * each twelfth is a real delay a stylesheet can write, and twelve of them is
+ * exactly one period again.
+ *
+ * The twelve classes differ from each other by more than a thousandth of a
+ * second, so two redraws a second apart land on different phases, and two
+ * redraws in the same twelfth differ by nothing at all — which is the whole of
+ * what is wanted, since a jump of a twelfth of a cycle is not one anybody can
+ * see.
+ */
+const PHASES = [
+  "phase-0",
+  "phase-1",
+  "phase-2",
+  "phase-3",
+  "phase-4",
+  "phase-5",
+  "phase-6",
+  "phase-7",
+  "phase-8",
+  "phase-9",
+  "phase-10",
+  "phase-11",
+];
+
+/** How many phases one cycle is divided into, and so what a twelfth is. */
+const PHASES_PER_CYCLE = 12;
+
+/**
+ * Which of the twelve phases a draw at `nowMs` begins at, for an animation whose
+ * cycle is `periodMs`. The clock is the app's own — the same `clock()` every stamp
+ * on the page is written from — so two readers, and one reader's own ten passes,
+ * agree about where in the cycle the page is.
+ */
+export function phaseOf(nowMs, periodMs) {
+  return PHASES[Math.floor((nowMs % periodMs) / (periodMs / PHASES_PER_CYCLE))];
+}

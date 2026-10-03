@@ -51,3 +51,9 @@ export declare function totals(
   readonly asking: number;
   readonly stale: number;
 };
+
+/**
+ * Which of the twelve phase classes an ambient animation is drawn at, over that
+ * animation's own period. `fleet.css` holds the delays those classes carry.
+ */
+export declare function phaseOf(nowMs: number, periodMs: number): string;

@@ -1,7 +1,7 @@
 import { el, internalLink, repoLink, stamp, text } from "../dom.js";
 import { laneCountText } from "../format.js";
 import { isProjectId } from "../patterns.js";
-import { attentionOf, ringOf, tabOf } from "./fleet-model.js";
+import { attentionOf, phaseOf, ringOf, tabOf } from "./fleet-model.js";
 import { pathFor } from "./project.js";
 
 /**
@@ -66,6 +66,15 @@ const RING_RADIUS = 9;
 const RING_AROUND = 2 * Math.PI * RING_RADIUS;
 
 /**
+ * The length of the running segment's sheen loop, which is the period its phase
+ * is counted over (`phaseOf`). **This number must equal the duration in the
+ * `.view.fleet .seg.running` rule in `fleet.css`**, which is where the twelve
+ * phase delays for it are a twelfth of that number. It is a whole number of
+ * seconds, so each twelfth is a delay a stylesheet can write.
+ */
+const SHEEN_MS = 4_000;
+
+/**
  * The project id a row's key names, or nothing: a `details` whose summary
  * carries no `row:` key is not a row of this page, however it is classed. The
  * app asks this of every toggle it hears, because `toggle` fires for every
@@ -77,16 +86,16 @@ export function rowIdOf(node) {
 }
 
 /** One wave in the bar: a colour, and the whole of what it says in a word. */
-function segment(wave, phase) {
+function segment(wave, nowMs) {
   const classes = [SEGMENT[wave.state]];
   if (wave.stale === true) {
     classes.push("stale");
   }
   // A running segment is the only segment that moves, so it is the only one that
-  // carries the phase (see `phaseOf`): the sheen would otherwise restart at 0%
-  // on every pass and every navigation.
+  // carries a phase, and it carries the sheen's own (see `phaseOf`): the sheen
+  // would otherwise restart at 0% on every pass and every navigation.
   if (wave.state === "running") {
-    classes.push(phase);
+    classes.push(phaseOf(nowMs, SHEEN_MS));
   }
   return el("li", {
     attrs: { class: classes.join(" ") },
@@ -105,7 +114,7 @@ function segment(wave, phase) {
  * each segment says its own state in text for a reader who cannot see the
  * colour, and a `role="img"` would swallow exactly that.
  */
-function waveBar(project, phase) {
+function waveBar(project, nowMs) {
   if (project.recentWaves.length === 0) {
     return [
       el("p", {
@@ -123,7 +132,7 @@ function waveBar(project, phase) {
       // The listing answers newest first; a bar is read left to right.
       children: [...project.recentWaves]
         .reverse()
-        .map((wave) => segment(wave, phase)),
+        .map((wave) => segment(wave, nowMs)),
     }),
   ];
 }
@@ -241,7 +250,7 @@ function attentionFlag(asking) {
  * button, and a link inside a button is interactive content inside a control
  * (W39). They sit above it in `rowHead`, outside the row's own disclosure.
  */
-function summaryBody(project, model, nowMs, phase) {
+function summaryBody(project, model, nowMs) {
   const tab = tabOf(project, model.attention);
   const asking = attentionOf(model.attention, project.id);
   const children = [
@@ -259,7 +268,7 @@ function summaryBody(project, model, nowMs, phase) {
     );
   }
   children.push(
-    ...waveBar(project, phase),
+    ...waveBar(project, nowMs),
     caption(project, nowMs),
     el("span", {
       attrs: { class: "lane-count" },
@@ -374,9 +383,9 @@ function statusRow(project, nowMs) {
  * to open, so it keeps every number the row shows and draws them as a static
  * summary instead of a control: a project a reader can read and cannot click.
  */
-export function projectRow(project, model, nowMs, phase) {
+export function projectRow(project, model, nowMs) {
   const head = rowHead(project);
-  const body = summaryBody(project, model, nowMs, phase);
+  const body = summaryBody(project, model, nowMs);
   if (!isProjectId(project.id)) {
     return el("article", {
       attrs: { class: "project" },

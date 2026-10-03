@@ -63,6 +63,29 @@ describe("drawableProjects", () => {
     expect(drawableProjects([{ ...projectCard(), lanes: "6" }])).toBe(false);
   });
 
+  it("takes a repository as a string, and takes no repository at all", () => {
+    expect(drawableProjects([projectCard()])).toBe(true);
+    expect(
+      drawableProjects([projectCard({ repo: "https://git.example.test/a" })]),
+    ).toBe(true);
+    expect(drawableProjects([projectCard({ repo: undefined })])).toBe(true);
+    // The contract reads this field through `readOptional`, so `undefined` is
+    // how it says "no repository" — and it never says it any other way. A
+    // summary carrying anything else is a failed load, and the fleet's search
+    // lowercases this field: without the rule, one bad entry would throw inside
+    // a draw the first time a reader searched.
+    expect(drawableProjects([{ ...projectCard(), repo: 42 }])).toBe(false);
+    expect(drawableProjects([{ ...projectCard(), repo: null }])).toBe(false);
+    expect(
+      drawableProjects([
+        { ...projectCard(), repo: { href: "https://g.test/a" } },
+      ]),
+    ).toBe(false);
+    expect(
+      drawableProjects([{ ...projectCard(), repo: ["https://g.test"] }]),
+    ).toBe(false);
+  });
+
   it("refuses a recent wave it could not draw rather than drawing half of it", () => {
     const broken = [
       null,

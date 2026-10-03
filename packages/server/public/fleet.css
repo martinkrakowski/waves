@@ -50,10 +50,23 @@
 }
 
 /*
- * The field: three literals of `d`, stretched to the width of the hero, in a
- * strip of its own below the counts so that no line of text is ever drawn over.
- * The paths tile every sixty units, so drifting one period is a loop with no
- * seam in it.
+ * The field: three literals of `d` in a strip of its own below the counts, so no
+ * line of text is ever drawn over. The paths are geometry, and the geometry is
+ * the loop:
+ *
+ * - The viewBox is 120 units wide, and a path spans **-26 to 142** — that is one
+ *   wavelength (60 units) of overhang past each edge. The drift is 60 units, so
+ *   the path always has at least 26 units of its own margin inside the box at
+ *   either extreme: 66 units at the left of the cycle, 86 at the right.
+ * - A drift of exactly one wavelength puts each path back where it started, and
+ *   because a wavelength is a whole number of periods, the wrap is seamless: the
+ *   end of `fleet-drift` and the start of `wave-a`/`wave-b`/`wave-c` agree at
+ *   0%, which is what makes the wrap invisible rather than a jump.
+ *
+ * The three loops are 19s, 27s and 37s — coprime enough that the three phases
+ * only realign every 999 minutes, which is the point of three periods rather
+ * than one. Those three numbers are `WAVE_A_MS`, `WAVE_B_MS` and `WAVE_C_MS` in
+ * `views/fleet.js`, beside the classes they drive.
  */
 .view.fleet .wave-field {
   bottom: 0;

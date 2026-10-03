@@ -1,6 +1,6 @@
 import { el, internalLink, stamp, text } from "../dom.js";
 import { formatQuery, TABS } from "../query.js";
-import { matches, tabCounts, tabOf, totals } from "./fleet-model.js";
+import { matches, phaseOf, tabCounts, tabOf, totals } from "./fleet-model.js";
 import { projectRow } from "./fleet-rows.js";
 import { searchText } from "./project.js";
 
@@ -51,59 +51,23 @@ const TAB_LABEL = { active: "Active", flagged: "Flagged", quiet: "Quiet" };
  * The field along the hero's bottom edge: three waves, one below the other, in
  * module literals with nothing of the API in them. The drift is a CSS animation
  * on each path's own class, so no wave is ever moved from here.
+ *
+ * Each path carries the length of its own loop, which is the period its phase is
+ * counted over (`phaseOf`). **Each of these three numbers must equal the
+ * duration in the matching `.view.fleet .wave-a` rule in `fleet.css`**, which is
+ * where the twelve phase delays for it are a twelfth of that number: change one
+ * and change the other in the same commit, or the wave resumes where it was not.
+ * All three are whole seconds, so each twelfth is a delay a stylesheet can write.
  */
+const WAVE_A_MS = 19_000;
+const WAVE_B_MS = 27_000;
+const WAVE_C_MS = 37_000;
+
 const WAVE_FIELD = [
-  ["wave-a", "M-6 20c10-7 20 7 30 0s20-7 30 0 20 7 30 0 20-7 30 0"],
-  ["wave-b", "M-6 26c10-7 20 7 30 0s20-7 30 0 20 7 30 0 20-7 30 0"],
-  ["wave-c", "M-6 32c10-7 20 7 30 0s20-7 30 0 20 7 30 0 20-7 30 0"],
+  ["wave-a", WAVE_A_MS, "M-26 20c12-8 24 8 36 0s24-8 36 0 24 8 36 0 24-8 36 0"],
+  ["wave-b", WAVE_B_MS, "M-26 26c12-8 24 8 36 0s24-8 36 0 24 8 36 0 24-8 36 0"],
+  ["wave-c", WAVE_C_MS, "M-26 32c12-8 24 8 36 0s24-8 36 0 24 8 36 0 24-8 36 0"],
 ];
-
-/**
- * **The phase of an ambient animation**, as the twelve class names `fleet.css`
- * phases the field's three loops and the running segments' sheen with.
- *
- * `draw()` replaces every node on the ten-second pass and on every navigation,
- * so an animation drawn at 0% each time starts again at 0% each time and the page
- * jumps four times a minute. An inline `animation-delay` would say otherwise and
- * is not available: the CSP's `style-src` is `'self'` and `style` is not in
- * `dom.js`'s attribute table. So the phase goes into the markup as a class, and
- * each delay in the stylesheet is a twelfth of that animation's period. Every
- * period here is a whole number of seconds, so each twelfth is a real delay a
- * stylesheet can write, and twelve of them is exactly one period again.
- *
- * The twelve classes differ from each other by more than a thousandth of a
- * second, so two redraws a second apart land on different phases, and two
- * redraws in the same twelfth differ by nothing at all — which is the whole of
- * what is wanted, since a jump of a twelfth of a cycle is not one anybody can
- * see.
- */
-const PHASES = [
-  "phase-0",
-  "phase-1",
-  "phase-2",
-  "phase-3",
-  "phase-4",
-  "phase-5",
-  "phase-6",
-  "phase-7",
-  "phase-8",
-  "phase-9",
-  "phase-10",
-  "phase-11",
-];
-
-/** One twelfth of the longest loop on this page, in ms: the field's 37s wave. */
-const TWELFTH_MS = 37_000 / 12;
-
-/**
- * Which of the twelve phases a draw at `nowMs` begins at. The clock is the app's
- * own — the same `clock()` every stamp on the page is written from — so two
- * readers, and one reader's own ten passes, agree about where in the cycle the
- * page is.
- */
-export function phaseOf(nowMs) {
-  return PHASES[Math.floor((nowMs % (TWELFTH_MS * 12)) / TWELFTH_MS)];
-}
 
 /**
  * One count and the noun it counts, singular for one and plural for every other
@@ -127,7 +91,7 @@ function heroCounts(counts) {
 }
 
 /** The field itself: three paths, and nothing of the answer in either. */
-function waveField(phase) {
+function waveField(nowMs) {
   const svg = document.createElementNS(SVG_NS, "svg");
   svg.setAttribute("class", "wave-field");
   svg.setAttribute("viewBox", "0 0 120 36");
@@ -136,9 +100,9 @@ function waveField(phase) {
   svg.setAttribute("preserveAspectRatio", "none");
   svg.setAttribute("aria-hidden", "true");
   svg.setAttribute("focusable", "false");
-  for (const [className, d] of WAVE_FIELD) {
+  for (const [className, periodMs, d] of WAVE_FIELD) {
     const path = document.createElementNS(SVG_NS, "path");
-    path.setAttribute("class", `${className} ${phase}`);
+    path.setAttribute("class", `${className} ${phaseOf(nowMs, periodMs)}`);
     path.setAttribute("d", d);
     svg.append(path);
   }
@@ -152,14 +116,14 @@ function waveField(phase) {
  * in the flow under the counts rather than drawn over them, so no width of the
  * window can put a wave through a line of text.
  */
-function hero(counts, phase) {
+function hero(counts, nowMs) {
   return el("header", {
     attrs: { class: "fleet-hero" },
     children: [
       el("p", { attrs: { class: "eyebrow" }, text: EYEBROW }),
       el("h1", { text: HEADLINE }),
       el("p", { attrs: { class: "hero-counts" }, text: heroCounts(counts) }),
-      waveField(phase),
+      waveField(nowMs),
     ],
   });
 }
@@ -338,7 +302,7 @@ function search(model, handlers) {
  * "no project matches" is about the reader's own choice, and a fleet that was
  * filtered away must not read as a service that has lost its projects.
  */
-function projectsPanel(model, nowMs, handlers, phase) {
+function projectsPanel(model, nowMs, handlers) {
   const children = [el("h2", { text: "Projects" }), filters(model, handlers)];
   const shown = model.projects.filter(
     (project) =>
@@ -355,7 +319,7 @@ function projectsPanel(model, nowMs, handlers, phase) {
     );
   } else {
     for (const project of shown) {
-      children.push(projectRow(project, model, nowMs, phase));
+      children.push(projectRow(project, model, nowMs));
     }
   }
   return el("section", {
@@ -443,16 +407,15 @@ export function renderFleet(model, nowMs, handlers) {
   // Counted once, so that the hero's line and the cards under it are two
   // readings of one answer rather than two passes that could disagree.
   const counts = totals(model.projects, model.attention);
-  const phase = phaseOf(nowMs);
   return el("section", {
     attrs: { class: "view fleet" },
     children: [
-      hero(counts, phase),
+      hero(counts, nowMs),
       stats(counts),
       el("div", {
         attrs: { class: "fleet-grid" },
         children: [
-          projectsPanel(model, nowMs, handlers, phase),
+          projectsPanel(model, nowMs, handlers),
           attentionPanel(model.attention, nowMs),
         ],
       }),

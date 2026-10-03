@@ -1220,6 +1220,29 @@ describe("the fleet's own filters", () => {
     app.stop();
   });
 
+  it("treats a summary whose repository is not a string as a failed load", async () => {
+    // The fleet's search lowercases `repo`, so a summary carrying a number here
+    // would throw inside a draw — and every address the reader might type reaches
+    // a search. The shape check refuses the answer instead, and a refused answer
+    // is a failed load: the offline note, and the last good answer left alone.
+    const fetchImpl = fetchStub((path) =>
+      path === "/api/v1/projects"
+        ? { status: 200, body: [{ ...projectCard(), repo: 42 }] }
+        : path === "/api/v1/attention"
+          ? { status: 200, body: attentionView() }
+          : { status: 404 },
+    );
+    for (const search of ["", "?q=alpha", "?q=git", "?tab=flagged"]) {
+      const { app } = harness({ pathname: "/", search, fetchImpl });
+      app.start();
+      await flush();
+
+      expect(textsOf(root(), ".note")).toStrictEqual(["offline, retrying"]);
+      expect(root().querySelectorAll(".project")).toHaveLength(0);
+      app.stop();
+    }
+  });
+
   it("goes to the fleet's own search box on a slash", async () => {
     const { app } = await onFleet();
     expect(document.activeElement).toBe(document.body);

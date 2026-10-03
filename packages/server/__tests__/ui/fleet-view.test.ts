@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { AttentionView } from "../../src/application/read-model.js";
 import type { ProjectCard } from "../../public/api.js";
 import type { FleetHandlers, FleetModel } from "../../public/views/fleet.js";
-import { phaseOf, renderFleet } from "../../public/views/fleet.js";
+import { phaseOf } from "../../public/views/fleet-model.js";
+import { renderFleet } from "../../public/views/fleet.js";
 import { rowIdOf } from "../../public/views/fleet-rows.js";
 
 import {
@@ -93,7 +94,9 @@ describe("the hero", () => {
       paths.map((path) => path.getAttribute("class")?.split(" ")[0]),
     ).toStrictEqual(["wave-a", "wave-b", "wave-c"]);
     for (const path of paths) {
-      expect(path.getAttribute("d")).toMatch(/^M-6 /);
+      // Each starts before the viewBox's left edge, so the drift has something
+      // to come from and never uncovers a blank strip at either end.
+      expect(path.getAttribute("d")).toMatch(/^M-26 /);
       // Each carries the phase of the draw, and nothing else about the answer.
       expect(path.getAttribute("class")).toMatch(/^(wave-[abc]) phase-\d+$/);
     }
@@ -146,30 +149,70 @@ describe("the hero", () => {
 });
 
 describe("the phase of an ambient animation", () => {
-  /** One twelfth of the 37s loop the twelve classes are a twelfth of. */
-  const TWELFTH_MS = 37_000 / 12;
+  /**
+   * The four loops this page animates, and the period each is phased over. These
+   * are the numbers in `fleet.css`'s four `animation` shorthands, and a test that
+   * reads one of them and finds the duration is asserting that the two halves of
+   * one constant agree.
+   */
+  const WAVE_A_MS = 19_000;
+  const WAVE_B_MS = 27_000;
+  const WAVE_C_MS = 37_000;
+  const SHEEN_MS = 4_000;
 
-  it("is one of twelve literals, and it comes from the clock", () => {
-    expect(phaseOf(0)).toBe("phase-0");
+  it("is one of twelve literals, over the period it is given", () => {
+    expect(phaseOf(0, WAVE_C_MS)).toBe("phase-0");
     // Anywhere inside the first twelfth is the first twelfth.
-    expect(phaseOf(1)).toBe("phase-0");
-    expect(phaseOf(TWELFTH_MS)).toBe("phase-1");
-    // Mid-cycle.
-    expect(phaseOf(18_500)).toBe("phase-6");
-    expect(phaseOf(21_584)).toBe("phase-7");
-    expect(phaseOf(24_667)).toBe("phase-8");
+    expect(phaseOf(1, WAVE_C_MS)).toBe("phase-0");
+    expect(phaseOf(3_084, WAVE_C_MS)).toBe("phase-1");
+    // Mid-cycle, on each of the four periods.
+    expect(phaseOf(18_500, WAVE_A_MS)).toBe("phase-11");
+    expect(phaseOf(18_500, WAVE_B_MS)).toBe("phase-8");
+    expect(phaseOf(18_500, WAVE_C_MS)).toBe("phase-6");
+    expect(phaseOf(18_500, SHEEN_MS)).toBe("phase-7");
     // Just before the wrap, and the wrap itself.
-    expect(phaseOf(37_000 - 1)).toBe("phase-11");
-    expect(phaseOf(37_000)).toBe("phase-0");
+    expect(phaseOf(36_999, WAVE_C_MS)).toBe("phase-11");
+    expect(phaseOf(37_000, WAVE_C_MS)).toBe("phase-0");
     // And on through the clock's own larger cycles, which is what a wall clock
     // reads rather than a page's age.
-    expect(phaseOf(1_000_000_000)).toBe("phase-0");
+    expect(phaseOf(1_000_000_000, WAVE_A_MS)).toBe("phase-6");
     for (let at = 0; at < 37_000; at += 977) {
-      expect(phaseOf(at)).toMatch(/^phase-(?:[0-9]|1[01])$/);
+      expect(phaseOf(at, WAVE_C_MS)).toMatch(/^phase-(?:[0-9]|1[01])$/);
+      expect(phaseOf(at, SHEEN_MS)).toMatch(/^phase-(?:[0-9]|1[01])$/);
     }
   });
 
-  it("phases the field and every running segment from the same draw", () => {
+  it("gives each of the four loops its own phase for one moment", () => {
+    const host = draw(
+      {
+        projects: [
+          projectCard({
+            recentWaves: [
+              recentWave({ wave: "w-3", state: "running" }),
+              recentWave({ wave: "w-2", state: "done" }),
+            ],
+          }),
+        ],
+      },
+      18_500,
+    );
+    // One draw is one moment, but four different cycles have run for different
+    // lengths by then: 18.5s is the eleventh twelfth of 19s, the ninth of 27s,
+    // the seventh of 37s and the eighth of the sheen's 4s. Phasing all four over
+    // one of them would leave the other three resuming somewhere else entirely.
+    expect(
+      Array.from(host.querySelectorAll(".wave-field path")).map((path) =>
+        path.getAttribute("class"),
+      ),
+    ).toStrictEqual(["wave-a phase-11", "wave-b phase-8", "wave-c phase-6"]);
+    expect(
+      Array.from(host.querySelectorAll(".wave-bar .seg")).map((seg) =>
+        seg.getAttribute("class"),
+      ),
+    ).toStrictEqual(["seg done", "seg running phase-7"]);
+  });
+
+  it("moves every loop on with the clock, and phases only what moves", () => {
     const projects = [
       projectCard({
         recentWaves: [
@@ -178,32 +221,20 @@ describe("the phase of an ambient animation", () => {
         ],
       }),
     ];
-    // The same clock, the same class everywhere: one draw is one moment in the
-    // cycle, not three.
-    const host = draw({ projects }, 18_500);
+    // One second later the 19s wave has come back round to the start of its own
+    // cycle — which is invisible, because a drift of one wavelength ends where
+    // it began — and the sheen has moved two and a half twelfths on.
+    const later = draw({ projects }, 19_500);
     expect(
-      Array.from(host.querySelectorAll(".wave-field path")).map((path) =>
+      Array.from(later.querySelectorAll(".wave-field path")).map((path) =>
         path.getAttribute("class"),
       ),
-    ).toStrictEqual(["wave-a phase-6", "wave-b phase-6", "wave-c phase-6"]);
-    expect(
-      Array.from(host.querySelectorAll(".wave-bar .seg")).map((seg) =>
-        seg.getAttribute("class"),
-      ),
-    ).toStrictEqual(["seg done", "seg running phase-6"]);
-
-    // A later draw moves on, and a settled segment never carries a phase at all
-    // because it is not moving. 21_584 is a millisecond past the boundary the
-    // class changes at.
-    const later = draw({ projects }, 21_584);
-    expect(later.querySelector(".wave-field path")?.getAttribute("class")).toBe(
-      "wave-a phase-7",
-    );
+    ).toStrictEqual(["wave-a phase-0", "wave-b phase-8", "wave-c phase-6"]);
     expect(
       Array.from(later.querySelectorAll(".wave-bar .seg")).map((seg) =>
         seg.getAttribute("class"),
       ),
-    ).toStrictEqual(["seg done", "seg running phase-7"]);
+    ).toStrictEqual(["seg done", "seg running phase-10"]);
   });
 });
 
@@ -499,7 +530,14 @@ describe("the rows a filter leaves", () => {
 
   it("searches the name, the id and the repository, in any case", () => {
     const projects = [
-      projectCard({ id: "apollo", name: "Apollo", repo: "https://g.test/a" }),
+      // A repository that is a string is searched as one: the shape check holds
+      // this field to absent-or-string, so a summary that got here has one the
+      // fleet may lowercase.
+      projectCard({
+        id: "apollo",
+        name: "Apollo",
+        repo: "https://git.example.test/apollo",
+      }),
       // Registered no repository at all: a search for a host name must not
       // match a project that never named one.
       projectCard({ id: "borealis", name: "Borealis", repo: undefined }),
@@ -509,7 +547,8 @@ describe("the rows a filter leaves", () => {
       textsOf(draw({ projects, query: query({ q }) }), ".row-head h3");
     expect(found("APOLLO")).toStrictEqual(["Apollo"]);
     expect(found("bore")).toStrictEqual(["Borealis"]);
-    expect(found("g.test")).toStrictEqual(["Apollo", "Cygnus"]);
+    expect(found("git.example.test")).toStrictEqual(["Apollo"]);
+    expect(found("g.test")).toStrictEqual(["Cygnus"]);
     expect(found("")).toStrictEqual(["Apollo", "Borealis", "Cygnus"]);
     expect(found("nothing here")).toStrictEqual([]);
   });

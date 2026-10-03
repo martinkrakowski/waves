@@ -19,6 +19,4 @@ export declare function projectRow(
   project: ProjectCard,
   model: RowModel,
   nowMs: number,
-  /** The phase class its running segments and its ring are drawn at. */
-  phase: string,
 ): HTMLElement;
