@@ -39,3 +39,6 @@ export declare function detailValue(value: unknown): string | undefined;
 export declare function laneCountText(lanes: number): string;
 
 export declare function waveCountText(waves: number): string;
+
+/** `HH:MM:SS` in the reader's own time zone, every field padded to two digits. */
+export declare function clockTime(milliseconds: number): string;

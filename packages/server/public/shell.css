@@ -1,20 +1,72 @@
 /*
- * The frame and nothing else: a top bar, the page area the views draw into, and
- * a footer bar for what the page has to say out loud. One column at every width.
- * Colours come only from tokens.css, so both schemes and every later
- * stylesheet read the same names.
+ * The frame and nothing else: the ground everything is drawn on, the top bar, the
+ * page area the views draw into, and a footer bar for what the page has to say
+ * out loud. Every colour and every measure comes from tokens.css, so both schemes
+ * and every later stylesheet read the same names.
  */
 
 * {
   box-sizing: border-box;
 }
 
+/*
+ * The ground: near-black, with two soft glows over it and a third at the bottom
+ * edge. It is its own stacking context, so the grid below paints over the glows
+ * and under the page rather than the two of them washing over each other.
+ */
 body {
-  background: var(--bg);
+  background:
+    radial-gradient(60rem 40rem at 12% -12%, var(--glow-cyan), transparent 70%),
+    radial-gradient(
+      52rem 36rem at 88% -10%,
+      var(--glow-violet),
+      transparent 72%
+    ),
+    radial-gradient(48rem 26rem at 50% 112%, var(--glow-teal), transparent 70%),
+    var(--bg);
   color: var(--text);
+  -webkit-font-smoothing: antialiased;
   font-family: var(--sans);
   line-height: 1.5;
   margin: 0;
+  min-height: 100vh;
+  position: relative;
+  z-index: 0;
+}
+
+/*
+ * The blueprint grid, fixed so it does not slide under a scrolling page, masked
+ * so it fades out downward, and over no pointer so it never takes a click from the
+ * page it is behind.
+ */
+body::before {
+  background-image:
+    linear-gradient(to right, rgb(148 163 184 / 4.5%) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(148 163 184 / 4.5%) 1px, transparent 1px);
+  background-size: 56px 56px;
+  content: "";
+  inset: 0;
+  mask-image: linear-gradient(to bottom, rgb(0 0 0 / 90%), rgb(0 0 0 / 0%) 78%);
+  pointer-events: none;
+  position: fixed;
+  z-index: -1;
+}
+
+::selection {
+  background: var(--cyan);
+  color: var(--bg);
+}
+
+/*
+ * The glass card, for every panel on the page from here on: an opaque ground, a
+ * hairline border and a top-lit sheen over it. The ground is opaque because the
+ * text sits on it, so the glass is a border and a gradient rather than a
+ * translucency under the words.
+ */
+.card {
+  background: var(--card-sheen), var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
 }
 
 /* Three children, three rows: the bars are as tall as they need to be and the
@@ -26,35 +78,57 @@ body {
   min-height: 100vh;
 }
 
-/* The bar that holds its place while the page scrolls under it. */
+/*
+ * The bar that holds its place while the page scrolls under it, blurred so the
+ * grid moves behind the glass. Its content is centred on a 1240px measure by the
+ * padding rather than by a wrapper, so the blur itself still runs the whole width.
+ */
 .topbar {
   align-items: center;
-  background: var(--bg);
-  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(14px);
+  background: var(--bg-glass);
+  border-bottom: 1px solid var(--line-soft);
+  box-shadow: 0 1px 0 var(--line-soft);
   display: flex;
   flex-wrap: wrap;
-  gap: 1rem;
+  gap: 0.65rem;
   justify-content: flex-start;
-  padding: 0.75rem 1.25rem;
+  min-height: 60px;
+  padding: 0.5rem max(1.25rem, calc((100% - 1240px) / 2));
   position: sticky;
   top: 0;
   z-index: 2;
 }
 
-/* The mark sits beside the word, so it needs less room than the bar's own gap. */
+/*
+ * The mark, in the palette's own three: a cyan wave, the mix, and an emerald
+ * one, so the frame opens with the colours the page is about.
+ */
 .logo {
-  color: var(--blue);
   fill: none;
   flex: none;
-  height: 1rem;
-  margin-right: -0.5rem;
-  stroke: currentColor;
+  height: 1.15rem;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 2;
-  width: 1rem;
+  stroke-width: 1.8;
+  width: 1.15rem;
 }
 
+.logo path:nth-child(1) {
+  stroke: var(--cyan);
+}
+
+.logo path:nth-child(2) {
+  stroke: color-mix(in srgb, var(--cyan) 50%, var(--emerald));
+}
+
+.logo path:nth-child(3) {
+  stroke: var(--emerald);
+}
+
+/* The word beside the mark is the page's name, so it is the one place the display
+   face is used in the bar. The first part of the trail is that word on every
+   route, whether it is a link or where the reader already is. */
 .crumbs {
   align-items: baseline;
   display: flex;
@@ -63,45 +137,161 @@ body {
   gap: 0.4rem;
 }
 
+.crumbs > :first-child {
+  font-family: var(--display);
+  font-size: 17px;
+  font-weight: 700;
+}
+
 .crumbs a {
   color: var(--muted);
   text-decoration: none;
 }
 
 .crumbs a:hover {
-  color: var(--blue);
+  color: var(--cyan);
 }
 
 .crumbs .here {
   color: var(--text);
 }
 
-/* The projects, in a native disclosure: the summary is a control of its own and
-   `details` does the opening, so nothing here has to. */
-/* At the end of the bar, and the list opens from its right edge: a list that
-   opened rightwards from after a long breadcrumb would run off the screen. */
-.menu {
+/* Which of the pages this is, in the face numbers are read in, said small. */
+.tag {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.18em;
+  padding: 0.1rem 0.45rem;
+  text-transform: uppercase;
+}
+
+/*
+ * When this page last loaded. The dot pings while the page is talking to the
+ * service, and stops and goes amber when there is a note: a dot still pulsing
+ * over "offline, retrying" would be claiming a liveness the page does not have.
+ */
+.sync {
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  display: inline-flex;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  gap: 0.4rem;
   margin-left: auto;
+  padding: 0.2rem 0.6rem;
+  white-space: nowrap;
+}
+
+.sync-dot {
+  background: var(--cyan);
+  border-radius: 50%;
+  flex: none;
+  height: 0.4rem;
+  width: 0.4rem;
+}
+
+.sync .sync-dot {
+  animation: waves-ping 2.4s ease-out infinite;
+}
+
+.sync.offline {
+  color: var(--amber);
+}
+
+.sync.offline .sync-dot {
+  animation: none;
+  background: var(--amber);
+}
+
+/* The dot's halo, out and away, rather than a change of colour: the colour is the
+   state and the halo is only the news that the page is still talking. */
+@keyframes waves-ping {
+  0% {
+    box-shadow: 0 0 0 0 var(--glow-cyan);
+  }
+
+  70%,
+  100% {
+    box-shadow: 0 0 0 0.4rem rgb(34 211 238 / 0%);
+  }
+}
+
+/* The reader's own pass. A pill of its own rather than a word, so the bar's right
+   end is three shapes the eye can find without reading any of them. */
+.refresh {
+  align-items: center;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  flex: none;
+  height: 1.75rem;
+  justify-content: center;
+  padding: 0;
+  width: 1.75rem;
+}
+
+.refresh:hover {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
+.refresh .arrow {
+  fill: none;
+  height: 1rem;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  width: 1rem;
+}
+
+/* Only while a pass the reader asked for is in flight: a timer pass redraws the
+   page without this, so the arrow never turns on its own. */
+.refresh.spin .arrow {
+  animation: waves-turn 900ms linear infinite;
+}
+
+@keyframes waves-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The projects, in a native disclosure: the summary is a control of its own and
+   `details` does the opening, so nothing here has to. At the end of the bar, and
+   the list opens from its right edge: a list that opened rightwards from after a
+   long breadcrumb would run off the screen. */
+.menu {
+  flex: none;
   position: relative;
 }
 
 .menu summary {
   background: var(--bg-sink);
   border: 1px solid var(--line);
-  border-radius: 0.4rem;
-  color: var(--text);
+  border-radius: 999px;
+  color: var(--muted);
   cursor: pointer;
-  font-size: 0.9rem;
-  padding: 0.2rem 0.6rem;
+  font-size: 0.85rem;
+  padding: 0.2rem 0.7rem;
 }
 
-/* The list is out of the flow so the page does not move when it opens; on a
-   phone, where there is no room beside it, it is put back into the flow. */
+/* The list is out of the flow so the page does not move when it opens, and a card
+   like every other panel on the page: on a phone, where there is no room beside
+   it, it is put back into the flow. */
 .menu-list {
-  background: var(--bg-raise);
+  background: var(--card-sheen), var(--card);
   border: 1px solid var(--line);
-  border-radius: 0.5rem;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+  border-radius: var(--radius-card);
+  box-shadow: 0 18px 48px rgb(2 4 10 / 38%);
   max-height: min(70vh, 28rem);
   max-width: min(24rem, calc(100vw - 2.5rem));
   min-width: 16rem;
@@ -125,12 +315,12 @@ body {
 
 .projects a {
   color: var(--text);
-  text-decoration: none;
   overflow-wrap: anywhere;
+  text-decoration: none;
 }
 
 .projects a[aria-current="page"] {
-  color: var(--blue);
+  color: var(--cyan);
 }
 
 .projects small {
@@ -147,36 +337,76 @@ body {
 a:focus-visible,
 button:focus-visible,
 summary:focus-visible {
-  outline: 2px solid var(--blue);
+  outline: 2px solid var(--cyan);
   outline-offset: 2px;
 }
 
 /* The bar that carries the words, the mode and the note. It holds its place at
    the bottom, above the page, on the same terms as the bar at the top. */
 .footbar {
-  align-items: baseline;
-  background: var(--bg);
-  border-top: 1px solid var(--line);
+  align-items: center;
+  background: var(--bg-glass);
+  backdrop-filter: blur(14px);
+  border-top: 1px solid var(--line-soft);
   bottom: 0;
   color: var(--muted);
   display: flex;
   flex-wrap: wrap;
   font-size: 0.75rem;
   gap: 0.25rem 1.25rem;
-  padding: 0.4rem 1.25rem;
+  padding: 0.4rem max(1.25rem, calc((100% - 1240px) / 2));
   position: sticky;
   z-index: 1;
 }
 
+/* The legend: one chip per word, each with a square of the colour the word is
+   shown in elsewhere. The square is the only thing here that is not read. */
 .footbar .legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem 1.25rem;
+  gap: 0.25rem 0.75rem;
   margin-left: auto;
 }
 
 .footbar .legend p {
+  align-items: center;
+  color: var(--faint);
+  display: flex;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  gap: 0.3rem;
+  letter-spacing: 0.06em;
   margin: 0;
+  text-transform: uppercase;
+}
+
+.swatch {
+  border-radius: 2px;
+  flex: none;
+  height: 0.45rem;
+  width: 0.45rem;
+}
+
+.swatch.running {
+  background: var(--cyan);
+}
+
+.swatch.done,
+.swatch.agrees {
+  background: var(--emerald);
+}
+
+.swatch.settled {
+  background: var(--slate);
+}
+
+.swatch.failed,
+.swatch.disagreement {
+  background: var(--rose);
+}
+
+.swatch.stale {
+  background: var(--amber);
 }
 
 /* The note in the footbar is one line of text, not the boxed banner the old
@@ -188,6 +418,27 @@ summary:focus-visible {
   font-size: 0.85rem;
   margin: 0;
   padding: 0;
+}
+
+/*
+ * The entrance, on the first paint with data and on no other: `#root` carries
+ * `data-first` until the draw after that one, and the loader line is left out so
+ * the page does not rise twice, once empty and once with data in it.
+ */
+@keyframes waves-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+#root[data-first] .app > main > :not(.empty) {
+  animation: waves-rise 600ms ease-out both;
 }
 
 /* On a phone neither bar sticks: two sticky bars would take a fifth of the

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   aliveView,
+  clockTime,
   detailValue,
   diffText,
   gateText,
@@ -157,5 +158,24 @@ describe("counts", () => {
     expect(laneCountText(2)).toBe("2 lanes");
     expect(waveCountText(1)).toBe("1 wave");
     expect(waveCountText(2)).toBe("2 waves");
+  });
+});
+
+describe("clockTime", () => {
+  it("reads the reader's own wall clock, every field two digits", () => {
+    // Local on purpose: the pill says when this page loaded, and the reader is
+    // the one who has to recognise the time as theirs. Built from local parts so
+    // the expectation holds in whatever zone the test runs in.
+    expect(clockTime(new Date(2026, 3, 1, 9, 5, 7).getTime())).toBe("09:05:07");
+    expect(clockTime(new Date(2026, 3, 1, 0, 0, 0).getTime())).toBe("00:00:00");
+    expect(clockTime(new Date(2026, 3, 1, 23, 59, 59).getTime())).toBe(
+      "23:59:59",
+    );
+  });
+
+  it("pads every field that would otherwise be one digit", () => {
+    expect(clockTime(new Date(2026, 11, 31, 8, 9, 4).getTime())).toBe(
+      "08:09:04",
+    );
   });
 });

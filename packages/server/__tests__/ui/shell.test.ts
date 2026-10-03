@@ -1,8 +1,12 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it } from "vitest";
 
 import type { Route } from "../../public/app.js";
 import { el } from "../../public/dom.js";
-import type { ShellModel } from "../../public/shell.js";
+import type { ShellHandlers, ShellModel } from "../../public/shell.js";
 import { shell } from "../../public/shell.js";
 
 import { attentionView, projectCard } from "./fixtures.js";
@@ -19,7 +23,17 @@ const FLEET: Route = { kind: "projects" };
 const PROJECT: Route = { kind: "project", id: "alpha" };
 const WAVE: Route = { kind: "project", id: "alpha", wave: "wv1" };
 
-function draw(model: Partial<ShellModel> = {}): HTMLElement {
+/** The one handler the shell takes, and what it costs to press it. */
+const HANDLERS: ShellHandlers = { onRefresh() {} };
+
+/** The frame's own stylesheet, read as text: which rules the markup leans on. */
+const HERE = dirname(fileURLToPath(import.meta.url));
+const CSS = readFileSync(join(HERE, "..", "..", "public", "shell.css"), "utf8");
+
+function draw(
+  model: Partial<ShellModel> = {},
+  handlers = HANDLERS,
+): HTMLElement {
   const host = freshRoot();
   const full: ShellModel = {
     route: FLEET,
@@ -28,9 +42,11 @@ function draw(model: Partial<ShellModel> = {}): HTMLElement {
     all: false,
     menuOpen: false,
     note: "",
+    syncedAt: undefined,
+    syncing: false,
     ...model,
   };
-  host.append(shell(full, el("p", { text: "the body" })));
+  host.append(shell(full, el("p", { text: "the body" }), handlers));
   assertNoInjectedMarkup();
   return host;
 }
@@ -69,11 +85,11 @@ describe("the frame", () => {
     expect(host.querySelectorAll(".brand")).toHaveLength(0);
   });
 
-  it("opens the top bar with the mark, the breadcrumb and the menu", () => {
+  it("opens the top bar with the mark, the trail, the tag and the controls", () => {
     const bar = oneOf(draw(), "header.topbar") as HTMLElement;
     expect(
       Array.from(bar.children).map((child) => child.tagName),
-    ).toStrictEqual(["svg", "NAV", "DETAILS"]);
+    ).toStrictEqual(["svg", "NAV", "SPAN", "SPAN", "BUTTON", "DETAILS"]);
   });
 
   it("puts the mark first on the fleet page and on a project page", () => {
@@ -83,6 +99,93 @@ describe("the frame", () => {
       expect(first.tagName).toBe("svg");
       expect(first.getAttribute("class")).toBe("logo");
     }
+  });
+
+  it("puts the console tag after the breadcrumb, before the controls", () => {
+    const bar = oneOf(draw(), "header.topbar") as HTMLElement;
+    const tag = oneOf(bar, "span.tag") as Element;
+    expect(textOf(tag)).toBe("console");
+    expect(Array.from(bar.children).indexOf(tag)).toBe(2);
+  });
+});
+
+describe("the sync pill", () => {
+  it("says it is syncing before anything has loaded", () => {
+    const host = draw();
+    expect(textOf(oneOf(host, "span.sync .sync-label"))).toBe("syncing…");
+    expect(host.querySelector(".sync")?.getAttribute("class")).toBe("sync");
+  });
+
+  it("says the clock time of the last load", () => {
+    const at = new Date(2026, 3, 1, 9, 5, 7).getTime();
+    const host = draw({ syncedAt: at });
+    expect(textOf(oneOf(host, "span.sync .sync-label"))).toBe(
+      "synced 09:05:07",
+    );
+  });
+
+  it("pings while there is no note", () => {
+    const host = draw({ syncedAt: 0 });
+    expect(host.querySelector(".sync")?.getAttribute("class")).toBe("sync");
+    expect(host.querySelectorAll("span.sync .sync-dot")).toHaveLength(1);
+  });
+
+  it("stops and goes amber when there is a note", () => {
+    const host = draw({ syncedAt: 0, note: "offline, retrying" });
+    expect(host.querySelector(".sync")?.getAttribute("class")).toBe(
+      "sync offline",
+    );
+    // The rule that stops it is in the stylesheet and nowhere else, so the class
+    // above is only meaningful because this one is there.
+    expect(CSS).toMatch(
+      /\.sync\.offline\s+\.sync-dot\s*\{[^}]*animation:\s*none/,
+    );
+  });
+
+  it("carries the note nowhere but the class and the label", () => {
+    const host = draw({ note: "offline, retrying" });
+    expect(textOf(oneOf(host, "span.sync"))).toBe("syncing…");
+    expect(host.querySelectorAll(".note")).toHaveLength(1);
+  });
+});
+
+describe("the refresh button", () => {
+  it("is a labelled button of its own, not a link", () => {
+    const button = oneOf(draw(), "button.refresh") as HTMLButtonElement;
+    expect(button.tagName).toBe("BUTTON");
+    expect(button.getAttribute("type")).toBe("button");
+    expect(button.getAttribute("aria-label")).toBe("Refresh now");
+    expect(button.getAttribute("data-key")).toBe("refresh");
+    expect(button.querySelectorAll("svg.arrow")).toHaveLength(1);
+  });
+
+  it("draws its arrow as an svg of two paths and no text", () => {
+    const arrow = oneOf(draw(), "button.refresh svg") as SVGElement;
+    expect(arrow.getAttribute("aria-hidden")).toBe("true");
+    expect(arrow.getAttribute("focusable")).toBe("false");
+    expect(arrow.children).toHaveLength(2);
+    for (const path of Array.from(arrow.children)) {
+      expect(path.tagName).toBe("path");
+      expect(path.textContent).toBe("");
+    }
+  });
+
+  it("asks the app for a pass, and only when it is pressed", () => {
+    let asked = 0;
+    const host = draw({}, { onRefresh: () => (asked += 1) });
+    expect(asked).toBe(0);
+    (oneOf(host, "button.refresh") as HTMLButtonElement).click();
+    expect(asked).toBe(1);
+  });
+
+  it("is still while no pass is in flight, and spins while one is", () => {
+    expect(oneOf(draw(), "button.refresh")?.getAttribute("class")).toBe(
+      "refresh",
+    );
+    expect(
+      oneOf(draw({ syncing: true }), "button.refresh")?.getAttribute("class"),
+    ).toBe("refresh spin");
+    expect(CSS).toMatch(/\.refresh\.spin\s+\.arrow\s*\{[^}]*animation:/);
   });
 });
 
@@ -237,13 +340,46 @@ describe("the footbar", () => {
     expect(textsOf(draw(), ".footbar .mode")).toStrictEqual(["read-only"]);
   });
 
-  it("says what the three words in the tables mean", () => {
+  it("says what the seven words in the tables mean", () => {
     const host = draw();
     expect(textsOf(host, ".footbar .legend p")).toStrictEqual([
       "stale — no snapshot inside the wave's interval; liveness reads unknown",
       "disagreement — reported and derived differ",
       "agrees — reported matches derived",
+      "running",
+      "done",
+      "settled",
+      "failed",
     ]);
+  });
+
+  it("gives each chip a square, and says `stale` once", () => {
+    const host = draw();
+    expect(
+      Array.from(host.querySelectorAll(".footbar .legend p")).map((chip) =>
+        (chip.firstElementChild as Element).getAttribute("class"),
+      ),
+    ).toStrictEqual([
+      "swatch stale",
+      "swatch disagreement",
+      "swatch agrees",
+      "swatch running",
+      "swatch done",
+      "swatch settled",
+      "swatch failed",
+    ]);
+    const words = textsOf(host, ".footbar .legend p").filter((line) =>
+      line.startsWith("stale"),
+    );
+    expect(words).toHaveLength(1);
+  });
+
+  it("carries the squares as no text at all, so no colour is the only meaning", () => {
+    const host = draw();
+    for (const mark of Array.from(host.querySelectorAll(".legend .swatch"))) {
+      expect(mark.textContent).toBe("");
+      expect(mark.getAttributeNames()).toStrictEqual(["class"]);
+    }
   });
 
   it("carries the status region ahead of them", () => {
@@ -439,6 +575,20 @@ describe("the page area", () => {
   });
 });
 
+describe("the first paint", () => {
+  it("rises once, on the page's own content, and never on the loader line", () => {
+    // The entrance is CSS over an attribute `app.js` sets and takes off, so the
+    // selector is the whole of the gate: under `#root[data-first]`, on what the
+    // views drew, and not on the line that says nothing has been drawn yet.
+    expect(CSS).toMatch(
+      /#root\[data-first\]\s+\.app\s*>\s*main\s*>\s*:not\(\.empty\)\s*\{[^}]*animation:/,
+    );
+    expect(CSS).toMatch(/@keyframes\s+waves-rise\s*\{/);
+    expect(CSS).toMatch(/translateY\(12px\)/);
+    expect(CSS).toMatch(/waves-rise\s+600ms/);
+  });
+});
+
 describe("the attributes the app owns", () => {
   it("names nothing, so no payload can be carried by an id, a for or a name", () => {
     const host = draw({
@@ -455,14 +605,15 @@ describe("the attributes the app owns", () => {
     }
   });
 
-  it("marks every link it may follow in place, and the menu's summary once", () => {
+  it("marks every link it may follow in place, and its own two controls once", () => {
     draw({ route: WAVE });
     const keys = Array.from(document.querySelectorAll("[data-key]")).map(
       (node) => node.getAttribute("data-key"),
     );
     expect(keys.length).toBeGreaterThan(0);
     expect(keys.filter((key) => key === "menu")).toHaveLength(1);
-    expect(keys.filter((key) => key === "nav")).toHaveLength(keys.length - 1);
+    expect(keys.filter((key) => key === "refresh")).toHaveLength(1);
+    expect(keys.filter((key) => key === "nav")).toHaveLength(keys.length - 2);
     expect(root().querySelectorAll("a:not([data-key='nav'])")).toHaveLength(0);
   });
 });

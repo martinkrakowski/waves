@@ -546,8 +546,11 @@ describe("the menu against stored markup", () => {
             all: false,
             menuOpen: false,
             note: "",
+            syncedAt: undefined,
+            syncing: false,
           },
           el("p", { text: "the page" }),
+          { onRefresh() {} },
         ),
       );
       assertNoInjectedMarkup();
@@ -558,6 +561,63 @@ describe("the menu against stored markup", () => {
       expect(crumbs.querySelectorAll("img")).toHaveLength(0);
       expect(crumbs.querySelectorAll("script")).toHaveLength(0);
       expect(textOf(crumbs)).not.toContain(payload);
+    }
+  });
+
+  it("keeps the sync pill to the app's own clock and nothing else", async () => {
+    const at = new Date(2026, 3, 1, 9, 5, 7).getTime();
+    for (const payload of TEXT_PAYLOADS) {
+      const host = freshRoot();
+      host.append(
+        shell(
+          {
+            route: { kind: "projects" },
+            projects: [projectCard({ name: payload })],
+            attention: undefined,
+            all: false,
+            menuOpen: false,
+            note: "",
+            syncedAt: at,
+            syncing: true,
+          },
+          el("p", { text: "the page" }),
+          { onRefresh() {} },
+        ),
+      );
+      assertNoInjectedMarkup();
+      // A number of the app's own, formatted: the only way a pill can carry text
+      // a pusher chose is if that number stopped being a number.
+      expect(textsOf(host, ".sync")).toStrictEqual(["synced 09:05:07"]);
+      for (const value of attributeValues()) {
+        expect(value).not.toContain(payload);
+      }
+    }
+  });
+
+  it("keeps the legend to its own seven words, whatever a project is called", async () => {
+    for (const payload of TEXT_PAYLOADS) {
+      const app = await bootFleet([projectCard({ name: payload })]);
+      assertNoInjectedMarkup();
+      expect(textsOf(root(), ".footbar .legend p")).toStrictEqual([
+        "stale — no snapshot inside the wave's interval; liveness reads unknown",
+        "disagreement — reported and derived differ",
+        "agrees — reported matches derived",
+        "running",
+        "done",
+        "settled",
+        "failed",
+      ]);
+      for (const mark of Array.from(
+        root().querySelectorAll(".legend .swatch"),
+      )) {
+        expect(mark.textContent).toBe("");
+        for (const value of mark
+          .getAttributeNames()
+          .map((name) => mark.getAttribute(name) ?? "")) {
+          expect(value).not.toContain(payload);
+        }
+      }
+      app.stop();
     }
   });
 });

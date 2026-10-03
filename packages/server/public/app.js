@@ -123,6 +123,26 @@ export function createApp(deps) {
   let inFlight = undefined;
   let stopped = false;
   /**
+   * The app's clock, in ms, at the moment the last pass answered. The shell's
+   * sync pill formats it, so it is only ever moved by a pass that succeeded: a
+   * clock reading of a load that failed would be a claim about data nobody has.
+   */
+  let syncedAt = undefined;
+  /**
+   * Whether a pass the reader asked for is in flight. It is not `inFlight`:
+   * `inFlight` is still set while a pass draws its own result, so the refresh
+   * arrow would turn on every completed pass and on every timer tick. This is
+   * set by the click and cleared by the draw that pass produces.
+   */
+  let syncing = false;
+  /**
+   * Whether the draw that has just been made was the one the entrance plays on.
+   * The attribute on `#root` outlives the draw that sets it by one, because
+   * removing it in the same task that inserts the nodes would leave the browser
+   * no style recalc in between and the entrance would never play at all.
+   */
+  let entered = false;
+  /**
    * The dialog the drawer is drawn in, beside `#root` rather than inside it: the
    * page's own chrome is the root's, and a modal over it is not. There is no
    * dialog when there is no root, and every function below is reached from
@@ -741,6 +761,12 @@ export function createApp(deps) {
       return;
     }
     const focused = focusedLink();
+    // The attribute goes here, one draw after the first draw with data, so the
+    // entrance is on screen for one paint with the nodes it belongs to and never
+    // again on the ten-second redraw.
+    if (entered) {
+      root.removeAttribute("data-first");
+    }
     root.replaceChildren(
       shell(
         {
@@ -750,12 +776,30 @@ export function createApp(deps) {
           all: query.all,
           menuOpen,
           note,
+          syncedAt,
+          syncing,
         },
         body(),
+        { onRefresh },
       ),
     );
+    if (data !== undefined) {
+      entered = true;
+    }
     refocus(focused);
     syncDrawer();
+  }
+
+  /**
+   * The reader pressed Refresh. The arrow is set spinning and the frame redrawn
+   * before the pass is asked for, so the press is answered at once; the pass
+   * itself is the same one the timer makes, and `refreshOnce()` returns the one
+   * already in flight rather than starting a second.
+   */
+  function onRefresh() {
+    syncing = true;
+    draw();
+    void refreshOnce().then(schedule, schedule);
   }
 
   /**
@@ -786,6 +830,8 @@ export function createApp(deps) {
       railProjects = next.projects;
       railAttention = next.attention;
       note = "";
+      syncedAt = clock();
+      syncing = false;
       draw();
     } catch {
       if (mine !== generation) {
@@ -793,6 +839,9 @@ export function createApp(deps) {
       }
       data = previous;
       note = OFFLINE_NOTE;
+      // A failed pass is not a reason to leave the arrow turning: the reader was
+      // told no, and the frame says so with the note as well as with the icon.
+      syncing = false;
       draw();
     }
     return true;
@@ -1069,6 +1118,9 @@ export function createApp(deps) {
     doc.addEventListener("keydown", onMenuKey);
     win.addEventListener("popstate", onPopState);
     if (root !== null) {
+      // The entrance plays on the first paint with data and on no other, so the
+      // frame marks the first one here and `draw()` takes the mark off again.
+      root.setAttribute("data-first", "1");
       root.addEventListener("click", onClick);
       root.addEventListener("toggle", onToggle, true);
     }
