@@ -359,3 +359,36 @@ and K2's size test runs at the route's own cap.
 | Server-sent events                                     | The console polls every ten seconds, as today.                                                                                                                 |
 | A per-project vocabulary (stage to role, seat parsing) | W12 rules it out of the service. A project that wants it can push `planReview` and `risk` strings, which the drawer shows.                                     |
 | Notifications                                          | Still W7's open question.                                                                                                                                      |
+
+## 8. Status, 2026-10-03
+
+Every lane is merged and deployed; the live image is `2fcd47c`.
+
+| lane                                       | PR  | merge     |
+| ------------------------------------------ | --- | --------- |
+| K1 the attention route                     | #18 | `4b715b9` |
+| K3 the shell                               | #19 | `ab961ae` |
+| K4 the fleet page                          | #21 | `c1e2229` |
+| K2 the project lanes route                 | #20 | `3e7d961` |
+| K5a the project page                       | #22 | `f4c7f92` |
+| K5b counters, panels, filters, search      | #23 | `3877b21` |
+| K7 the projects menu, the footer, the mark | #24 | `a7d1e91` |
+| K6 the lane drawer and the digest          | #25 | `2fcd47c` |
+
+**What changed from the plan.**
+
+- K5 ran as two lanes: K5a, the page and its one request, and K5b, everything that filters it.
+- K7 was not in the plan. It was the owner's request after K5b: the rail's project list became a drop-down in the top bar, the rail went, and a footer carries the legend, "read-only" and the status note. A three-wave mark sits beside the word `waves`.
+- The drawer's `<dialog>` is made by `app.js` through `el()` and placed beside `#root`, not written into `index.html`, so every element on the page is still made by `dom.js`.
+
+**Recorded and not fixed.** Each is Low, and none was worth a fix round.
+
+- **Lanes route.** Its response's `waves` list is unbounded: about 9.7 MiB at 52 000 heads.
+- **Attention route.** It has no per-request bound on waves, and its cache thrashes past 512 waves. These two need a lane of their own.
+- **Focus.**
+  - It jumps after a reason chip is activated.
+  - Arrowing through a closed `select` pushes one history entry per step.
+- **Status regions.** They are rebuilt on every draw, so some screen readers miss a change.
+- **Counters.** They count the rows of a truncated listing, while the strip counts heads.
+- **The menu.** It can flicker shut if the ten-second redraw lands in the one task between a click on the summary and its `toggle` event.
+- **The drawer.** Its `close` guard reads the drawer's key when the event fires, and a browser fires `close` as a queued task. No real sequence reopens a drawer in that gap today.
