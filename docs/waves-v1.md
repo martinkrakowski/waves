@@ -228,6 +228,120 @@ though the pattern matches. (`packages/contract/src/domain/validation.ts:20`,
 }
 ```
 
+## The project status document
+
+A project may also push what it knows about **itself**: how many pull-request rows
+a listing could not read, and what its last `plan:verify` artifact said. Both are
+facts about a project at a moment, not about a wave, so they live in a second
+document with its own schema, `waves-status/v1`, and its own validator
+`validateStatus` — the same shape as the envelope's gate, pure, and exported from
+the package. The wave envelope does not carry either key.
+(`packages/contract/src/domain/status.ts`, `packages/contract/src/index.ts`)
+
+| field             | type              | required | bounds                                                        |
+| ----------------- | ----------------- | -------- | ------------------------------------------------------------- |
+| `schema`          | string            | yes      | exactly `"waves-status/v1"` (`STATUS_SCHEMA`, `…/model.ts:5`) |
+| `project`         | string            | yes      | the project id of section 2.1                                 |
+| `generatedAt`     | string            | yes      | strict ISO-8601 UTC, see 2.5                                  |
+| `intervalSeconds` | integer or `null` | yes      | 1 to 300 inclusive, or `null` for the 300 s default           |
+| `prs`             | object            | no       | `{ skipped }`, see below                                      |
+| `backlog`         | object            | no       | see below                                                     |
+
+Closed at every level, exactly as the envelope is: an unknown key anywhere is an
+error (`STATUS_KEYS`, `packages/contract/src/domain/status.ts:17`).
+
+`intervalSeconds` is not in the shape the plan sketched. It is here because
+staleness applies to a project status as it applies to a wave (section 4), and
+that needs an interval; it is the same reader the envelope uses
+(`readIntervalSeconds`, `packages/contract/src/domain/fields.ts:28`).
+
+**A document with neither `prs` nor `backlog` is valid.** It says "nothing to
+report" and still refreshes the status's freshness, which is how a project says
+it is alive and has no news.
+
+`prs` is closed, keys exactly `skipped`: the rows a pull-request listing returned
+that no parser could read. One listing per collection, so it is one number for
+the run, an integer in 0 to 100 000 (`MAX_SKIPPED`,
+`packages/contract/src/domain/status.ts:28`).
+
+`backlog` is closed, keys exactly `state`, `at`, `scope`, `git`, `premises`
+(`BACKLOG_KEYS`, `packages/contract/src/domain/status-backlog.ts:20`):
+
+| field      | type   | required | bounds                              |
+| ---------- | ------ | -------- | ----------------------------------- |
+| `state`    | string | yes      | `recorded` \| `absent` \| `unknown` |
+| `at`       | string | no       | strict ISO-8601 UTC, see 2.5        |
+| `scope`    | object | no       | `{ kind, plans }`, see below        |
+| `git`      | object | no       | `{ branch, head }`, see below       |
+| `premises` | array  | no       | at most 200 entries, see below      |
+
+`scope` is closed: `kind` is `full` | `partial`, and `plans` is at most
+64 entries of 1 to 120 characters (`MAX_PLANS`, `MAX_PLAN_CHARS`,
+`packages/contract/src/domain/status-backlog.ts:39-40`). `git` is closed:
+`branch` is 1 to 255 characters — git's own limit for a ref component is wider,
+255 is what a page can show — and `head` matches `^[0-9a-f]{7,64}$`, so a full
+or abbreviated object id and nothing else (`MAX_BRANCH_CHARS`, `HEAD_PATTERN`,
+`packages/contract/src/domain/status-backlog.ts:42`, `48`).
+
+`premises` is closed, keys exactly `lane`, `plan`, `status`, `reason`. `lane`
+and `plan` are 1 to 120 characters, `status` is `holds` | `stale` | `timed-out` |
+`error`, and `reason` is an optional 1 to 500 characters. At most 200 entries
+(`MAX_PREMISES`, `MAX_PREMISE_CHARS`, `MAX_REASON_CHARS`,
+`packages/contract/src/domain/status-backlog.ts:44-46`).
+
+Every string of the document is bounded in characters and free of control
+characters, and none of them allows a line break: there is no field here that
+holds log output, so no rule sets `lineBreaks`. The whole document re-serialised
+must be at most 1 MiB, else one error at the root, as for the envelope
+(`normalise`, `packages/contract/src/domain/status.ts:88`).
+
+**Staleness.** The clock is the server's and the instant it uses is when the
+server received the document, exactly as section 4 for a wave: the status is
+stale when the time since its receive is longer than
+`staleAfterMs(intervalSeconds)`, with the same `null` default of 300 s.
+`generatedAt` is stored and echoed, and no rule reads it.
+
+A minimal valid status document, carrying neither key:
+
+```json
+{
+  "schema": "waves-status/v1",
+  "project": "apollo",
+  "generatedAt": "2026-10-03T08:00:00Z",
+  "intervalSeconds": null
+}
+```
+
+A full valid status document:
+
+```json
+{
+  "schema": "waves-status/v1",
+  "project": "apollo",
+  "generatedAt": "2026-10-03T08:00:00.250Z",
+  "intervalSeconds": 300,
+  "prs": { "skipped": 2 },
+  "backlog": {
+    "state": "recorded",
+    "at": "2026-10-03T07:55:00Z",
+    "scope": { "kind": "full", "plans": ["plan:verify"] },
+    "git": {
+      "branch": "main",
+      "head": "0a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"
+    },
+    "premises": [
+      { "lane": "C1", "plan": "plan:verify", "status": "holds" },
+      {
+        "lane": "C2",
+        "plan": "plan:verify",
+        "status": "timed-out",
+        "reason": "no push since 06:00"
+      }
+    ]
+  }
+}
+```
+
 ## 3. Errors
 
 A failure is a list of issues, each exactly `{ path, message }`
