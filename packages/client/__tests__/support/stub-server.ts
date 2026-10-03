@@ -4,7 +4,11 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
-import { isProjectId, validateEnvelope } from "@hexagen-monaco/waves-contract";
+import {
+  isProjectId,
+  validateEnvelope,
+  validateStatus,
+} from "@hexagen-monaco/waves-contract";
 
 import { registerSecret } from "./harness.js";
 
@@ -96,12 +100,12 @@ function bearer(req: IncomingMessage): string | undefined {
 }
 
 /**
- * A stand-in for the server the other lane is building: the three endpoints the
+ * A stand-in for the server the other lane is building: the endpoints the
  * client calls, the shapes it really answers with, and the two behaviours that
  * shape the client — a refusal on the headers alone, which never reads the
- * snapshot, and one rule the client cannot check for itself, since a snapshot
- * whose `generatedAt` is nowhere near the server's clock is refused because the
- * status view would show a wave in the future.
+ * document behind them, and one rule the client cannot check for itself, since a
+ * document whose `generatedAt` is nowhere near the server's clock is refused
+ * because the view would show a wave in the future.
  */
 // `now` is the clock `generatedAt` is checked against. It defaults to the fixed
 // STUB_CLOCK the unit tests use; a test that pushes with the REAL clock passes
@@ -144,6 +148,16 @@ export async function startStub(
       parts[3] === "projects"
     ) {
       await registerProject(req, res);
+      return;
+    }
+    if (
+      parts.length === 6 &&
+      parts[1] === "api" &&
+      parts[2] === "v1" &&
+      parts[3] === "projects" &&
+      parts[5] === "status"
+    ) {
+      await statusDocument(req, res, entry, parts[4] ?? "");
       return;
     }
     if (
@@ -207,6 +221,70 @@ export async function startStub(
     registerSecret(token);
     projects.set(id, token);
     sendJson(res, 201, { id, token });
+  }
+
+  /**
+   * The project's one status document, which a PUT replaces. The refusals are
+   * the wave's, in the wave's order: everything that can be decided on the
+   * headers alone is decided there, and a refusal never reads the body.
+   */
+  async function statusDocument(
+    req: IncomingMessage,
+    res: ServerResponse,
+    entry: StubRequest,
+    project: string,
+  ): Promise<void> {
+    if (req.method !== "PUT") {
+      send(res, 405, "use PUT");
+      return;
+    }
+    if (entry.origin !== undefined) {
+      send(res, 403, "a browser must not push a status");
+      return;
+    }
+    const token = bearer(req);
+    if (token === undefined || !projects.has(project)) {
+      send(res, 401, "the project token was refused", {
+        "WWW-Authenticate": CHALLENGE,
+      });
+      return;
+    }
+    if (projects.get(project) !== token) {
+      send(res, 403, "that token belongs to another project");
+      return;
+    }
+    if (entry.contentType !== JSON_TYPE) {
+      send(res, 415, "expected application/json");
+      return;
+    }
+    if (entry.expect === "100-continue") {
+      res.writeContinue();
+    }
+    entry.body = await readBody(req);
+    let document: unknown;
+    try {
+      document = JSON.parse(entry.body);
+    } catch {
+      send(res, 400, "the body is not JSON");
+      return;
+    }
+    const validated = validateStatus(document);
+    if (!validated.ok) {
+      sendJson(res, 422, { errors: validated.errors });
+      return;
+    }
+    if (
+      Math.abs(Date.parse(validated.value.generatedAt) - now()) >
+      CLOCK_TOLERANCE_MS
+    ) {
+      sendJson(res, 422, {
+        errors: [
+          { path: "/generatedAt", message: "too far from the server clock" },
+        ],
+      });
+      return;
+    }
+    sendJson(res, 200, { receivedAt: new Date().toISOString() });
   }
 
   async function wave(

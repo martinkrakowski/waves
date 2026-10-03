@@ -1,7 +1,6 @@
 import { isProjectId, isWaveId } from "@hexagen-monaco/waves-contract";
 
 import { flagIssues, readProjectRequest } from "./project-request.js";
-import { carriesCredentials } from "./endpoint.js";
 
 export const USAGE = [
   "usage:",
@@ -12,11 +11,12 @@ export const USAGE = [
   "                     [--projects <path>] [--verbose]",
   "  waves push --wave <wave> (--file <path> | --stdin)",
   "                [--interval <1-300>] [--include-tails]",
+  "  waves status (--file <path> | --stdin) [--interval <1-300>]",
   "  waves delete --wave <wave>",
   "",
-  `WAVES_URL is required. WAVES_PROJECT names the project a push or a delete`,
-  "belongs to. The project token is read from ~/.config/waves/<project>.token,",
-  "which WAVES_CONFIG_DIR overrides.",
+  `WAVES_URL is required. WAVES_PROJECT names the project a push, a status or`,
+  "a delete belongs to. The project token is read from the file",
+  "~/.config/waves/<project>.token, which WAVES_CONFIG_DIR overrides.",
 ].join("\n");
 
 /** Where a token comes from. Never from argv and never from the environment. */
@@ -62,6 +62,11 @@ export type Command =
       readonly source: InputSource;
       readonly intervalSeconds: number | null;
       readonly includeTails: boolean;
+    }
+  | {
+      readonly kind: "status";
+      readonly source: InputSource;
+      readonly intervalSeconds: number | null;
     }
   | { readonly kind: "delete"; readonly wave: string };
 
@@ -148,6 +153,7 @@ const PUSH_FLAGS: readonly string[] = [
   "--include-tails",
 ];
 const DELETE_FLAGS: readonly string[] = ["--wave"];
+const STATUS_FLAGS: readonly string[] = ["--file", "--stdin", "--interval"];
 
 const MIN_INTERVAL_SECONDS = 1;
 const MAX_INTERVAL_SECONDS = 300;
@@ -174,6 +180,7 @@ export function parseArgv(argv: readonly string[]): ParseResult {
     head !== "register" &&
     head !== "register-all" &&
     head !== "push" &&
+    head !== "status" &&
     head !== "delete"
   ) {
     return { ok: false, error: `unknown command ${head}` };
@@ -190,6 +197,9 @@ export function parseArgv(argv: readonly string[]): ParseResult {
   }
   if (head === "push") {
     return readPush(tokens);
+  }
+  if (head === "status") {
+    return readStatus(tokens);
   }
   return readDelete(tokens);
 }
@@ -254,11 +264,6 @@ function readRegister(tokens: Tokens): ParseResult {
   const refused = readProjectRequest({ id, name, repo });
   if (refused.length > 0) {
     return { ok: false, error: flagIssues(refused).join("; ") };
-  }
-  // The contract would store a repo URL that carries a password; the status page
-  // would then render it.
-  if (repo !== undefined && carriesCredentials(repo)) {
-    return { ok: false, error: "--repo must not carry a user or a password" };
   }
   const credential = readRegisterCredential(tokens);
   if (typeof credential === "string") {
@@ -405,6 +410,25 @@ function readPush(tokens: Tokens): ParseResult {
   };
 }
 
+function readStatus(tokens: Tokens): ParseResult {
+  const unused = firstUnused(tokens, STATUS_FLAGS);
+  if (unused !== undefined) {
+    return { ok: false, error: `${unused} is not a status option` };
+  }
+  if (tokens.positionals.length !== 0) {
+    return { ok: false, error: "status takes no positional arguments" };
+  }
+  const source = readInputSource(tokens);
+  if (typeof source === "string") {
+    return { ok: false, error: source };
+  }
+  const intervalSeconds = readInterval(tokens.values.get("--interval"));
+  if (typeof intervalSeconds === "string") {
+    return { ok: false, error: intervalSeconds };
+  }
+  return { ok: true, command: { kind: "status", source, intervalSeconds } };
+}
+
 function readDelete(tokens: Tokens): ParseResult {
   const unused = firstUnused(tokens, DELETE_FLAGS);
   if (unused !== undefined) {
@@ -465,5 +489,6 @@ export const COMMAND_NAME: Readonly<Record<Command["kind"], string>> = {
   register: `${WAVES} register`,
   "register-all": `${WAVES} register-all`,
   push: `${WAVES} push`,
+  status: `${WAVES} status`,
   delete: `${WAVES} delete`,
 };

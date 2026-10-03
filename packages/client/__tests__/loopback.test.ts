@@ -161,6 +161,26 @@ function bodyOf(wave: string): string {
   return carried.body;
 }
 
+/** Every PUT of a status document, which is a route of its own. */
+function statusPuts(): readonly {
+  readonly path: string;
+  readonly method: string;
+  readonly expect: string | undefined;
+  readonly origin: string | undefined;
+  readonly authorization: string | undefined;
+  readonly contentType: string | undefined;
+  readonly body: string;
+}[] {
+  return stub.requests.filter(
+    (entry) => entry.method === "PUT" && entry.path.endsWith("/status"),
+  );
+}
+
+const STATUS = JSON.stringify({
+  prs: { skipped: 2 },
+  backlog: { state: "recorded", at: "2026-10-03T07:55:00Z" },
+});
+
 describe("a real loopback server", () => {
   it("registers a project, pushes a wave and deletes it again", async () => {
     const project = "waves-demo";
@@ -357,6 +377,56 @@ describe("a real loopback server", () => {
     ]);
     expect(puts("wv-big")).toHaveLength(1);
     expect(puts("wv-big")[0]?.body).toBe("");
+  });
+
+  it("sends a project's status to the status route, and refuses a borrowed token", async () => {
+    const project = "waves-status";
+    await waves(register(project));
+    const sent = await waves(["status", "--stdin", "--interval", "60"], {
+      project,
+      stdin: STATUS,
+    });
+    expect(sent.code).toBe(0);
+    expect(sent.out[0]).toMatch(
+      new RegExp(`^status sent for ${project} at \\d{4}-\\d{2}-\\d{2}T`),
+    );
+    expect(sent.err).toEqual([]);
+
+    const put = statusPuts();
+    expect(put).toHaveLength(1);
+    expect(put[0]?.path).toBe(`/api/v1/projects/${project}/status`);
+    expect(put[0]?.expect).toBe("100-continue");
+    expect(put[0]?.origin).toBeUndefined();
+    expect(put[0]?.authorization).toBe(`Bearer ${stub.tokenOf(project)}`);
+    expect(put[0]?.contentType).toBe("application/json");
+    expect(JSON.parse(put[0]?.body ?? "{}")).toMatchObject({
+      schema: "waves-status/v1",
+      project,
+      intervalSeconds: 60,
+      backlog: { state: "recorded" },
+    });
+
+    const skewed = await waves(["status", "--stdin"], {
+      project,
+      stdin: STATUS,
+      now: Date.parse("2030-02-03T04:05:06.789Z"),
+    });
+    expect(skewed.code).toBe(1);
+    expect(skewed.err).toEqual([
+      "waves status: status failed: 422 Unprocessable Content\n  /generatedAt: too far from the server clock",
+    ]);
+
+    await writeFile(tokenFile(project), "waves-stub-project-t0ken-other-99", {
+      mode: 0o600,
+    });
+    const borrowed = await waves(["status", "--stdin"], {
+      project,
+      stdin: STATUS,
+    });
+    expect(borrowed.code).toBe(1);
+    expect(borrowed.err).toEqual([
+      "waves status: status failed: 403 Forbidden\n  that token belongs to another project",
+    ]);
   });
 
   it("refuses to push with a token file anyone else can read", async () => {

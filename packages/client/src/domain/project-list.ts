@@ -1,6 +1,5 @@
 import { isProjectId } from "@hexagen-monaco/waves-contract";
 
-import { carriesCredentials } from "./endpoint.js";
 import { isRecord, own } from "./object.js";
 import { readProjectRequest } from "./project-request.js";
 
@@ -128,11 +127,6 @@ function readEntry(value: unknown, index: number, ids: Set<string>): EntryRead {
     if (!untyped.includes(issue.path)) {
       errors.push(`entry ${index}: ${issue.path.slice(1)}: ${issue.message}`);
     }
-  }
-  // The contract would store a repo URL that carries a password; the status page
-  // would then render it, for everyone who looks.
-  if (repo !== undefined && carriesCredentials(repo)) {
-    errors.push(`entry ${index}: repo must not carry a user or a password`);
   }
   if (id === undefined || name === undefined || errors.length > 0) {
     return { entry: undefined, errors };

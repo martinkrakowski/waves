@@ -34,11 +34,12 @@ const TOKEN_RULE: StringRule = { pattern: /^[0-9a-f]{64}$/ };
  */
 const REPO_CHARACTER_PATTERN = /^[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]*$/;
 
-function isHttpsUrl(text: string): boolean {
+/** The parsed URL, or `undefined` for a string `new URL` will not read at all. */
+function parseUrl(text: string): URL | undefined {
   try {
-    return new URL(text).protocol === "https:";
+    return new URL(text);
   } catch {
-    return false;
+    return undefined;
   }
 }
 
@@ -55,8 +56,17 @@ function readRepo(
     ctx.add(path, "expected only the characters a URL holds unescaped");
     return undefined;
   }
-  if (!isHttpsUrl(url)) {
+  const parsed = parseUrl(url);
+  if (parsed === undefined || parsed.protocol !== "https:") {
     ctx.add(path, "expected an https URL");
+    return undefined;
+  }
+  // A stored `repo` is a link every viewer of a project can follow, so a
+  // credential in one would be published with it. `URL` keeps the authority
+  // before the first `/`, so a `:` or an `@` in the path is not a credential
+  // and `https://github.com/a:b@c` is still stored.
+  if (parsed.username !== "" || parsed.password !== "") {
+    ctx.add(path, "expected no user or password in the URL");
     return undefined;
   }
   return url;

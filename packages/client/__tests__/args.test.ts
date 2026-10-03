@@ -174,7 +174,7 @@ describe("register", () => {
       "--repo: expected an https URL",
     );
     expect(errorOf([...base, "--repo", "https://user:pw@example.com/"])).toBe(
-      "--repo must not carry a user or a password",
+      "--repo: expected no user or password in the URL",
     );
     expect(
       errorOf([...base, "--repo", `https://example.com/${"x".repeat(200)}`]),
@@ -379,6 +379,69 @@ describe("push", () => {
     expect(errorOf([...base, "--interval", "1.5"])).toContain("--interval");
     expect(errorOf([...base, "--interval", "sixty"])).toContain("--interval");
     expect(commandOf([...base, "--interval", "1"]).kind).toBe("push");
+  });
+});
+
+describe("status", () => {
+  it("reads a file and an interval", () => {
+    expect(
+      commandOf(["status", "--file", "backlog.json", "--interval", "30"]),
+    ).toEqual({
+      kind: "status",
+      source: { kind: "file", path: "backlog.json" },
+      intervalSeconds: 30,
+    });
+  });
+
+  it("reads stdin, and no interval at all", () => {
+    expect(commandOf(["status", "--stdin"])).toEqual({
+      kind: "status",
+      source: { kind: "stdin" },
+      intervalSeconds: null,
+    });
+  });
+
+  it("takes no positional arguments and no flag of another command", () => {
+    expect(errorOf(["status", "backlog", "--stdin"])).toBe(
+      "status takes no positional arguments",
+    );
+    expect(errorOf(["status", "--stdin", "--include-tails"])).toBe(
+      "--include-tails is not a status option",
+    );
+    expect(errorOf(["status", "--stdin", "--wave", "wv5"])).toBe(
+      "--wave is not a status option",
+    );
+  });
+
+  it("takes the input from one place only", () => {
+    expect(errorOf(["status"])).toBe("give --file or --stdin");
+    expect(errorOf(["status", "--stdin", "--file", "backlog.json"])).toBe(
+      "give only one of --file and --stdin",
+    );
+  });
+
+  it("takes an interval of one to three hundred seconds", () => {
+    const base = ["status", "--stdin"];
+    expect(errorOf([...base, "--interval", "0"])).toBe(
+      "--interval must be a whole number of seconds between 1 and 300",
+    );
+    expect(errorOf([...base, "--interval", "301"])).toBe(
+      "--interval must be a whole number of seconds between 1 and 300",
+    );
+    expect(errorOf([...base, "--interval", "1.5"])).toBe(
+      "--interval must be a whole number of seconds between 1 and 300",
+    );
+    expect(commandOf([...base, "--interval", "300"])).toEqual({
+      kind: "status",
+      source: { kind: "stdin" },
+      intervalSeconds: 300,
+    });
+  });
+
+  it("refuses an option it has never heard of", () => {
+    expect(errorOf(["status", "--stdin", "--quiet"])).toBe(
+      "unknown option --quiet",
+    );
   });
 });
 

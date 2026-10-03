@@ -130,7 +130,7 @@ describe("readProjectList", () => {
       errorsOf(
         list({ id: "one", name: "One", repo: "https://user:pw@example.com/" }),
       ),
-    ).toEqual(["entry 0: repo must not carry a user or a password"]);
+    ).toEqual(["entry 0: repo: expected no user or password in the URL"]);
   });
 
   it("names a field of the wrong type, and not what was in it", () => {
@@ -170,7 +170,7 @@ describe("readProjectList", () => {
       "entry 0: id is not a project id",
       "entry 1: holds a key a project does not have",
       "entry 2: name: expected at least 1 characters",
-      "entry 3: repo must not carry a user or a password",
+      "entry 3: repo: expected no user or password in the URL",
       "entry 4: id must be a string",
       "entry 4: name must be a string",
       "entry 4: repo must be a string",
@@ -187,7 +187,7 @@ describe("readProjectList", () => {
     expect(errors).toEqual([
       "entry 0: id is not a project id",
       "entry 0: name: expected at most 80 characters",
-      "entry 1: repo must not carry a user or a password",
+      "entry 1: repo: expected no user or password in the URL",
     ]);
     for (const error of errors) {
       expect(error).not.toContain("hunter2");

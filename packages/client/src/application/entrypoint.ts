@@ -11,6 +11,7 @@ import { FileRefusal, type CliDeps, type UseCaseDeps } from "./ports.js";
 import { push } from "./push.js";
 import { register } from "./register.js";
 import { registerAll } from "./register-all.js";
+import { sendStatus } from "./status.js";
 
 export interface CliIo {
   readonly out: (line: string) => void;
@@ -53,6 +54,9 @@ export async function run(
     }
     if (parsed.command.kind === "push") {
       return await push(parsed.command, useCase);
+    }
+    if (parsed.command.kind === "status") {
+      return await sendStatus(parsed.command, useCase);
     }
     return await remove(parsed.command, useCase);
   } catch (error) {

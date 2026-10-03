@@ -767,12 +767,18 @@ of at most 200 characters); any other key is a `422`. A `repo` is refused unless
 every character in it is one a URL holds unescaped —
 `A-Z a-z 0-9 - . _ ~ : / ? # [ ] @ ! $ & ' ( ) * + , ; = %` — so a placeholder
 such as `https://github.com/<owner>/<repo>` is a `422` rather than a stored URL
-(`REPO_CHARACTER_PATTERN`, `packages/contract/src/domain/project.ts:34`,
-`53`; the
+(`REPO_CHARACTER_PATTERN`, `packages/contract/src/domain/project.ts:35`,
+`55-58`; the
 message is `expected only the characters a URL holds unescaped`). A bare `%` is
 in the set, so `b%ZZ` and a trailing `%` pass it, and `new URL` accepts them
 too, so both are stored; an internationalised host is refused, because its
-letters are not in the set. The `201` carries the
+letters are not in the set. A `repo` that carries a user or a password is a
+`422` as well, with the message `expected no user or password in the URL`: the
+URL is stored once and every page that renders it would render the credential
+with it (`username` and `password` of the one parse,
+`packages/contract/src/domain/project.ts:59-71`). The authority ends at the
+first `/`, so a `:` or an `@` in the path is not a credential and
+`https://github.com/a:b@c` is still stored. The `201` carries the
 project's token — 32 random bytes as base64url, 43 characters — and that answer
 is the only time the token exists in clear text anywhere. An id that is already
 registered is a `409`, unless the request target is exactly
@@ -935,8 +941,8 @@ schema at all — so the project rule is versioned by the package rather than by
 the envelope schema, and a minor version may tighten it.
 
 Contract **0.2.0** adds the project status document and tightens `repo`: a new
-document, a new export and a stricter character rule, which is what a minor
-version of this package is for.
+document, a new export, a stricter character rule and a `repo` that carries no
+user or password, which is what a minor version of this package is for.
 
 ## 8. A curl example
 

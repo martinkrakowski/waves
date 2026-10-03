@@ -105,6 +105,22 @@ describe("validateProject", () => {
     expectPaths(project({ repo: "https://github.com/a`b" }), ["/repo"]);
   });
 
+  it("refuses a repository that carries a user or a password", () => {
+    // The server stores this URL and every viewer of a project page can follow
+    // it, so a credential in one would be published with it. The two halves are
+    // tested apart, because a URL may carry one without the other.
+    const both = validateProject(
+      project({ repo: "https://user:pw@github.com/a/b" }),
+    );
+    expect(both.ok).toBe(false);
+    expect(both.ok ? [] : both.errors).toEqual([
+      { path: "/repo", message: "expected no user or password in the URL" },
+    ]);
+    expectPaths(project({ repo: "https://user@github.com/a/b" }), ["/repo"]);
+    expectPaths(project({ repo: "https://:pw@github.com/a/b" }), ["/repo"]);
+    expectPaths(project({ repo: "https://user:pw@github.com/a/b" }), ["/repo"]);
+  });
+
   it("refuses a control character in a repository before its characters are read", () => {
     expectPaths(project({ repo: `https://github.com/a${BELL}b` }), ["/repo"]);
   });
