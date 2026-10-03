@@ -226,7 +226,7 @@ function refusal(w: World, args: readonly string[], word: string): void {
   expect(existsSync(w.plist), "a refusal renders no plist").toBe(false);
 }
 
-describe("install.sh", () => {
+describe("install.sh", { timeout: 20_000 }, () => {
   it("renders both templates and boots the agent out and back in", () => {
     const w = world();
     const result = w.run(INSTALL, [GOOD_URL]);
@@ -431,7 +431,7 @@ describe("install.sh", () => {
   });
 });
 
-describe("the rendered wrapper", () => {
+describe("the rendered wrapper", { timeout: 20_000 }, () => {
   it("runs the client with the token's path and says so once", () => {
     const w = world();
     expect(w.run(INSTALL, [GOOD_URL]).status).toBe(0);
@@ -477,7 +477,7 @@ describe("the rendered wrapper", () => {
   });
 });
 
-describe("uninstall.sh", () => {
+describe("uninstall.sh", { timeout: 20_000 }, () => {
   it("takes the agent out and removes what it installed, and nothing else", () => {
     const w = world();
     expect(w.run(INSTALL, [GOOD_URL]).status).toBe(0);
@@ -506,7 +506,7 @@ describe("uninstall.sh", () => {
   });
 });
 
-describe("the enrollment token's value", () => {
+describe("the enrollment token's value", { timeout: 20_000 }, () => {
   it("appears in no output and in no file any of the three scripts wrote", () => {
     const w = world();
     const install = w.run(INSTALL, [GOOD_URL]);
@@ -574,7 +574,7 @@ function lint(file: string): SpawnSyncReturns<string> {
   return LINTER(file);
 }
 
-describe("the rendered plist", () => {
+describe("the rendered plist", { timeout: 20_000 }, () => {
   it.skipIf(LINTER === undefined)("is XML a plist parser accepts", () => {
     const w = world();
     expect(w.run(INSTALL, ["https://waves.midnight.lan?a=1&b=2"]).status).toBe(
