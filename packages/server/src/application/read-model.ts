@@ -23,6 +23,11 @@ import {
   MAX_ATTENTION_LANES,
 } from "../domain/attention.js";
 import {
+  waveState,
+  type WaveState,
+  type WaveStateLane,
+} from "../domain/wave-state.js";
+import {
   type SnapshotHead,
   type StorePort,
   type StoredStatus,
@@ -84,6 +89,18 @@ export const MAX_CACHED_WAVES = 512;
 export const MAX_CACHED_ROWS = 10_000;
 
 /**
+ * The most waves one project summary carries, of all the waves it holds. Cold,
+ * the route reads at most this many × N snapshots for a fleet of N projects;
+ * warm, it reads none at all, because the answers are the cache's. It is a
+ * bound about the cache as much as about the answer: 12 × N stays inside
+ * `MAX_CACHED_WAVES` (512) while the rows it holds stay under
+ * `MAX_CACHED_ROWS` (10 000) for about 42 projects, and past that a
+ * `?all=1` listing of one large project can evict fleet entries, which then
+ * cost one parse each on the next poll.
+ */
+export const MAX_RECENT_WAVES = 12;
+
+/**
  * The most waves the cross-project view reads in one request, a fact about the
  * cache rather than about the view: it is below `MAX_CACHED_WAVES`, so the wave
  * bound alone can never make one request evict the entry it is about to ask for
@@ -93,6 +110,27 @@ export const MAX_CACHED_ROWS = 10_000;
  * ones whatever order the store answered its heads in.
  */
 export const MAX_ATTENTION_WAVES = 256;
+
+/**
+ * One of a project's waves as a fleet card reads it: what the wave is called,
+ * when it arrived, how many lanes it holds, what those lanes say about the wave,
+ * whether the wave has gone past the point where its own interval says it should
+ * have pushed again, and how many of its lanes have a merged pull request.
+ *
+ * `lanes` is counted from the cached entry rather than from the head the wave
+ * was chosen by, because `merged` is too: a push that lands between the heads
+ * and the snapshot can hold more lanes than the head said, and a `lanes` from
+ * the head beside a `merged` from the snapshot would break `merged <= lanes`
+ * and take the whole project list down for a poll.
+ */
+export interface RecentWave {
+  readonly wave: string;
+  readonly receivedAt: string;
+  readonly lanes: number;
+  readonly state: WaveState;
+  readonly stale: boolean;
+  readonly merged: number;
+}
 
 export interface ProjectSummary {
   readonly id: string;
@@ -114,6 +152,14 @@ export interface ProjectSummary {
    * overdue.
    */
   readonly stale: boolean;
+  /**
+   * The project's newest at most `MAX_RECENT_WAVES` **retained** waves, newest
+   * receive first, each with the state its lanes derive. A project with no
+   * retained wave answers an empty list: the field is never absent, so a reader
+   * asks for the waves of a project and gets none rather than a key it has to
+   * guess about.
+   */
+  readonly recentWaves: readonly RecentWave[];
   /**
    * The two facts a fleet card shows about the project's own status, and not the
    * document itself: when it arrived, whether it has gone past the window its own
@@ -574,6 +620,56 @@ function attentionLane(
   };
 }
 
+/**
+ * The four facts about a cached lane that a wave's state reads, and nothing
+ * else. The reported event and the pull request state are optional because a
+ * lane that has neither is the state of a lane that has said nothing.
+ */
+function stateLane(lane: CachedLane): WaveStateLane {
+  return {
+    alive: lane.derived.alive,
+    ...(lane.derived.exit === undefined ? {} : { exit: lane.derived.exit }),
+    ...(lane.reported === undefined ? {} : { event: lane.reported.event }),
+    ...(lane.derived.pr === undefined
+      ? {}
+      : { prState: lane.derived.pr.state }),
+  };
+}
+
+/**
+ * One wave as a project summary carries it, read from the cache entry rather
+ * than from the head it was chosen by: `receivedAt`, `lanes` and the `stale`
+ * flag all come from the snapshot that answered, exactly as `listAttention`
+ * reads them, because a push can land between the heads and the snapshot and
+ * the entry is the push the reader is being told about. The head supplies only
+ * which wave this is.
+ */
+function recentWave(
+  head: SnapshotHead,
+  entry: CachedWave,
+  nowMs: number,
+): RecentWave {
+  const stale = isStale(
+    Date.parse(entry.receivedAt),
+    entry.intervalSeconds,
+    nowMs,
+  );
+  let merged = 0;
+  for (const lane of entry.lanes) {
+    if (lane.derived.pr?.state === "merged") {
+      merged += 1;
+    }
+  }
+  return {
+    wave: head.wave,
+    receivedAt: entry.receivedAt,
+    lanes: entry.lanes.length,
+    state: waveState(entry.lanes.map(stateLane), stale),
+    stale,
+    merged,
+  };
+}
+
 export function createReadModel(deps: ReadModelDeps): ReadModel {
   const { store, now } = deps;
 
@@ -676,6 +772,35 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
     }
   };
 
+  /**
+   * A project's newest retained waves, through the same cache the project
+   * listing and the cross-project view use. Retention and the order come from
+   * the wave summaries, so the waves listed are the ones `waveSummaries` would
+   * order newest first, and a wave past the retention is never read at all.
+   *
+   * A wave the cache answers `undefined` for — one that went away between the
+   * heads and the snapshot — is skipped rather than listed empty: there is
+   * nothing there to describe, and a poll that finds one must still answer the
+   * rest of the fleet.
+   */
+  const recentWaves = async (
+    projectId: string,
+    heads: readonly SnapshotHead[],
+    nowMs: number,
+  ): Promise<readonly RecentWave[]> => {
+    const recent: RecentWave[] = [];
+    const newest = waveSummaries(heads, nowMs)
+      .filter((head) => head.retained)
+      .slice(0, MAX_RECENT_WAVES);
+    for (const head of newest) {
+      const entry = await cachedWave(projectId, head);
+      if (entry !== undefined) {
+        recent.push(recentWave(head, entry, nowMs));
+      }
+    }
+    return recent;
+  };
+
   return {
     async listProjects(): Promise<readonly ProjectSummary[]> {
       const projects = await store.listProjects();
@@ -702,6 +827,7 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
               newest.intervalSeconds,
               nowMs,
             ),
+          recentWaves: await recentWaves(project.id, heads, nowMs),
           ...(status === undefined
             ? {}
             : { status: statusFacts(status, nowMs) }),
