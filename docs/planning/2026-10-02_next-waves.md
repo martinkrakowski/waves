@@ -225,7 +225,7 @@ A closed summary that covers both renderers:
   premises?: [{ lane, plan, status, reason? }] }
 ```
 
-### W8, open: where they live
+### W8, decided: project-level status (owner, 2026-10-03)
 
 Both are facts about a project at a moment, not about a wave. Two options:
 
@@ -234,14 +234,17 @@ Both are facts about a project at a moment, not about a wave. Two options:
 | **Project-level status (recommended)** | A new write, `PUT /api/v1/projects/<id>/status`, with the project token, carrying `{ schema, project, generatedAt, prs?, backlog? }`; the project list and the project page show it once. The wave envelope does not change. | A second validated document in the contract, a second stored file per project, and a second push from the client. Staleness applies to it as it does to a wave. |
 | Envelope keys                          | `prs` and `backlog` as optional keys of the wave envelope, as D191 wrote it.                                                                                                                                                 | The same run-level fact is stored and shown once per wave, and the page has to pick which wave's copy to believe.                                               |
 
-The owner decides W8 before C1 is briefed. Either way the contract's rules
+The owner chose the recommended option on 2026-10-03: a project-level status document behind `PUT /api/v1/projects/<id>/status`; the wave envelope does not change. Either way the contract's rules
 hold: closed objects; every string bounded and free of control characters;
 every array capped (`plans`, `premises`); no opaque blob.
 
 ### Lanes, once W8 is decided
 
 1. **C1-contract (normal).** The new shapes, their readers and bounds, tests,
-   and `docs/waves-v1.md`. The contract takes a minor version.
+   and `docs/waves-v1.md`. The contract takes a minor version. It also tightens
+   a project's `repo`: only the characters a URL may hold unescaped, so a
+   placeholder such as `https://github.com/<owner>/<repo>` is refused rather than
+   stored (found in the first real `register-all` setup, 2026-10-03).
 2. **C2-server-and-page (high).** Storing and serving them; the page renders
    them through `dom.js`, and the XSS test covers every new field.
    campaign-foundry's own page builds its backlog view with `innerHTML` and an
@@ -289,7 +292,7 @@ Nothing here is scheduled. Each needs its own decision before it becomes a lane.
 
 | candidate                                | note                                                                                                                                                                                  |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Notifications (webhook or ntfy)          | **Open question for the owner (W7).** Stale wave, failed lane, wave fully merged. First outbound call; holds a secret; needs an allow-list of destinations.                           |
+| Notifications (webhook or ntfy)          | **Not built (W7, owner, 2026-10-03: the default stands).** Stale wave, failed lane, wave fully merged. First outbound call; holds a secret; needs an allow-list of destinations.      |
 | NetworkPolicy: ingress from Traefik only | `deploy/README.md` recommends it and neither the base nor the midnight overlay ships one. Small, and it is what makes `WAVES_TRUST_PROXY=1` safe in-cluster.                          |
 | Backup as a CronJob                      | The weekly `projects.json` copy is a manual command today.                                                                                                                            |
 | PR links on lanes                        | The https-only external link already exists (`anchor`, `repoLink`, `dom.js:66-99`). What is missing is the decision to compose `<repo>/pull/<number>`, which assumes GitHub's layout. |
