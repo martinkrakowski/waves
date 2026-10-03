@@ -11,6 +11,7 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
   ".png": "image/png",
   ".ico": "image/vnd.microsoft.icon",
   ".json": "application/json; charset=utf-8",
+  ".woff2": "font/woff2",
 };
 
 const ENCODED_SLASH = /%2f/i;

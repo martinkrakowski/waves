@@ -15,7 +15,7 @@ const STALE_AFTER_MS = 30_000;
 const SECURITY_HEADERS: ReadonlyArray<readonly [string, string]> = [
   [
     "content-security-policy",
-    "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+    "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
   ],
   ["x-content-type-options", "nosniff"],
   ["referrer-policy", "no-referrer"],

@@ -2,9 +2,12 @@
  * The waves mark: three wavy lines in a box, beside the word `waves` in the top
  * bar. Decorative, so it is hidden from assistive tech and takes no focus.
  *
- * The page's CSP is `default-src 'none'`, which has no `img-src`: an `<img>`, a
- * CSS `url()` or a data URI would all be blocked, and the CSP is not widened for
- * a logo. So the mark is built as an inline SVG in the document instead.
+ * The mark is built as an inline SVG in the document rather than fetched, and
+ * the reason is the colour, not the policy: `currentColor` reaches an SVG from
+ * the stylesheet, so the mark is whatever `--text` says in either scheme, and
+ * an inline element costs no request. The CSP is not what forbids an image —
+ * `img-src 'self'` would allow a same-origin `<img>` — but a data URI would be
+ * blocked, and a fetched file would be a request for three constants.
  *
  * This does not go through `dom.js`, whose `el()` makes HTML elements, and that
  * is not an exception to it: `createElementNS` in the SVG namespace with
