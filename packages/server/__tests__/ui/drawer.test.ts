@@ -480,7 +480,7 @@ describe("closing the drawer", () => {
 
     expect(dialog().open).toBe(false);
     expect(browser.pushes).toStrictEqual(["/p/alpha/w/w-3?reason=gate"]);
-    expect(document.activeElement?.getAttribute("href")).toBeNull();
+    expect(document.activeElement).toBe(document.body);
     app.stop();
   });
 });

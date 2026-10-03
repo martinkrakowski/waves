@@ -29,7 +29,9 @@ dialog.lane-drawer::backdrop {
 
 .drawer {
   box-sizing: border-box;
-  max-height: calc(100vh - 2rem);
+  /* The dialog's own ceiling is the viewport less 2em and 6px; `dvh` follows a
+     phone's collapsing address bar. */
+  max-height: calc(100dvh - 2rem - 6px);
   overflow: auto;
   overflow-wrap: anywhere;
   padding: 1rem 1.25rem;
@@ -98,7 +100,9 @@ dialog.lane-drawer::backdrop {
 .drawer dl {
   display: grid;
   gap: 0.2rem 0.75rem;
-  grid-template-columns: max-content 1fr;
+  /* A detail key is a pusher's text with no length of its own: a column sized
+     to it could push every value off the drawer. */
+  grid-template-columns: minmax(0, 12rem) 1fr;
   margin: 0;
 }
 

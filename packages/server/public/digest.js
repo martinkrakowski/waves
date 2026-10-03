@@ -37,7 +37,14 @@ function breaksALine(code) {
     code === 0x7f ||
     (code >= 0x80 && code <= 0x9f) ||
     code === 0x2028 ||
-    code === 0x2029
+    code === 0x2029 ||
+    // Not line breaks, but characters that change what a reader sees without
+    // being seen: the bidirectional overrides and isolates, the zero-width
+    // characters, and the byte-order mark.
+    (code >= 0x200b && code <= 0x200f) ||
+    (code >= 0x202a && code <= 0x202e) ||
+    (code >= 0x2066 && code <= 0x2069) ||
+    code === 0xfeff
   );
 }
 
