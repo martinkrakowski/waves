@@ -105,3 +105,20 @@ export function laneCountText(lanes) {
 export function waveCountText(waves) {
   return waves === 1 ? "1 wave" : `${waves} waves`;
 }
+
+/**
+ * The wall clock, as `HH:MM:SS` in the reader's own time zone.
+ *
+ * Local, never UTC: the pill says when this page last loaded, and the reader is
+ * the one who has to recognise that time as theirs. Every field is padded to two
+ * digits because a clock that drops the leading zero reads as a different time of
+ * day. Nothing is parsed and no zone is named, so there is nothing to go wrong
+ * beyond a browser with no time zone, which has one anyway.
+ */
+export function clockTime(milliseconds) {
+  const when = new Date(milliseconds);
+  const hours = String(when.getHours()).padStart(2, "0");
+  const minutes = String(when.getMinutes()).padStart(2, "0");
+  const seconds = String(when.getSeconds()).padStart(2, "0");
+  return `${hours}:${minutes}:${seconds}`;
+}

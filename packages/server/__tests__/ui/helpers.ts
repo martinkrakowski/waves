@@ -49,7 +49,13 @@ export const ALLOWED_TAGS: ReadonlySet<string> = new Set([
   "TR",
   "UL",
   /** An SVG element's `tagName` is lower case, so the mark's tags are too. */
+  "circle",
+  "defs",
+  "g",
+  "linearGradient",
   "path",
+  "rect",
+  "stop",
   "svg",
 ]);
 

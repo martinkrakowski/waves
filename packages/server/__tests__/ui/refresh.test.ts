@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AppGlobals } from "../../public/app.js";
 import { createApp, REFRESH_MS } from "../../public/app.js";
+import { clockTime } from "../../public/format.js";
 
 import type { Answer, FetchStub, TimerStub } from "./helpers.js";
 import {
@@ -42,6 +43,8 @@ function harness(options: {
   fetchImpl: FetchStub;
   withoutRoot?: boolean;
   refreshMs?: number;
+  /** The app's clock. Only a test that watches time move passes its own. */
+  clock?: () => number;
 }): Harness {
   if (options.withoutRoot === true) {
     document.body.replaceChildren();
@@ -58,7 +61,7 @@ function harness(options: {
     fetch: options.fetchImpl,
     setTimer: timers.setTimer,
     clearTimer: timers.clearTimer,
-    clock: () => NOW_MS,
+    clock: options.clock ?? (() => NOW_MS),
     refreshMs: options.refreshMs ?? REFRESH_MS,
   } satisfies AppGlobals);
   return { app, timers, browser };
@@ -1198,6 +1201,225 @@ describe("the project route", () => {
     await flush();
     expect(document.getElementById("root")).toBeNull();
     expect(document.title).toBe("waves — alpha");
+    app.stop();
+  });
+});
+
+describe("the sync pill", () => {
+  it("says it is syncing before the first answer, and the clock time after", async () => {
+    const { app } = harness({ fetchImpl: fetchStub(listing(projectCard())) });
+    app.start();
+    expect(textsOf(root(), ".sync")).toStrictEqual(["syncing…"]);
+    await flush();
+    expect(textsOf(root(), ".sync")).toStrictEqual([
+      `synced ${clockTime(NOW_MS)}`,
+    ]);
+    expect(textsOf(root(), ".sync")).not.toStrictEqual(["syncing…"]);
+    app.stop();
+  });
+
+  it("records the clock a later pass answers with, and not one that fails", async () => {
+    let second = false;
+    const flaky = fetchStub((path) =>
+      second ? { status: 404 } : listing(projectCard())(path),
+    );
+    // A clock that moves, because a clock that does not would make a pass that
+    // wrongly recorded one look like a pass that correctly did not.
+    let now = NOW_MS;
+    const { app } = harness({
+      fetchImpl: flaky,
+      clock: () => {
+        now += 3_600_000;
+        return now;
+      },
+    });
+    app.start();
+    await flush();
+    const first = textOf(root().querySelector(".sync"));
+    expect(first).toBe(`synced ${clockTime(NOW_MS + 3_600_000)}`);
+
+    second = true;
+    await app.refresh();
+
+    expect(textOf(root().querySelector(".note"))).toBe(OFFLINE);
+    expect(textOf(root().querySelector(".sync"))).toBe(first);
+    app.stop();
+  });
+
+  it("keeps the clock of the data on screen when the new data will not draw", async () => {
+    // The second pass loads, records its time, and then its draw throws (the
+    // view reads the clock, which fails once): the old data goes back on screen,
+    // and so must the old time.
+    let now = NOW_MS;
+    let armed = 0;
+    const { app } = harness({
+      fetchImpl: fetchStub(listing(projectCard())),
+      clock: () => {
+        now += 3_600_000;
+        if (armed === 1) {
+          armed = 2;
+          return now;
+        }
+        if (armed === 2) {
+          armed = 0;
+          throw new Error("the view could not be drawn");
+        }
+        return now;
+      },
+    });
+    app.start();
+    await flush();
+    const first = textOf(root().querySelector(".sync"));
+
+    armed = 1;
+    await app.refresh();
+
+    expect(textOf(root().querySelector(".note"))).toBe(OFFLINE);
+    expect(textOf(root().querySelector(".sync"))).toBe(first);
+    app.stop();
+  });
+
+  it("keeps the clock at the first answer when every later pass fails", async () => {
+    const { app } = harness({
+      fetchImpl: fetchStub(() => ({ status: 404 })),
+    });
+    app.start();
+    await flush();
+    expect(textsOf(root(), ".sync")).toStrictEqual(["syncing…"]);
+    expect(root().querySelector(".sync")?.getAttribute("class")).toBe(
+      "sync offline",
+    );
+    app.stop();
+  });
+});
+
+describe("the refresh button", () => {
+  it("asks the app for one pass, and never a second while one is in flight", async () => {
+    const fetchImpl = gatedFetch(listing(projectCard()));
+    const { app, timers } = harness({ fetchImpl });
+    app.start();
+    fetchImpl.release();
+    await flush();
+    expect(fetchImpl.calls).toHaveLength(2);
+
+    (root().querySelector("button.refresh") as HTMLButtonElement).click();
+
+    // The frame is redrawn at once, so the spin is on screen before the pass has
+    // answered anything at all.
+    expect(root().querySelector("button.refresh")?.getAttribute("class")).toBe(
+      "refresh spin",
+    );
+    await flush();
+    expect(fetchImpl.calls).toHaveLength(4);
+    expect(fetchImpl.pending()).toBe(2);
+
+    (root().querySelector("button.refresh") as HTMLButtonElement).click();
+    (root().querySelector("button.refresh") as HTMLButtonElement).click();
+    expect(fetchImpl.calls).toHaveLength(4);
+
+    fetchImpl.release();
+    await flush();
+
+    expect(fetchImpl.calls).toHaveLength(4);
+    expect(root().querySelector("button.refresh")?.getAttribute("class")).toBe(
+      "refresh",
+    );
+    expect(textsOf(root(), ".sync")).toStrictEqual([
+      `synced ${clockTime(NOW_MS)}`,
+    ]);
+    expect(timers.scheduled).toHaveLength(1);
+    app.stop();
+  });
+
+  it("is the only thing the page draws that starts a pass on its own", async () => {
+    const fetchImpl = fetchStub(listing(projectCard()));
+    const { app, timers } = harness({ fetchImpl });
+    app.start();
+    await flush();
+
+    timers.runLast();
+    await flush();
+
+    expect(fetchImpl.calls).toHaveLength(4);
+    expect(root().querySelector("button.refresh")?.getAttribute("class")).toBe(
+      "refresh",
+    );
+
+    setHidden(true);
+    visible();
+    setHidden(false);
+    visible();
+    await flush();
+
+    expect(fetchImpl.calls).toHaveLength(6);
+    expect(root().querySelector("button.refresh")?.getAttribute("class")).toBe(
+      "refresh",
+    );
+    app.stop();
+  });
+
+  it("keeps the focus on it across the redraw that replaces it", async () => {
+    const { app } = harness({ fetchImpl: fetchStub(listing(projectCard())) });
+    app.start();
+    await flush();
+    const before = root().querySelector("button.refresh") as HTMLButtonElement;
+    before.focus();
+    expect(document.activeElement).toBe(before);
+
+    await app.refresh();
+
+    const after = root().querySelector("button.refresh") as HTMLButtonElement;
+    expect(after).not.toBe(before);
+    expect(after.getAttribute("data-key")).toBe("refresh");
+    expect(document.activeElement).toBe(after);
+    app.stop();
+  });
+});
+
+describe("the first paint", () => {
+  it("marks #root, keeps the mark over the first paint with data, drops it after", async () => {
+    const { app } = harness({ fetchImpl: fetchStub(listing(projectCard())) });
+    app.start();
+    expect(root().getAttribute("data-first")).toBe("1");
+
+    await flush();
+
+    // Still set: the draw that has just happened is the first with data, and the
+    // mark goes with the draw after it, which is what leaves the entrance on
+    // screen for a paint instead of removing it in the same task.
+    expect(root().getAttribute("data-first")).toBe("1");
+    expect(root().querySelectorAll(".project-card")).toHaveLength(1);
+
+    await app.refresh();
+
+    expect(root().getAttribute("data-first")).toBeNull();
+    expect(root().querySelectorAll(".project-card")).toHaveLength(1);
+    app.stop();
+  });
+
+  it("keeps the mark while there is nothing to enter with", async () => {
+    const { app } = harness({ fetchImpl: fetchStub(() => ({ status: 404 })) });
+    app.start();
+    await flush();
+    expect(textsOf(root(), ".empty")).toStrictEqual(["Loading…"]);
+    expect(root().getAttribute("data-first")).toBe("1");
+
+    await app.refresh();
+
+    expect(textsOf(root(), ".empty")).toStrictEqual(["Loading…"]);
+    expect(root().getAttribute("data-first")).toBe("1");
+    app.stop();
+  });
+
+  it("marks nothing when the page has no #root to mark", async () => {
+    const { app } = harness({
+      pathname: "/p/alpha",
+      fetchImpl: fetchStub(projectListing),
+      withoutRoot: true,
+    });
+    app.start();
+    await flush();
+    expect(document.getElementById("root")).toBeNull();
     app.stop();
   });
 });

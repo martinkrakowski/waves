@@ -1,49 +1,111 @@
 /*
- * Every colour, and only the colours, in this file. The page is dark by default
+ * Every colour, and only the colours, plus the radii, the sheen and the three
+ * typefaces, that the whole page is drawn from. The page is dark by default
  * because a status page is left open on a wall; a reader who asks for the light
- * scheme gets it from the same names below. A stylesheet that needs a colour
- * outside this set is asking for a palette of its own, which is how a status
- * page ends up unreadable in one of the two schemes.
+ * scheme gets a light twin of every one of them from the same names below. A
+ * stylesheet that needs a colour outside this set is asking for a palette of its
+ * own, which is how a status page ends up unreadable in one of the two schemes.
+ *
+ * Every pairing a reader reads most — the text, the muted and the faint, each on
+ * the ground and on a card — is held at 4.5:1 or better in both schemes by
+ * `__tests__/ui/contrast.test.ts`, which reads the values below out of this
+ * file. That test needs them to be six-digit hex, which is why `--card` is an
+ * opaque colour and the glass look is a border and a gradient drawn over the top
+ * of it rather than a translucent card under the text.
  */
 
 :root {
   color-scheme: dark;
 
-  --bg: #0e0f12;
-  --bg-raise: #16181d;
-  --bg-sink: #0a0b0d;
-  --line: #2a2d34;
-  --line-strong: #3a3e48;
-  --text: #e8e4da;
-  --muted: #a0a49b;
-  --faint: #80857c;
-  --amber: #e4b15a;
-  --red: #e36d6d;
-  --teal: #3dbeb0;
-  --blue: #7ea2e0;
-  --violet: #b39adf;
+  --bg: #05070d;
+  /* The bars float over the ground and blur it, so their own ground is the one
+     translucent token here: no text sits on it, only the frame behind it. */
+  --bg-glass: rgba(5, 7, 13, 0.78);
+  --bg-raise: #101623;
+  --bg-sink: #04060b;
+  /* Opaque, and a little above `--bg`. */
+  --card: #0a0e18;
+  --card-sheen: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.028),
+    rgba(255, 255, 255, 0.008) 42%,
+    rgba(255, 255, 255, 0)
+  );
 
-  --sans: ui-sans-serif, system-ui, sans-serif;
-  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --line: rgba(148, 163, 184, 0.12);
+  --line-soft: rgba(148, 163, 184, 0.08);
+  --line-strong: rgba(148, 163, 184, 0.24);
+
+  --text: #e9eef7;
+  --muted: #93a0bb;
+  /* The mock's #5d6a85 is 3.7:1 on this ground; lifted until it is not. */
+  --faint: #78849f;
+
+  --cyan: #22d3ee;
+  --emerald: #34d399;
+  --amber: #fbbf24;
+  --rose: #fb7185;
+  --violet: #c084fc;
+  --slate: #7d8aa5;
+  /* The names the older stylesheets and views already use. */
+  --blue: var(--cyan);
+  --teal: var(--emerald);
+  --red: var(--rose);
+
+  /* The ground's three glows, drawn over `--bg` and under everything else. */
+  --glow-cyan: rgba(34, 211, 238, 0.16);
+  --glow-violet: rgba(192, 132, 252, 0.14);
+  --glow-teal: rgba(52, 211, 153, 0.1);
+
+  --radius-card: 18px;
+  --radius: 12px;
+
+  /* The `@font-face` rules for the first family in each line arrive with the
+     fonts themselves; until they do, each falls back down its own list. */
+  --sans: "Inter", system-ui, -apple-system, sans-serif;
+  --display: "Space Grotesk", var(--sans);
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
 @media (prefers-color-scheme: light) {
   :root {
     color-scheme: light;
 
-    --bg: #f6f4ee;
+    --bg: #f5f7fb;
+    --bg-glass: rgba(245, 247, 251, 0.82);
     --bg-raise: #ffffff;
-    --bg-sink: #ebe8df;
-    --line: #d5d0c3;
-    --line-strong: #b9b3a3;
-    --text: #1c1d1f;
-    --muted: #55584f;
-    --faint: #6b6e65;
-    --amber: #8a5a00;
-    --red: #a8322f;
-    --teal: #0f6f66;
-    --blue: #2f5fb3;
-    --violet: #6a4bb0;
+    --bg-sink: #eaeef5;
+    --card: #ffffff;
+    --card-sheen: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.6),
+      rgba(255, 255, 255, 0.2) 42%,
+      rgba(255, 255, 255, 0)
+    );
+
+    --line: rgba(15, 23, 42, 0.14);
+    --line-soft: rgba(15, 23, 42, 0.09);
+    --line-strong: rgba(15, 23, 42, 0.26);
+
+    --text: #0b1020;
+    --muted: #4c5568;
+    --faint: #616878;
+
+    /* The same six hues as the dark palette, darkened for a light ground. */
+    --cyan: #0e7490;
+    --emerald: #047857;
+    --amber: #a16207;
+    --rose: #be123c;
+    --violet: #7e22ce;
+    --slate: #566076;
+    --blue: var(--cyan);
+    --teal: var(--emerald);
+    --red: var(--rose);
+
+    /* One glow at most on a light ground: two, and the page is not white. */
+    --glow-cyan: rgba(14, 116, 144, 0.09);
+    --glow-violet: rgba(126, 34, 206, 0.05);
+    --glow-teal: rgba(4, 120, 87, 0.05);
   }
 }
 

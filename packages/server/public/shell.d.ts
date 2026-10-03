@@ -17,6 +17,22 @@ export interface ShellModel {
   readonly menuOpen: boolean;
   /** "" or the offline note. */
   readonly note: string;
+  /**
+   * The app's clock, in ms, at the moment the last load answered; undefined until
+   * one has. The sync pill formats it and says `syncing…` while it is undefined.
+   */
+  readonly syncedAt: number | undefined;
+  /** Whether a pass the reader asked for is in flight, so the arrow can spin. */
+  readonly syncing: boolean;
 }
 
-export declare function shell(model: ShellModel, body: Node): HTMLElement;
+/** The one thing the frame does on its own: ask the app for a pass. */
+export interface ShellHandlers {
+  readonly onRefresh: () => void;
+}
+
+export declare function shell(
+  model: ShellModel,
+  body: Node,
+  handlers: ShellHandlers,
+): HTMLElement;
