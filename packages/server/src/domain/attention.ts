@@ -1,4 +1,4 @@
-import type { Lane } from "@hexagen-monaco/waves-contract";
+import type { Lane, PullRequestState } from "@hexagen-monaco/waves-contract";
 
 export type AttentionReason =
   "failed" | "disagreement" | "checks" | "gate" | "exit" | "silent";
@@ -24,8 +24,19 @@ export const ATTENTION_WINDOW_MS = 72 * 60 * 60 * 1000;
 export const MAX_ATTENTION_LANES = 200;
 
 /** An exit status is only a failure when it is a number and it is not zero. */
-function isFailureExit(exit: number | undefined): boolean {
+export function isFailureExit(exit: number | undefined): boolean {
   return exit !== undefined && exit !== 0;
+}
+
+/**
+ * Whether a lane's pull request has been merged or closed, which is the state in
+ * which the open questions it raised have been answered. `attentionReasons` makes
+ * it the first thing it checks and `waveState` makes it the exclusion a failing
+ * lane is measured against, so it is one predicate rather than two rules that
+ * could drift apart.
+ */
+export function prSettled(state: PullRequestState | undefined): boolean {
+  return state === "merged" || state === "closed";
 }
 
 /**
@@ -42,7 +53,7 @@ export function attentionReasons(
   waveStale: boolean,
 ): readonly AttentionReason[] {
   const state = lane.derived.pr?.state;
-  if (state === "merged" || state === "closed") {
+  if (prSettled(state)) {
     return [];
   }
   const reasons: AttentionReason[] = [];
