@@ -37,9 +37,11 @@ refuse() {
 
 # The characters of $1 that the character set $2 does not hold. The sets carry
 # a space, so they cannot be a glob bracket expression — a space would end the
-# word — and `tr` is the readable way to ask.
+# word — and `tr` is the readable way to ask. What is left is shown with every
+# unprintable byte as `?`: a newline would otherwise be the one leftover a
+# command substitution strips, and it would pass for nothing left at all.
 outside() {
-  printf '%s' "$1" | tr -d "$2"
+  printf '%s' "$1" | tr -d "$2" | tr -c '[:print:]' '?'
 }
 
 # 1. The URL. One argument, https, a character set the plist and the shell can
@@ -125,7 +127,7 @@ log="$logs/waves-register-all.log"
 for path in "$node" "$client" "$token" "$wrapper" "$log"; do
   outside_path=$(outside "$path" "$TEMPLATE_PATH_SET")
   if [ -n "$outside_path" ]; then
-    refuse "the path $path holds a character install.sh will not render: $outside_path; move it, or set WAVES_CONFIG_DIR somewhere without one"
+    refuse "the path $path holds a character install.sh will not render: $outside_path"
   fi
 done
 

@@ -14,7 +14,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -376,6 +376,20 @@ describe("install.sh", { timeout: 20_000 }, () => {
     refusal(w, [GOOD_URL], "path");
   });
 
+  it("refuses a URL with a newline in it, though the newline is its only stranger", () => {
+    // A command substitution strips a trailing newline, so a check that read
+    // the leftover characters back would see nothing left and let it through.
+    refusal(world(), ["https://waves.example\nnext"], "character");
+  });
+
+  it("refuses a home with a newline in it, and leaves no half-rendered file", () => {
+    const w = world({ homeName: "two\nlines" });
+    refusal(w, [GOOD_URL], "path");
+    expect(existsSync(join(dirname(w.wrapper), ".register-all.sh.tmp"))).toBe(
+      false,
+    );
+  });
+
   it("is idempotent, and boots the agent out and back in each time", () => {
     const w = world();
     expect(w.run(INSTALL, [GOOD_URL]).status).toBe(0);
@@ -546,8 +560,8 @@ describe("the enrollment token's value", { timeout: 20_000 }, () => {
 });
 
 /**
- * `/usr/bin/plutil` on macOS, `xmllint` on a Linux that has one. Neither is in
- * CI's runner image, so the case is skipped rather than failed there; a bad
+ * `/usr/bin/plutil` on macOS, `xmllint` on a Linux that has one (CI's Ubuntu
+ * runner does), and the case is skipped only where neither is there; a bad
  * plist is a job that never runs, which is the one mistake worth a lint.
  */
 const LINTER: ((file: string) => SpawnSyncReturns<string>) | undefined =

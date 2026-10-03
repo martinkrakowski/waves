@@ -244,19 +244,20 @@ and every push reads `~/.config/waves/<id>.token` here, so a schedule anywhere
 else would mint tokens no pusher ever receives. A LaunchAgent runs it once an
 hour and once at login.
 
-1. Create the `waves-enroll` Secret from a file of your own, mode 0600, never
-   through an agent:
+1. Create the `waves-enroll` Secret as in
+   [The enrollment Secret](#the-enrollment-secret): from a 0600 file of your
+   own, never through an agent.
+
+2. Copy the same value to `~/.config/waves/enroll.token`, mode 0600, from the
+   file the Secret was made from, so it is never typed on a command line:
 
    ```sh
    umask 077
-   cat > /root/waves-enroll-token
-   kubectl -n waves create secret generic waves-enroll \
-     --from-file=token=/root/waves-enroll-token
-   kubectl -n waves rollout restart deploy/waves
+   ssh m cat /root/waves-enroll-token > ~/.config/waves/enroll.token
    ```
 
-2. Put a copy of that value at `~/.config/waves/enroll.token`, mode 0600. A file
-   of mode 0400 is accepted as well, if you would rather it not be writable.
+   A file of mode 0400 is accepted as well, if you would rather it not be
+   writable.
 
 3. Write `~/.config/waves/projects.json`, the list you maintain:
 
@@ -281,6 +282,9 @@ hour and once at login.
    ```
 
    The URL is the one argument `install.sh` takes and has to be `https`. The
+   first run starts at once, so `~/.config/waves/ca.crt` has to be there
+   already (see [Trusting the midnight CA](#trusting-the-midnight-ca)): without
+   it every entry fails on the certificate. The
    script renders nothing at all unless `~/.config/waves/enroll.token` is there
    as a real file of mode 0600 or 0400, and it never reads it: what reaches the
    wrapper is the path, and the client reads the value.
