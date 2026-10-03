@@ -62,6 +62,14 @@ spec:
             # once at startup, so a rotated token needs a restart to take effect.
             - name: WAVES_ADMIN_TOKEN_FILE
               value: /run/secrets/waves-admin/token
+            # The enrollment token, from the same kind of file and for the same
+            # reason: it registers projects nobody has registered by hand, so it
+            # has no business in the process environment. It must hold a
+            # different value from the admin token, and the server refuses to
+            # start when the two files hold the same one. Read once at startup,
+            # like the admin token.
+            - name: WAVES_ENROLL_TOKEN_FILE
+              value: /run/secrets/waves-enroll/token
           ports:
             - name: http
               containerPort: 8080
@@ -86,6 +94,9 @@ spec:
               mountPath: /tmp
             - name: admin
               mountPath: /run/secrets/waves-admin
+              readOnly: true
+            - name: enroll
+              mountPath: /run/secrets/waves-enroll
               readOnly: true
           readinessProbe:
             # Readiness is the store being readable, not the process being alive:
@@ -121,5 +132,14 @@ spec:
         - name: admin
           secret:
             secretName: waves-admin
+            optional: true
+            defaultMode: 0440
+        # Optional in the same way, and independent of the admin one: either
+        # Secret may exist without the other. Without it no project can be
+        # enrolled, and the only trace is the startup line
+        # `waves: enrollment disabled`.
+        - name: enroll
+          secret:
+            secretName: waves-enroll
             optional: true
             defaultMode: 0440
