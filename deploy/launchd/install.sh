@@ -212,7 +212,8 @@ sync_plist_template="$here/$SYNC_LABEL.plist.template"
 read_every='
 const fs = require("node:fs");
 
-const [, , path, fallback] = process.argv;
+// argv[0] is node and there is no script name, for -e: argv[1] is the file.
+const [, path, fallback] = process.argv;
 let parsed;
 try {
   parsed = JSON.parse(fs.readFileSync(path, "utf8"));
@@ -263,7 +264,7 @@ if [ -e "$sync_config" ] || [ -L "$sync_config" ]; then
   # turns into a refusal rather than letting `set -e` abort the script with no
   # word of its own.
   if ! every=$("$node" -e "$read_every" "$sync_config" "$EVERY_DEFAULT" 2>/dev/null); then
-    refuse "waves sync could not use $sync_config; run waves sync by hand for the refusal it prints"
+    refuse "waves sync could not use $sync_config: it is not JSON, or its every is not a whole number of seconds; run waves sync by hand for its own refusal"
   fi
   case "$every" in
     '' | *[!0-9]*)
