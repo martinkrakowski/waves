@@ -513,3 +513,124 @@ function cli(built: {
 }): Promise<number> {
   return entrypoint(["sync"], built.io, built.deps);
 }
+
+describe("waves sync --check", () => {
+  it("prints the period and nothing else, and starts nothing", async () => {
+    // No token files either: a check reads the schedule and stops, so a machine
+    // whose tokens are not there yet can still be told its schedule is usable.
+    const built = run({
+      file: syncFile([entry(DEMO)], { every: 30 }),
+      tokens: [],
+    });
+
+    expect(await check(built)).toBe(0);
+    // One number, because that is what deploy/launchd/install.sh reads.
+    expect(built.out).toEqual(["30"]);
+    expect(built.err).toEqual([]);
+    expect(built.runs).toEqual([]);
+    expect(built.requests).toEqual([]);
+  });
+
+  it("prints the default when the file has no every", async () => {
+    const built = run({ file: syncFile([entry(DEMO)]), tokens: [] });
+
+    expect(await check(built)).toBe(0);
+    expect(built.out).toEqual(["60"]);
+  });
+
+  const refusals: readonly {
+    readonly name: string;
+    readonly file?: string;
+    readonly line: string;
+  }[] = [
+    {
+      name: "is not there",
+      line: "waves sync: no sync.json in /home/waves/.config/waves",
+    },
+    {
+      name: "is not JSON",
+      file: "{",
+      line: "waves sync: sync.json is not JSON",
+    },
+    {
+      name: "is an array rather than an object",
+      file: "[]",
+      line: "waves sync: sync.json must be a JSON object with every and projects",
+    },
+    {
+      name: "holds a key this client does not know",
+      file: syncFile([entry(DEMO)], { everyy: 60 }),
+      line: "waves sync: sync.json holds a key this client does not know",
+    },
+    {
+      name: "takes every out of range",
+      file: syncFile([entry(DEMO)], { every: 101 }),
+      line: "waves sync: every must be between 10 and 100 seconds",
+    },
+    {
+      name: "has no projects at all",
+      file: JSON.stringify({ every: 60 }),
+      line: "waves sync: projects must be a JSON array",
+    },
+    {
+      name: "names no project",
+      file: syncFile([]),
+      line: "waves sync: projects must name at least one project",
+    },
+    {
+      name: "names a collector by a relative path",
+      file: syncFile([entry(DEMO, { command: ["collector"] })]),
+      line: "waves sync: project 0: command[0] must be an absolute path",
+    },
+    {
+      name: "gives one collector the whole period",
+      file: syncFile([entry(DEMO, { timeoutSeconds: 16 })], { every: 30 }),
+      line: "waves sync: project 0: timeoutSeconds must be at most half of every (15)",
+    },
+  ];
+
+  for (const refusal of refusals) {
+    it(`refuses a schedule that ${refusal.name}, exactly as a run would`, async () => {
+      const built = run(
+        refusal.file === undefined ? { tokens: [] } : { file: refusal.file },
+      );
+
+      expect(await check(built)).toBe(2);
+      // The same words a tick would log, which is the whole point: an installer
+      // asking this must hear what the agent would have said every minute.
+      expect(built.err).toEqual([refusal.line]);
+      expect(built.out).toEqual([]);
+      expect(built.runs).toEqual([]);
+    });
+  }
+
+  it("refuses a file the adapter would not open, with the adapter's reason", async () => {
+    const built = run({ file: syncFile([entry(DEMO)]) });
+    const refusal = new FileRefusal(
+      `${SYNC_FILE} is mode 0o644; it must be 0600 or stricter`,
+    );
+    const deps = {
+      ...built.deps,
+      files: {
+        ...built.deps.files,
+        readSecret: async (path: string, name?: string) => {
+          if (path === SYNC_FILE) {
+            throw refusal;
+          }
+          return await built.deps.files.readSecret(path, name);
+        },
+      },
+    };
+
+    expect(await entrypoint(["sync", "--check"], built.io, deps)).toBe(2);
+    expect(built.err).toEqual([`waves sync: ${refusal.message}`]);
+  });
+});
+
+/** One check through the entrypoint, which is what an installer runs. */
+function check(built: {
+  readonly io: CliIo;
+  readonly deps: CliDeps;
+}): Promise<number> {
+  return entrypoint(["sync", "--check"], built.io, built.deps);
+}

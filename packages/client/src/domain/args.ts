@@ -13,13 +13,14 @@ export const USAGE = [
   "                [--interval <1-300>] [--include-tails]",
   "  waves status (--file <path> | --stdin) [--interval <1-300>]",
   "  waves delete --wave <wave>",
-  "  waves sync",
+  "  waves sync [--check]",
   "",
   `WAVES_URL is required. WAVES_PROJECT names the project a push, a status or`,
   "a delete belongs to. The project token is read from the file",
   "~/.config/waves/<project>.token, which WAVES_CONFIG_DIR overrides.",
   "waves sync takes no arguments: it reads the projects to look after out of",
-  "~/.config/waves/sync.json.",
+  "~/.config/waves/sync.json. --check reads that file and prints the period it",
+  "would use, running nothing.",
 ].join("\n");
 
 /** Where a token comes from. Never from argv and never from the environment. */
@@ -74,6 +75,8 @@ export type Command =
   | {
       /** The whole schedule is in `sync.json`, so there is nothing to say here. */
       readonly kind: "sync";
+      /** Read the configuration and print the period, starting nothing. */
+      readonly check: boolean;
     }
   | { readonly kind: "delete"; readonly wave: string };
 
@@ -112,6 +115,15 @@ const CREDENTIAL_FLAGS: readonly string[] = [
 const ROTATE = "--rotate";
 
 /**
+ * `--check` asks whether the file could be run at all, which is a question about
+ * the schedule and not a change to it: the same file, read the same way, with the
+ * same answer for a tick and for an installer. It is here rather than as a
+ * separate command because the reading is `sync`'s own and there is no second one
+ * to keep in step with it.
+ */
+const CHECK = "--check";
+
+/**
  * `--rotate` asks the server for a token it will only ever send once, so it is
  * refused here rather than sent: an enrollment token cannot replace a token, and
  * a request that would invalidate a token the user still depends on must not
@@ -139,6 +151,7 @@ const SWITCH_FLAGS = [
   "--verbose",
   "--stdin",
   "--include-tails",
+  CHECK,
 ] as const;
 
 const REGISTER_FLAGS: readonly string[] = [
@@ -161,8 +174,8 @@ const PUSH_FLAGS: readonly string[] = [
 ];
 const DELETE_FLAGS: readonly string[] = ["--wave"];
 const STATUS_FLAGS: readonly string[] = ["--file", "--stdin", "--interval"];
-/** `sync` is configured by a file, so it has no flag at all. */
-const SYNC_FLAGS: readonly string[] = [];
+/** `sync` is configured by a file, so `--check` is the only flag it takes. */
+const SYNC_FLAGS: readonly string[] = [CHECK];
 
 const MIN_INTERVAL_SECONDS = 1;
 const MAX_INTERVAL_SECONDS = 300;
@@ -443,9 +456,10 @@ function readStatus(tokens: Tokens): ParseResult {
 }
 
 function readSync(tokens: Tokens): ParseResult {
-  // Every flag is refused, because there is nothing here a caller could change:
-  // which projects to look after and how often is the file's business, and a
-  // flag that looked as if it did something would be worse than none.
+  // Every flag but --check is refused, because there is nothing here a caller
+  // could change: which projects to look after and how often is the file's
+  // business, and a flag that looked as if it did something would be worse than
+  // none.
   const unused = firstUnused(tokens, SYNC_FLAGS);
   if (unused !== undefined) {
     return { ok: false, error: `${unused} is not a sync option` };
@@ -453,7 +467,10 @@ function readSync(tokens: Tokens): ParseResult {
   if (tokens.positionals.length !== 0) {
     return { ok: false, error: "sync takes no positional arguments" };
   }
-  return { ok: true, command: { kind: "sync" } };
+  return {
+    ok: true,
+    command: { kind: "sync", check: tokens.switches.has(CHECK) },
+  };
 }
 
 function readDelete(tokens: Tokens): ParseResult {

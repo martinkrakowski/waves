@@ -475,13 +475,21 @@ describe("delete", () => {
 
 describe("sync", () => {
   it("takes no arguments at all", () => {
-    expect(commandOf(["sync"])).toEqual({ kind: "sync" });
+    expect(commandOf(["sync"])).toEqual({ kind: "sync", check: false });
     expect(errorOf(["sync", "extra"])).toBe(
       "sync takes no positional arguments",
     );
   });
 
-  it("refuses every flag, because the file is the configuration", () => {
+  it("takes --check, which asks about the file rather than changing it", () => {
+    expect(commandOf(["sync", "--check"])).toEqual({
+      kind: "sync",
+      check: true,
+    });
+    expect(USAGE).toContain("waves sync [--check]");
+  });
+
+  it("refuses every other flag, because the file is the configuration", () => {
     expect(errorOf(["sync", "--interval", "60"])).toBe(
       "--interval is not a sync option",
     );
@@ -491,6 +499,10 @@ describe("sync", () => {
     expect(errorOf(["sync", "--verbose"])).toBe(
       "--verbose is not a sync option",
     );
+    // --check belongs to sync alone: nowhere else could it mean anything.
+    expect(
+      errorOf(["push", "--check", "--wave", "wv5", "--file", "/tmp/x"]),
+    ).toBe("--check is not a push option");
   });
 });
 

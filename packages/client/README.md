@@ -147,6 +147,8 @@ The projects are read from `~/.config/waves/sync.json` (`WAVES_CONFIG_DIR` overr
 
 **What it prints.** One stdout line per project that worked — `waves sync: my-project: 2 waves, status` — and one stderr line per project that did not: `waves sync: <project>: <reason>`, with any collector stderr cut to a single line of 200 characters. Exit 0 when every project was looked after, 1 when any project failed or was skipped for time, and 2 when the configuration itself is wrong.
 
+**`--check`.** `waves sync --check` reads that file with the same reader, the same rules and the same messages, and prints the period it would use — one number on stdout and nothing else. It starts no collector and sends nothing, which is what makes it safe to ask before anything is written: an agent installed over a configuration this client refuses would log the same refusal every minute. A refusal is the same exit 2 and the same line a tick would print, and `deploy/launchd/install.sh` asks it before it renders the sync agent's plist.
+
 ## Configuration
 
 | Variable                      | Meaning                                                                                                             |
