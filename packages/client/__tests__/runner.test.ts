@@ -1,3 +1,5 @@
+import { realpath } from "node:fs/promises";
+
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { RunOutcome } from "../src/application/ports.js";
@@ -21,7 +23,9 @@ let remove: () => Promise<void>;
 
 beforeAll(async () => {
   const temporary = await temporaryDirectory();
-  cwd = temporary.path;
+  // The real path: on macOS `/var` is a link to `/private/var`, and a child
+  // reports the directory it runs in by its real path.
+  cwd = await realpath(temporary.path);
   remove = temporary.remove;
 });
 

@@ -2,6 +2,7 @@ import {
   chmod,
   mkdir,
   mkdtemp,
+  realpath,
   rm,
   symlink,
   writeFile,
@@ -28,7 +29,9 @@ let directory: string;
 let configDir: string;
 
 beforeEach(async () => {
-  directory = await mkdtemp(join(tmpdir(), "waves-sync-"));
+  // The real path: on macOS `/var` is a link to `/private/var`, and a child
+  // reports the directory it runs in by its real path.
+  directory = await realpath(await mkdtemp(join(tmpdir(), "waves-sync-")));
   configDir = join(directory, "config");
   await mkdir(configDir, { recursive: true, mode: 0o700 });
 });
@@ -118,8 +121,10 @@ describe("a collector this test can really run", () => {
   it("is given only what the file's own project needs", async () => {
     // A collector that prints its own environment and fails, so the whole
     // environment comes back through the run's one line.
+    // `__CF_USER_TEXT_ENCODING` is left out: macOS adds it to every process it
+    // starts, whatever environment the parent handed over.
     const script = [
-      "const seen=Object.keys(process.env).sort().join(',')+';project='+process.env.WAVES_PROJECT;",
+      "const seen=Object.keys(process.env).filter((k)=>!k.startsWith('__CF_')).sort().join(',')+';project='+process.env.WAVES_PROJECT;",
       "console.error(seen);",
       "process.exit(1);",
     ].join("");
@@ -153,7 +158,7 @@ describe("a collector this test can really run", () => {
             process.execPath,
             "-e",
             [
-              "console.error(Object.keys(process.env).sort().join(','));",
+              "console.error(Object.keys(process.env).filter((k)=>!k.startsWith('__CF_')).sort().join(','));",
               "process.exit(1);",
             ].join(""),
           ],
