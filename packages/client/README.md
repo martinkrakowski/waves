@@ -103,6 +103,8 @@ WAVES_URL=https://waves.example.com waves sync
 
 `waves sync` runs once and exits: it runs each project's own collector, sends what each one printed, and is done. A scheduler (a launchd agent, a cron entry, a systemd timer) is the loop — a crash then costs one tick, and a machine that is asleep lets every wave go stale, which is exactly what the dashboard is for.
 
+On a Mac, the repository's `deploy/launchd/install.sh <https url>` installs one for you: `cloud.krakowski.waves.sync`, on `every` seconds and at login, with the URL, the config directory and the `PATH` you installed it with, and a log of its own that the wrapper keeps to its last 1000 lines. It is installed only while `sync.json` is there, so a run with nothing configured is not a run at all.
+
 The projects are read from `~/.config/waves/sync.json` (`WAVES_CONFIG_DIR` overrides the directory). It is read with the same secret rule as a token file — not a link, a regular file you own, no group or other bit, nothing executable — and any problem with it is exit 2 with nothing run at all:
 
 ```json
