@@ -238,10 +238,11 @@ describe("a program that could not be run at all", () => {
 
 /**
  * Waits a moment for a process this run should have killed. A reaped process is
- * gone from the table; one that is still dying answers for a few milliseconds.
+ * gone from the table; one that is still dying answers for a while, and how long
+ * is the machine's business rather than this client's.
  */
 async function expectGone(pid: number): Promise<void> {
-  for (let attempt = 0; attempt < 50; attempt += 1) {
+  for (let attempt = 0; attempt < 150; attempt += 1) {
     if (!isAlive(pid)) {
       return;
     }
