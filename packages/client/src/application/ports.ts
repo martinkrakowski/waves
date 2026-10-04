@@ -45,8 +45,13 @@ export interface Files {
    * A file holding a secret. It is opened without following a link and checked
    * before a byte is read, so `readSecret` throws a `FileRefusal` rather than
    * returning the contents of whatever a link pointed at.
+   *
+   * `name` is how this file is called in a refusal that has to name it — a
+   * `sync.json` is held to the same rule as a token, and saying "the token file"
+   * about it would send the owner looking in the wrong place. The check itself is
+   * the same either way.
    */
-  readSecret(path: string): Promise<FileRead | undefined>;
+  readSecret(path: string, name?: string): Promise<FileRead | undefined>;
   /**
    * The rules the directory the tokens live in must satisfy: not a link, not
    * owned by somebody else, and reachable only by its owner. Asked before an

@@ -173,6 +173,46 @@ async function registerAll(
   return { code, lines: [...lines, ...recorded.out, ...recorded.err] };
 }
 
+/**
+ * `waves sync` over a list of the owner's own collectors, on the real filesystem
+ * and against the stub, which is the only way to see a scheduled run: the
+ * collectors are real programs, the tokens on disk are real, and there is no
+ * terminal and no command line for anything to leak through.
+ */
+async function syncNow(entries: readonly unknown[]): Promise<Run> {
+  const recorded = recorder();
+  await mkdir(configDir, { recursive: true });
+  await chmod(configDir, 0o700);
+  await writeFile(
+    join(configDir, "sync.json"),
+    JSON.stringify({ projects: entries }),
+    { mode: 0o600 },
+  );
+  const lines: string[] = [];
+  let code = 0;
+  try {
+    code = await main(["sync"], recorded.io, {
+      env: environmentOf({
+        WAVES_URL: stub.origin,
+        WAVES_CONFIG_DIR: configDir,
+      }),
+      input: { read: async () => "" },
+      // A run begins at index floor(now / every) mod n of the file, and this test
+      // wants the file's own order.
+      clock: { now: () => 0 },
+      sleeper: { sleep: async () => undefined },
+    });
+  } catch (error) {
+    lines.push(error instanceof Error ? error.message : String(error));
+  }
+  return { code, lines: [...lines, ...recorded.out, ...recorded.err] };
+}
+
+/** A collector that prints one wave, or fails having printed nothing. */
+function collector(body: string): readonly string[] {
+  return [process.execPath, "-e", body];
+}
+
 function expectNoSecrets(result: Run): void {
   expect(result.lines.length).toBeGreaterThan(0);
   for (const secret of secrets) {
@@ -371,5 +411,52 @@ describe("a token never leaves the file it was written to", () => {
     expect(insecure.code).toBe(2);
     expect(insecure.lines[0]).toContain("WAVES_ALLOW_INSECURE_HTTP=1");
     expectNoSecrets(insecure);
+  });
+
+  it("is not printed by a scheduled run, or by the projects in it that failed", async () => {
+    const failed = "waves-leak-sync-failed";
+    const borrowed = "waves-leak-sync-borrowed";
+    await register(failed);
+    await register(borrowed);
+    for (const project of [failed, borrowed]) {
+      const issued = stub.tokenOf(project);
+      if (issued !== undefined) {
+        secrets.add(issued);
+      }
+    }
+    // The second project's token is one this machine did not get from the server,
+    // so its wave is refused. The first one's collector fails outright.
+    await writeFile(tokenFile(borrowed), "waves-leak-t0ken-not-mine", {
+      mode: 0o600,
+    });
+
+    const oneWave = `process.stdout.write('${JSON.stringify({
+      waves: [{ wave: WAVE, lanes: [] }],
+    })}');`;
+    const result = await syncNow([
+      {
+        project: failed,
+        command: collector(
+          'console.error("the lanes are gone");process.exit(1);',
+        ),
+        cwd: directory,
+      },
+      { project: borrowed, command: collector(oneWave), cwd: directory },
+    ]);
+
+    expect(result.code).toBe(1);
+    expect(result.lines).toContain(
+      "waves sync: waves-leak-sync-failed: the collector exited 1: the lanes are gone",
+    );
+    expect(result.lines).toContain(
+      "waves sync: waves-leak-sync-borrowed: push failed: 403 Forbidden\n  that token belongs to another project",
+    );
+    expectNoSecrets(result);
+
+    // And a run whose configuration is refused has nothing to leak either.
+    await chmod(join(configDir, "sync.json"), 0o644);
+    const loose = await syncNow([]);
+    expect(loose.code).toBe(2);
+    expectNoSecrets(loose);
   });
 });

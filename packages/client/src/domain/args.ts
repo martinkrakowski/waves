@@ -13,10 +13,13 @@ export const USAGE = [
   "                [--interval <1-300>] [--include-tails]",
   "  waves status (--file <path> | --stdin) [--interval <1-300>]",
   "  waves delete --wave <wave>",
+  "  waves sync",
   "",
   `WAVES_URL is required. WAVES_PROJECT names the project a push, a status or`,
   "a delete belongs to. The project token is read from the file",
   "~/.config/waves/<project>.token, which WAVES_CONFIG_DIR overrides.",
+  "waves sync takes no arguments: it reads the projects to look after out of",
+  "~/.config/waves/sync.json.",
 ].join("\n");
 
 /** Where a token comes from. Never from argv and never from the environment. */
@@ -67,6 +70,10 @@ export type Command =
       readonly kind: "status";
       readonly source: InputSource;
       readonly intervalSeconds: number | null;
+    }
+  | {
+      /** The whole schedule is in `sync.json`, so there is nothing to say here. */
+      readonly kind: "sync";
     }
   | { readonly kind: "delete"; readonly wave: string };
 
@@ -154,6 +161,8 @@ const PUSH_FLAGS: readonly string[] = [
 ];
 const DELETE_FLAGS: readonly string[] = ["--wave"];
 const STATUS_FLAGS: readonly string[] = ["--file", "--stdin", "--interval"];
+/** `sync` is configured by a file, so it has no flag at all. */
+const SYNC_FLAGS: readonly string[] = [];
 
 const MIN_INTERVAL_SECONDS = 1;
 const MAX_INTERVAL_SECONDS = 300;
@@ -181,6 +190,7 @@ export function parseArgv(argv: readonly string[]): ParseResult {
     head !== "register-all" &&
     head !== "push" &&
     head !== "status" &&
+    head !== "sync" &&
     head !== "delete"
   ) {
     return { ok: false, error: `unknown command ${head}` };
@@ -200,6 +210,9 @@ export function parseArgv(argv: readonly string[]): ParseResult {
   }
   if (head === "status") {
     return readStatus(tokens);
+  }
+  if (head === "sync") {
+    return readSync(tokens);
   }
   return readDelete(tokens);
 }
@@ -429,6 +442,20 @@ function readStatus(tokens: Tokens): ParseResult {
   return { ok: true, command: { kind: "status", source, intervalSeconds } };
 }
 
+function readSync(tokens: Tokens): ParseResult {
+  // Every flag is refused, because there is nothing here a caller could change:
+  // which projects to look after and how often is the file's business, and a
+  // flag that looked as if it did something would be worse than none.
+  const unused = firstUnused(tokens, SYNC_FLAGS);
+  if (unused !== undefined) {
+    return { ok: false, error: `${unused} is not a sync option` };
+  }
+  if (tokens.positionals.length !== 0) {
+    return { ok: false, error: "sync takes no positional arguments" };
+  }
+  return { ok: true, command: { kind: "sync" } };
+}
+
 function readDelete(tokens: Tokens): ParseResult {
   const unused = firstUnused(tokens, DELETE_FLAGS);
   if (unused !== undefined) {
@@ -491,4 +518,5 @@ export const COMMAND_NAME: Readonly<Record<Command["kind"], string>> = {
   push: `${WAVES} push`,
   status: `${WAVES} status`,
   delete: `${WAVES} delete`,
+  sync: `${WAVES} sync`,
 };

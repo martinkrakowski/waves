@@ -53,7 +53,7 @@ async function runOnce(request: RunRequest): Promise<RunOutcome> {
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     let outBytes = 0;
-    let errBytes = 0;
+    let errKept = 0;
     let stderrTruncated = false;
     let overflowed = false;
     let timedOut = false;
@@ -94,15 +94,22 @@ async function runOnce(request: RunRequest): Promise<RunOutcome> {
     });
 
     child.stderr.on("data", (chunk: Buffer) => {
-      errBytes += chunk.length;
-      if (errBytes > maxStderr) {
+      const room = maxStderr - errKept;
+      if (room <= 0) {
         // Read and thrown away, never paused: a pipe nobody is draining is a
         // collector blocked on a write, and the timeout would then be reporting
         // a full pipe as if it were a slow collector.
         stderrTruncated = true;
         return;
       }
-      stderr.push(chunk);
+      // What fits is kept, so the note is the cap itself rather than whatever the
+      // last read happened to end on.
+      const kept = chunk.length <= room ? chunk : chunk.subarray(0, room);
+      errKept += kept.length;
+      stderr.push(kept);
+      if (kept.length < chunk.length) {
+        stderrTruncated = true;
+      }
     });
 
     /**

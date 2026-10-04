@@ -390,7 +390,24 @@ no rule reads it.
 In the wave view, a stale wave keeps its lane data but a lane whose
 `derived.alive` is `true` is rendered as `"unknown"`, because the pusher has
 stopped telling the server whether the process is still up
-(`aliveView`, `…/read-model.ts:275-277`).
+(`aliveView`, …/read-model.ts:275-277).
+
+### 4.1 Keeping waves fresh
+
+A wave only says something while something is pushing it. `waves sync` is the
+pusher for a project that has no other one: a scheduler runs it once per period,
+it runs each project's own collector and sends what the collector printed, and
+`every` — the period — is the `intervalSeconds` of every wave and status it sends.
+The arithmetic is therefore §4's own: a wave pushed with `intervalSeconds: 60`
+goes stale after `min(3 × 60, 300) = 180` seconds, so it survives two missed ticks
+and reads stale on the third, and the ceiling of 100 seconds on `every` keeps that
+inside the contract's 300. A collector that prints nothing, or fails, or is never
+run, is a stale wave and a lane that reads `unknown` — which is the honest answer
+rather than a snapshot nobody looked at.
+
+The shape of `sync.json`, the collector contract, the trust boundary and the exit
+codes are in the client's README (`packages/client/README.md`, "Keep the waves
+fresh"); the rules above are the ones this contract fixes.
 
 ## 5. HTTP API
 

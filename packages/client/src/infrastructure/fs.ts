@@ -64,8 +64,15 @@ export function fileSystem(): Files {
      * a link, a directory, a file another account owns or a mode with any other
      * bit set all refuse, because a secret that anyone else can name is a secret
      * that was never locked.
+     *
+     * `name` is only ever what a refusal calls this file, never what it is
+     * allowed to be: the file is held to the token's rule whichever name it is
+     * given, and the rule is the whole of what follows.
      */
-    readSecret: async (path): Promise<FileRead | undefined> => {
+    readSecret: async (
+      path,
+      name = "the token file",
+    ): Promise<FileRead | undefined> => {
       let handle;
       try {
         handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
@@ -75,7 +82,7 @@ export function fileSystem(): Files {
         }
         if (isLink(error)) {
           throw new FileRefusal(
-            `${path} is a symbolic link; the token file must be a regular file`,
+            `${path} is a symbolic link; ${name} must be a regular file`,
           );
         }
         throw named(path, error);

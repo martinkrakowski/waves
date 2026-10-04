@@ -17,6 +17,7 @@ export const ALLOW_INSECURE_VARIABLE = "WAVES_ALLOW_INSECURE_HTTP";
 export const CONFIG_DIRECTORY = "waves";
 export const CA_FILE_NAME = "ca.crt";
 export const TOKEN_SUFFIX = ".token";
+export const SYNC_CONFIG_FILE = "sync.json";
 export const INSECURE_ENABLED = "1";
 
 /** Everything a command needs before it can send anything: the origin, the certificate authority and where the tokens live. */
@@ -41,6 +42,16 @@ function optional(env: Environment, name: string): string | undefined {
 
 export function tokenPath(configDir: string, project: string): string {
   return `${configDir}/${project}${TOKEN_SUFFIX}`;
+}
+
+/**
+ * The file a scheduled run reads: which programs to start, and how often. It is
+ * in the same directory as the tokens because it is the same kind of thing — the
+ * owner's own, held to the same rule — and because a machine that has a token
+ * file has the directory that holds the schedule beside it.
+ */
+export function syncConfigPath(configDir: string): string {
+  return `${configDir}/${SYNC_CONFIG_FILE}`;
 }
 
 /**

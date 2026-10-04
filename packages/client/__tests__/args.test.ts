@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseArgv } from "../src/domain/args.js";
+import { USAGE, parseArgv } from "../src/domain/args.js";
 
 function errorOf(argv: readonly string[]): string {
   const parsed = parseArgv(argv);
@@ -31,6 +31,18 @@ describe("parseArgv", () => {
 
   it("refuses a command it does not have", () => {
     expect(errorOf(["publish"])).toBe("unknown command publish");
+  });
+
+  it("names every command it has in the usage, sync included", () => {
+    for (const command of [
+      "register",
+      "register-all",
+      "push",
+      "status",
+      "sync",
+    ]) {
+      expect(USAGE).toContain(`waves ${command}`);
+    }
   });
 });
 
@@ -457,6 +469,27 @@ describe("delete", () => {
     expect(errorOf(["delete"])).toBe("--wave is required");
     expect(errorOf(["delete", "--wave", "wv5", "extra"])).toBe(
       "delete takes no positional arguments",
+    );
+  });
+});
+
+describe("sync", () => {
+  it("takes no arguments at all", () => {
+    expect(commandOf(["sync"])).toEqual({ kind: "sync" });
+    expect(errorOf(["sync", "extra"])).toBe(
+      "sync takes no positional arguments",
+    );
+  });
+
+  it("refuses every flag, because the file is the configuration", () => {
+    expect(errorOf(["sync", "--interval", "60"])).toBe(
+      "--interval is not a sync option",
+    );
+    expect(errorOf(["sync", "--file", "/tmp/sync.json"])).toBe(
+      "--file is not a sync option",
+    );
+    expect(errorOf(["sync", "--verbose"])).toBe(
+      "--verbose is not a sync option",
     );
   });
 });
