@@ -48,6 +48,11 @@ done
 # which is the only record of what the runs did, and a second copy of it in the
 # same directory is one more thing to clean up. The subshell ends with the tail,
 # so this script's own umask — and the client's run under it — is untouched.
+#
+# On failure the copy is kept, not deleted: a `cat` that stops halfway has left
+# the log shorter than it should be, and the copy is then the only place the last
+# 1000 lines still exist. Its name is printed, because a file nobody knows about
+# is not a recovery.
 if [ -f "$log" ]; then
   lines=$(wc -l <"$log" | tr -d ' ')
   if [ "$lines" -gt 5000 ]; then
@@ -56,8 +61,7 @@ if [ -f "$log" ]; then
       rm -f "$tmp"
       echo "$(stamp) waves sync: the log was $lines lines; kept its last 1000"
     else
-      rm -f "$tmp"
-      echo "$(stamp) waves sync: the log is $lines lines and could not be shortened; delete it yourself" >&2
+      echo "$(stamp) waves sync: the log is $lines lines and could not be shortened; $tmp was left behind with the last 1000 of them" >&2
     fi
   fi
 fi

@@ -127,6 +127,8 @@ interface WorldOptions {
   readonly sync?: string;
   /** The environment every run in this world starts from. */
   readonly env?: Readonly<Record<string, string>>;
+  /** What the client's `sync --check` prints, whatever the file holds. */
+  readonly prints?: string;
 }
 
 const roots: string[] = [];
@@ -138,15 +140,38 @@ afterEach(() => {
 });
 
 /**
- * A `launchctl` that answers every subcommand with exit 0 and records its
- * arguments, one line per call. `bootstrap-failures` in the same directory, if
- * it is there, is the number of `bootstrap` calls to fail first — macOS
- * answers "Bootstrap failed: 37/5" for a moment when a bootout is still
- * draining, which is what the retry in install.sh is for.
+ * A `launchctl` that records its arguments, one line per call, and answers for
+ * the jobs it has been told about: `bootstrap` loads one, `bootout` unloads it,
+ * and `print` answers for a loaded job and fails for one that is not, which is
+ * how the scripts ask whether a bootout took. `bootstrap-failures` in the same
+ * directory, if it is there, is the number of `bootstrap` calls to fail first —
+ * macOS answers "Bootstrap failed: 37/5" for a moment when a bootout is still
+ * draining, which is what the retry in install.sh is for. `bootout-fails`, if it
+ * is there, is a bootout that does not take: nothing changes hands and the job
+ * stays loaded, which is the case the scripts must not delete files over.
  */
 const LAUNCHCTL_STUB = `#!/bin/sh
 here=$(CDPATH= cd "$(dirname "$0")" && pwd)
 printf '%s\\n' "$*" >>"$here/record"
+case "\${1:-}" in
+  bootstrap)
+    # The job's name is in the plist, which is where launchd reads it from too.
+    name=$(sed -n '/<key>Label<\\/key>/{n;s|.*<string>\\(.*\\)</string>.*|\\1|p;}' "$3")
+    : >"$here/loaded-$name"
+    ;;
+  bootout)
+    if [ ! -f "$here/bootout-fails" ]; then
+      rm -f "$here/loaded-\${2##*/}"
+    fi
+    ;;
+  print)
+    if [ -f "$here/loaded-\${2##*/}" ]; then
+      exit 0
+    fi
+    printf 'Could not find service %s\\n' "$2" >&2
+    exit 1
+    ;;
+esac
 if [ "\${1:-}" = bootstrap ] && [ -f "$here/bootstrap-failures" ]; then
   seen=$(cat "$here/seen" 2>/dev/null || echo 0)
   seen=$((seen + 1))
@@ -160,18 +185,66 @@ exit 0
 `;
 
 /**
- * The client, as Node sees it: `help` exits 0 so install.sh's check that the
- * pinned pair runs passes, and anything else is recorded argv by argv. The
- * package.json beside it pins CommonJS, so the stub parses the same way
+ * The client, as Node sees it. `help` exits 0 so install.sh's check that the
+ * pinned pair runs passes, and anything else is recorded argv by argv.
+ *
+ * `sync --check` is the one thing install.sh asks it, so it answers that: the
+ * schedule is read with the client's own rules — they are the client's, and they
+ * are tested there — and the effective period is printed and nothing else, or the
+ * refusal goes to stderr and the exit is 2. `check-prints` beside the stub is a
+ * period to print whatever it says, which is how install.sh's own checks on what
+ * it is given are exercised at all.
+ * The package.json beside the stub pins CommonJS, so it parses the same way
  * wherever the temporary directory happens to be.
  */
-const CLIENT_STUB = `const { appendFileSync } = require("node:fs");
+const CLIENT_STUB = `const { appendFileSync, existsSync, readFileSync } = require("node:fs");
 const { join } = require("node:path");
 
-if (process.argv[2] !== "help") {
+const argv = process.argv.slice(2);
+
+function refuse(message) {
+  process.stderr.write(\`waves sync: \${message}\\n\`);
+  process.exit(2);
+}
+
+if (argv[0] === "sync" && argv[1] === "--check") {
+  const forced = join(__dirname, "check-prints");
+  if (existsSync(forced)) {
+    process.stdout.write(readFileSync(forced, "utf8"));
+    process.exit(0);
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(
+      readFileSync(join(process.env.WAVES_CONFIG_DIR, "sync.json"), "utf8"),
+    );
+  } catch {
+    refuse("sync.json is not JSON");
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    refuse("sync.json must be a JSON object with every and projects");
+  }
+  const every = parsed.every === undefined ? 60 : parsed.every;
+  if (typeof every !== "number" || !Number.isInteger(every)) {
+    refuse("every must be a whole number of seconds");
+  }
+  if (every < 10 || every > 100) {
+    refuse("every must be between 10 and 100 seconds");
+  }
+  if (!Array.isArray(parsed.projects)) {
+    refuse("projects must be a JSON array");
+  }
+  if (parsed.projects.length === 0) {
+    refuse("projects must name at least one project");
+  }
+  process.stdout.write(String(every));
+  process.exit(0);
+}
+
+if (argv[0] !== "help") {
   appendFileSync(
     join(__dirname, "argv"),
-    \`\${JSON.stringify(process.argv.slice(2))}\\n\`,
+    \`\${JSON.stringify(argv)}\\n\`,
   );
 }
 process.exit(0);
@@ -207,6 +280,11 @@ function world(options: WorldOptions = {}): World {
   writeFileSync(client, CLIENT_STUB);
   const launchctl = join(bin, "launchctl");
   writeFileSync(launchctl, LAUNCHCTL_STUB, { mode: 0o755 });
+  // What the client answers `sync --check` with, whatever the file holds, so the
+  // installer's own checks on what it is given can be exercised.
+  if (options.prints !== undefined) {
+    writeFileSync(join(bin, "check-prints"), options.prints);
+  }
 
   const support = join(home, "Library/Application Support/waves");
   const agents = join(home, "Library/LaunchAgents");
@@ -303,6 +381,26 @@ function render(
   );
 }
 
+/**
+ * The sync plist as install.sh writes it, which is the template filled in with the
+ * CA file's pair deleted when there is none — a POSIX range delete in the script
+ * and one line here, written out both times so a change in either is a failure.
+ */
+function renderedSyncPlist(
+  w: World,
+  values: Readonly<Record<string, string>>,
+  caFile?: string,
+): string {
+  const filled = render(SYNC_PLIST_TEMPLATE, values);
+  if (caFile !== undefined) {
+    return filled.replace("@CA_FILE@", caFile);
+  }
+  return filled.replace(
+    `      <key>WAVES_CA_FILE</key>\n      <string>@CA_FILE@</string>\n`,
+    "",
+  );
+}
+
 function text(path: string): string {
   return readFileSync(path, "utf8");
 }
@@ -360,10 +458,17 @@ function logLines(path: string): readonly string[] {
  * started this script and will not open again. A wrapper that shortened the log
  * by renaming a new file over it would leave this run writing to an inode with
  * no name, and the owner reading a file this run never touched.
+ *
+ * `whileOpen` runs with that descriptor already open, for a case that needs the
+ * log to become unwritable the way a full disk would make it.
  */
-function runOnTheLog(w: World): SpawnSyncReturns<Buffer> {
+function runOnTheLog(
+  w: World,
+  whileOpen?: () => void,
+): SpawnSyncReturns<Buffer> {
   const descriptor = openSync(w.syncLog, "a");
   try {
+    whileOpen?.();
     return spawnSync("/bin/sh", [w.syncWrapper], {
       env: w.env({ WAVES_URL: GOOD_URL }),
       stdio: ["ignore", descriptor, descriptor],
@@ -634,7 +739,7 @@ describe("the sync agent", { timeout: 20_000 }, () => {
       }),
     );
     expect(text(w.syncPlist)).toBe(
-      render(SYNC_PLIST_TEMPLATE, {
+      renderedSyncPlist(w, {
         "@URL@": GOOD_URL,
         "@WRAPPER@": w.syncWrapper,
         "@LOG@": w.syncLog,
@@ -714,37 +819,60 @@ describe("the sync agent", { timeout: 20_000 }, () => {
     );
   });
 
-  it.each([5, 101])("refuses an every of %s, outside 10 to 100", (every) => {
-    syncRefusal(syncWorld({ sync: syncJson(every) }), "10 to 100");
-  });
+  it.each([5, 101])(
+    "refuses an every of %s, which the client refuses too",
+    (every) => {
+      // The client's own refusal, in the installer's line: an agent over this file
+      // would print it once a minute and nothing would look at the log.
+      syncRefusal(
+        syncWorld({ sync: syncJson(every) }),
+        "every must be between 10 and 100 seconds",
+      );
+    },
+  );
 
-  // `every` is the client's key with the client's rules, and the program that
-  // reads it refuses what the client would refuse: a file waves sync cannot use
-  // is not one to schedule a timer around.
   it.each(["x", 60.5])(
     "refuses an every of %s, which is no whole number of seconds",
     (every) => {
-      syncRefusal(syncWorld({ sync: syncJson(every) }), "could not use");
+      syncRefusal(
+        syncWorld({ sync: syncJson(every) }),
+        "every must be a whole number of seconds",
+      );
+    },
+  );
+
+  it.each([
+    ["projects is not an array", '{"every":60,"projects":{"a":1}}'],
+    ["projects names no project", '{"every":60,"projects":[]}'],
+  ])(
+    "refuses a sync.json where %s, with the client's own reason",
+    (name, file) => {
+      syncRefusal(syncWorld({ sync: file }), "projects must");
     },
   );
 
   it("refuses a period that is no number of seconds in any shell", () => {
-    // 1e21 is a whole number in JSON and prints as 1e+21, so it is the case
-    // that reaches the shell's own check rather than node's.
-    syncRefusal(syncWorld({ sync: syncJson(1e21) }), "whole number");
+    // A client that printed 1e+21 rather than a number: the install renders what
+    // it is given, so it checks that itself rather than taking it on trust.
+    syncRefusal(
+      syncWorld({ sync: syncJson(), prints: "1e+21" }),
+      "whole number",
+    );
   });
 
   it("refuses a period too long for a shell to compare, before it compares it", () => {
-    // 1e20 is a whole number in JSON too, and prints as twenty-one digits.
-    // `test -lt` does not answer on a number that long — it fails, both halves of
-    // the `||` fail, and a failed `if` is a false one — so without the length
-    // asked first this value would be rendered into StartInterval and the agent
-    // bootstrapped, on a period the client refuses.
-    syncRefusal(syncWorld({ sync: syncJson(1e20) }), "10 to 100");
+    // 1e20 in a sync.json is twenty-one digits once printed, and `test -lt` does
+    // not answer on one: it fails, both halves of the `||` fail, and a failed `if`
+    // is a false one. Without the length asked first this value would be rendered
+    // into StartInterval and the agent bootstrapped.
+    syncRefusal(
+      syncWorld({ sync: syncJson(), prints: "100000000000000000000" }),
+      "10 to 100",
+    );
   });
 
   it("refuses a sync.json that is not JSON, with the client's own reason", () => {
-    syncRefusal(syncWorld({ sync: "{\n" }), "could not use");
+    syncRefusal(syncWorld({ sync: "{\n" }), "sync.json is not JSON");
   });
 
   it("refuses a sync.json other people can read", () => {
@@ -773,6 +901,108 @@ describe("the sync agent", { timeout: 20_000 }, () => {
     });
   });
 
+  it("renders the WAVES_CA_FILE it was installed with, or leaves it out", () => {
+    // A run under the agent has only what the plist gives it, so a CA file the
+    // install was run with has to be in that plist or the run cannot verify the
+    // server — and an empty value would be a path the client looks for, so the
+    // pair is gone rather than blank when there is none.
+    const configured = syncWorld({ sync: syncJson() });
+    const ca = join(configured.root, "ca.crt");
+    writeFileSync(ca, "not a certificate, a fixture\n");
+    const installed = configured.run(INSTALL, [GOOD_URL], {
+      WAVES_CA_FILE: ca,
+    });
+
+    expect(installed.status, installed.stderr).toBe(0);
+    expect(text(configured.syncPlist)).toBe(
+      renderedSyncPlist(
+        configured,
+        {
+          "@URL@": GOOD_URL,
+          "@WRAPPER@": configured.syncWrapper,
+          "@LOG@": configured.syncLog,
+          "@CONFIG@": dirname(configured.syncConfig),
+          "@PATH@": PINNED_PATH,
+          "@EVERY@": "60",
+        },
+        ca,
+      ),
+    );
+    expect(installed.stdout).toContain(`ca file  ${ca}`);
+
+    const unset = syncWorld({ sync: syncJson() });
+    expect(unset.run(INSTALL, [GOOD_URL]).status).toBe(0);
+    expect(text(unset.syncPlist)).not.toContain("<key>WAVES_CA_FILE</key>");
+    expect(text(unset.syncPlist)).not.toContain("@CA_FILE@");
+  });
+
+  it.each([
+    ["relative", { WAVES_CA_FILE: "ca.crt" }, "not absolute"],
+    [
+      "not there",
+      { WAVES_CA_FILE: "@root@/gone.crt" },
+      "not a file waves could read",
+    ],
+    [
+      "a path install.sh would have to quote",
+      { WAVES_CA_FILE: "@root@/a*b.crt" },
+      "character",
+    ],
+  ])("refuses a WAVES_CA_FILE that is %s", (_name, overrides, word) => {
+    const w = syncWorld({ sync: syncJson() });
+    const quoted = join(w.root, "a*b.crt");
+    // The unrenderable one has to be there, or the install refuses it for the
+    // earlier reason and never reaches the character.
+    writeFileSync(quoted, "not a certificate, a fixture\n");
+    const given = Object.fromEntries(
+      Object.entries(overrides as Record<string, string>).map(
+        ([name, path]) => [name, path.replace("@root@", w.root)],
+      ),
+    );
+    syncRefusal(w, String(word), given);
+  });
+
+  it("refuses to take a sync agent away while it is still loaded", () => {
+    // A bootout that fails leaves the job running, and deleting the files of a
+    // loaded job takes the schedule away without stopping the program — so this
+    // asks launchctl whether the bootout took before it deletes anything.
+    const w = syncWorld({ sync: syncJson() });
+    expect(w.run(INSTALL, [GOOD_URL]).status).toBe(0);
+    rmSync(w.syncConfig);
+    writeFileSync(join(w.root, "bin/bootout-fails"), "");
+
+    const result = w.run(INSTALL, [GOOD_URL]);
+
+    expect(result.status, result.stderr).toBe(2);
+    expect(result.stderr).toContain(`the agent ${SYNC_LABEL} is still loaded`);
+    // Both files are still there to be loaded from, and register-all is untouched.
+    expect(existsSync(w.syncPlist)).toBe(true);
+    expect(existsSync(w.syncWrapper)).toBe(true);
+  });
+
+  it("takes a sync wrapper with no plist and no sync.json away as well", () => {
+    // What an install killed between its two renames leaves behind, and the next
+    // install is the only thing that will ever come for it.
+    const w = syncWorld({ sync: syncJson() });
+    expect(w.run(INSTALL, [GOOD_URL]).status).toBe(0);
+    rmSync(w.syncConfig);
+    rmSync(w.syncPlist);
+    const installed = w.calls().length;
+
+    const result = w.run(INSTALL, [GOOD_URL]);
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(existsSync(w.syncWrapper)).toBe(false);
+    expect(result.stdout).toContain(
+      `a ${SYNC_LABEL} wrapper an earlier install left behind was removed`,
+    );
+    // Nothing was booted out by this run: there was no plist that could have been
+    // loaded, and none is booted out to say so.
+    expect(w.calls().slice(installed)).not.toContain(
+      `bootout gui/${UID}/${SYNC_LABEL}`,
+    );
+  });
+
   it("takes a stale sync agent away when its sync.json is gone", () => {
     const w = syncWorld({ sync: syncJson() });
     expect(w.run(INSTALL, [GOOD_URL]).status).toBe(0);
@@ -791,7 +1021,8 @@ describe("the sync agent", { timeout: 20_000 }, () => {
     );
     expect(result.stdout).toContain("booted out");
     // Only the stale agent's own bootout is added to the call list, after
-    // register-all has been replaced exactly as it is on every run.
+    // register-all has been replaced exactly as it is on every run, and the print
+    // is the question that asks whether the bootout took.
     expect(w.calls()).toEqual([
       `bootout gui/${UID}/${LABEL}`,
       `bootstrap gui/${UID} ${w.plist}`,
@@ -800,6 +1031,7 @@ describe("the sync agent", { timeout: 20_000 }, () => {
       `bootout gui/${UID}/${LABEL}`,
       `bootstrap gui/${UID} ${w.plist}`,
       `bootout gui/${UID}/${SYNC_LABEL}`,
+      `print gui/${UID}/${SYNC_LABEL}`,
     ]);
   });
 
@@ -958,6 +1190,40 @@ describe("the sync wrapper", { timeout: 20_000 }, () => {
     );
     expect(kept.join("\n")).not.toContain("last 1000");
   });
+
+  it("keeps the copy when the log cannot be rewritten, and names it", () => {
+    // A `cat` that stops halfway has left the log shorter than it should be, and
+    // the copy is then the only place the last 1000 lines still exist — so it is
+    // kept and its name is printed. A file nobody knows about is not a recovery.
+    const w = syncWorld({ sync: syncJson() });
+    expect(w.run(INSTALL, [GOOD_URL]).status).toBe(0);
+    writeFileSync(w.syncLog, numberedLines(6000));
+    // The run's own descriptor is already open, so the log is unwritable to
+    // everyone else while the wrapper tries to rewrite it.
+    const result = runOnTheLog(w, () => chmodSync(w.syncLog, 0o400));
+
+    // The tick still ran: a log that cannot be shortened is not a tick that must
+    // not happen.
+    expect(result.status, text(w.syncLog)).toBe(0);
+    const kept = logLines(w.syncLog);
+    // 6000 lines, the shell's own `cat:` refusal, the line naming the copy and the
+    // run — all three of the last on the log, because the log is this run's stderr.
+    expect(kept).toHaveLength(6003);
+    expect(kept[0]).toBe("run 1");
+    const left = readdirSync(dirname(w.syncLog)).filter((name) =>
+      name.startsWith("waves-sync.log.truncating."),
+    );
+    expect(left).toHaveLength(1);
+    const copy = join(dirname(w.syncLog), String(left[0]));
+    expect(kept[6001]).toContain(left[0]);
+    expect(kept[6002]).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z waves sync: run$/,
+    );
+    // The copy is the log's own mode, made under the subshell's umask, and it is
+    // the last 1000 lines and nothing else.
+    expect(w.mode(copy)).toBe("600");
+    expect(logLines(copy)).toHaveLength(1000);
+  });
 });
 
 describe("uninstall.sh", { timeout: 20_000 }, () => {
@@ -999,7 +1265,8 @@ describe("uninstall.sh", { timeout: 20_000 }, () => {
       expect(existsSync(file), file).toBe(false);
     }
     // Each agent is booted out once by the uninstall, and the sync one is booted
-    // out at all because its plist was there to say there was one.
+    // out at all because its plist was there to say there was one; then it is
+    // asked whether the bootout took.
     expect(w.calls()).toEqual([
       `bootout gui/${UID}/${LABEL}`,
       `bootstrap gui/${UID} ${w.plist}`,
@@ -1007,6 +1274,7 @@ describe("uninstall.sh", { timeout: 20_000 }, () => {
       `bootstrap gui/${UID} ${w.syncPlist}`,
       `bootout gui/${UID}/${LABEL}`,
       `bootout gui/${UID}/${SYNC_LABEL}`,
+      `print gui/${UID}/${SYNC_LABEL}`,
     ]);
     // The logs are the record of every run, and sync.json is the configuration
     // the agent would be installed from again: none of them is this script's.
@@ -1057,6 +1325,27 @@ describe("uninstall.sh", { timeout: 20_000 }, () => {
     // The uninstall's own launchctl call is register-all's alone: there is no
     // plist that could have been loaded, and none is booted out to say so.
     expect(w.calls().slice(installed)).toEqual([`bootout gui/${UID}/${LABEL}`]);
+  });
+
+  it("refuses to remove a sync agent that is still loaded", () => {
+    // A bootout that fails leaves the job running, and deleting the files of a
+    // loaded job takes the schedule away without stopping the program — so the
+    // files stay and the refusal says why.
+    const w = syncWorld({ sync: syncJson() });
+    expect(w.run(INSTALL, [GOOD_URL]).status).toBe(0);
+    writeFileSync(join(w.root, "bin/bootout-fails"), "");
+
+    const result = w.run(UNINSTALL, []);
+
+    expect(result.status, result.stderr).toBe(2);
+    expect(result.stderr).toContain(
+      `the agent ${SYNC_LABEL} is still loaded, so nothing of its was removed`,
+    );
+    expect(existsSync(w.syncPlist)).toBe(true);
+    expect(existsSync(w.syncWrapper)).toBe(true);
+    // The register-all agent is gone: it was asked for first and it was not
+    // loaded a second time.
+    expect(existsSync(w.plist)).toBe(false);
   });
 });
 

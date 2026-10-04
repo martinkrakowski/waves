@@ -6,9 +6,9 @@
 #   sh deploy/launchd/uninstall.sh
 #
 # It takes both agents out of the session and deletes the files they installed.
-# The register-all agent is always taken out, loaded or not; the sync agent only
-# when its plist is there, which is what tells this script there was one, though
-# its wrapper is removed either way.
+# The register-all agent is always taken out, loaded or not; the sync agent when
+# its plist is there, which is what tells this script there was one — and a
+# wrapper with no plist is a half-install, which goes too.
 # It leaves both logs, ~/.config/waves, every token file and sync.json alone:
 # those are the owner's, a log is the only record of what the runs did, a token
 # file is the credential the client reads, and sync.json is the configuration the
@@ -27,6 +27,13 @@ SYNC_LABEL=cloud.krakowski.waves.sync
 
 say() {
   printf '%s\n' "$*"
+}
+
+# Every refusal is the same shape: one line on stderr, exit 2, and nothing
+# removed.
+refuse() {
+  printf 'uninstall.sh: refusing: %s\n' "$1" >&2
+  exit 2
 }
 
 support="$HOME/Library/Application Support/waves"
@@ -55,16 +62,17 @@ say "  kept     $log (the record of every run; delete it yourself if you want it
 say "  kept     $config and every token file in it"
 
 # The sync agent was only ever installed when sync.json was there, so its plist
-# is what says whether there is an agent to take out. Its wrapper goes either
-# way: an install interrupted between the two renames leaves a wrapper with no
-# plist, and a wrapper is a shell script naming a program the agent would have
-# run — one this script should not leave behind on the strength of a file that is
-# missing.
-rm -f "$sync_wrapper"
-
+# is what says whether there is an agent to take out.
 if [ -e "$sync_plist" ]; then
   "$launchctl" bootout "$domain/$SYNC_LABEL" 2>/dev/null || true
-  rm -f "$sync_plist"
+  # A bootout that fails leaves the job running, and deleting the files of a job
+  # that is still loaded takes the schedule away without stopping the program.
+  # `launchctl print` is the question that answers whether the bootout took, and
+  # it is asked before anything is deleted.
+  if "$launchctl" print "$domain/$SYNC_LABEL" >/dev/null 2>&1; then
+    refuse "the agent $SYNC_LABEL is still loaded, so nothing of its was removed"
+  fi
+  rm -f "$sync_plist" "$sync_wrapper"
 
   say "uninstall.sh: removed $SYNC_LABEL"
   say "  removed  $sync_plist"
@@ -72,6 +80,12 @@ if [ -e "$sync_plist" ]; then
   say "  kept     $sync_log (the record of every run; delete it yourself if you want it gone)"
   say "  kept     $config/sync.json (the sync agent is installed again from it)"
 else
+  # No plist and no agent, so the only thing that can be here is a wrapper an
+  # install interrupted between its two renames: a shell script naming a program
+  # the agent would have run. It goes rather than waits for an install that may
+  # never come.
+  rm -f "$sync_wrapper"
+
   say "uninstall.sh: no $SYNC_LABEL.plist was there, so no agent was booted out"
 fi
 
