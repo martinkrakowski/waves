@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The `waves sync` run on the owner's Mac, once every `every` seconds of
+  sync.json. deploy/launchd/install.sh renders this into
+  ~/Library/LaunchAgents, filling in the wrapper path, the URL, the config
+  directory, the PATH the install ran with and the log path.
+  deploy/launchd/uninstall.sh takes it out again.
+
+  PATH is here because launchd's own is /usr/bin:/bin:/usr/sbin:/sbin: a
+  collector that calls node, gh or anything in Homebrew or nvm would fail under
+  the agent and pass by hand. Nothing in this file holds a token: the sync client
+  reads each project's own token from the config directory itself, after its
+  collector has exited.
+-->
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>cloud.krakowski.waves.sync</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>/bin/sh</string>
+      <string>@WRAPPER@</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>WAVES_URL</key>
+      <string>@URL@</string>
+      <key>WAVES_CONFIG_DIR</key>
+      <string>@CONFIG@</string>
+      <key>PATH</key>
+      <string>@PATH@</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StartInterval</key>
+    <integer>@EVERY@</integer>
+    <key>ThrottleInterval</key>
+    <integer>@EVERY@</integer>
+    <key>StandardOutPath</key>
+    <string>@LOG@</string>
+    <key>StandardErrorPath</key>
+    <string>@LOG@</string>
+    <key>ProcessType</key>
+    <string>Background</string>
+  </dict>
+</plist>

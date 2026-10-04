@@ -1,15 +1,18 @@
 #!/bin/sh
 #
-# Removes the launchd LaunchAgent that runs `waves register-all`. Run it from
-# anywhere:
+# Removes the launchd LaunchAgents that run `waves register-all` and, when it is
+# installed, `waves sync`. Run it from anywhere:
 #
 #   sh deploy/launchd/uninstall.sh
 #
-# It takes the agent out of the session and deletes the two files it installed.
-# It leaves the log, ~/.config/waves and every token file alone: those are the
-# owner's, the log is the only record of what the runs did, and a token file is
-# the credential the client reads. `sh deploy/launchd/install.sh <url>` puts it
-# back.
+# It takes both agents out of the session and deletes the files they installed.
+# The register-all agent is always taken out, loaded or not; the sync agent only
+# when its plist is there, which is what tells this script there was one.
+# It leaves both logs, ~/.config/waves, every token file and sync.json alone:
+# those are the owner's, a log is the only record of what the runs did, a token
+# file is the credential the client reads, and sync.json is the configuration the
+# sync agent would be reinstalled from.
+# `sh deploy/launchd/install.sh <url>` puts them back.
 
 set -eu
 
@@ -19,6 +22,7 @@ LC_ALL=C
 export LC_ALL
 
 LABEL=cloud.krakowski.waves.register-all
+SYNC_LABEL=cloud.krakowski.waves.sync
 
 say() {
   printf '%s\n' "$*"
@@ -26,9 +30,12 @@ say() {
 
 support="$HOME/Library/Application Support/waves"
 wrapper="$support/register-all.sh"
+sync_wrapper="$support/sync.sh"
 agents="$HOME/Library/LaunchAgents"
 plist="$agents/$LABEL.plist"
+sync_plist="$agents/$SYNC_LABEL.plist"
 log="$HOME/Library/Logs/waves-register-all.log"
+sync_log="$HOME/Library/Logs/waves-sync.log"
 config="${WAVES_CONFIG_DIR:-$HOME/.config/waves}"
 
 launchctl="${LAUNCHCTL:-launchctl}"
@@ -45,4 +52,21 @@ say "  removed  $plist"
 say "  removed  $wrapper"
 say "  kept     $log (the record of every run; delete it yourself if you want it gone)"
 say "  kept     $config and every token file in it"
+
+# The sync agent was only ever installed when sync.json was there, so its plist
+# is what says whether there is one to remove. Nothing is booted out and nothing
+# is reported for an agent this machine never had.
+if [ -e "$sync_plist" ]; then
+  "$launchctl" bootout "$domain/$SYNC_LABEL" 2>/dev/null || true
+  rm -f "$sync_plist" "$sync_wrapper"
+
+  say "uninstall.sh: removed $SYNC_LABEL"
+  say "  removed  $sync_plist"
+  say "  removed  $sync_wrapper"
+  say "  kept     $sync_log (the record of every run; delete it yourself if you want it gone)"
+  say "  kept     $config/sync.json (the sync agent is installed again from it)"
+else
+  say "uninstall.sh: no $SYNC_LABEL was installed, so none was removed"
+fi
+
 say "  to install it again: sh deploy/launchd/install.sh <https url>"
