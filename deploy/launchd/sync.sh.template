@@ -1,0 +1,73 @@
+#!/bin/sh
+#
+# The `waves sync` run the LaunchAgent schedules. Rendered by
+# deploy/launchd/install.sh from sync.sh.template, with the two absolute paths
+# below and the log's path filled in; re-run install.sh after a node upgrade,
+# which moves both the node and the client's bin.
+#
+# launchd sends this script's stdout and stderr to the plist's StandardOutPath
+# and StandardErrorPath, so every line below lands in
+# ~/Library/Logs/waves-sync.log. That log is the only thing launchd ever
+# appends to and the only thing here ever shortens, so the bound below is in
+# this script rather than in newsyslog: a run every minute that prints a line a
+# project would otherwise never truncate.
+
+set -eu
+
+node='@NODE@'
+client='@CLIENT@'
+log='@LOG@'
+
+stamp() {
+  date -u +%Y-%m-%dT%H:%M:%SZ
+}
+
+# A missing path is the one failure the owner must see, exactly as it is for the
+# register-all run: an nvm upgrade moves both of them, and a job that says
+# nothing leaves a minute of silence to guess at.
+for path in "$node" "$client"; do
+  if [ ! -e "$path" ]; then
+    echo "$(stamp) waves sync: $path is gone; re-run deploy/launchd/install.sh" >&2
+    exit 1
+  fi
+done
+
+# The log, kept bounded. Over the line the last 1000 are kept and the file is
+# rewritten where it lies, with `cat >` and not `mv`: launchd opened this
+# script's stdout on this file once, before it started us, and a rename would
+# leave this run appending to an inode with no name while the file the owner
+# reads is a new one. It also resets the mode install.sh set, so the next run's
+# lines would land in a world-readable file.
+#
+# `wc -l` on BSD pads its answer with spaces, so the spaces go before the
+# comparison. The whole thing is under `if`, so a log that cannot be counted is
+# not a run that does not happen.
+#
+# The temporary file is made in a subshell with its own umask, so it is 0600
+# while it exists however permissive launchd's umask is: it is a copy of the log,
+# which is the only record of what the runs did, and a second copy of it in the
+# same directory is one more thing to clean up. The subshell ends with the tail,
+# so this script's own umask — and the client's run under it — is untouched.
+#
+# On failure the copy is kept, not deleted: a `cat` that stops halfway has left
+# the log shorter than it should be, and the copy is then the only place the last
+# 1000 lines still exist. Its name is printed, because a file nobody knows about
+# is not a recovery.
+if [ -f "$log" ]; then
+  lines=$(wc -l <"$log" | tr -d ' ')
+  if [ "$lines" -gt 5000 ]; then
+    tmp="$log.truncating.$$"
+    if (umask 077; tail -n 1000 "$log" >"$tmp") && cat "$tmp" >"$log"; then
+      rm -f "$tmp"
+      echo "$(stamp) waves sync: the log was $lines lines; kept its last 1000"
+    else
+      echo "$(stamp) waves sync: the log is $lines lines and could not be shortened; $tmp was left behind with the last 1000 of them" >&2
+    fi
+  fi
+fi
+
+echo "$(stamp) waves sync: run"
+
+# exec, so the log ends with the client's own exit code and launchd's view of
+# the run is the run's, not this script's.
+exec "$node" "$client" sync

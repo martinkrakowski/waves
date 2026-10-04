@@ -340,6 +340,66 @@ truncate it by hand:
 : > ~/Library/Logs/waves-register-all.log
 ```
 
+### The `waves sync` agent
+
+The same `install.sh` installs a second agent, `cloud.krakowski.waves.sync`,
+**only when `~/.config/waves/sync.json` is there** — that file is the whole
+configuration of a run, so an agent with nothing to run is not installed, and
+without it the script says so in one line and installs the register-all agent
+alone. With a `sync.json` of mode 0600 or 0400 (the client asks for 0600 or
+stricter, which also takes a 0200; the install takes only these two, so its rule
+is the stricter of the two) it asks the client about the file and installs the
+agent from the answer:
+
+```sh
+sh deploy/launchd/install.sh https://waves.midnight.lan
+```
+
+- `every` is the plist's `StartInterval` and its `ThrottleInterval`: it is a
+  whole number of seconds between 10 and 100, and absent from the file it is the
+  client's own default of 60. It is read with `waves sync --check` — the client's
+  own reader, with the client's own messages, running nothing and sending
+  nothing — so a file the client would refuse (an array where the projects
+  should be, a key it does not know, a collector named by a relative path) refuses
+  the install with the reason a run would print and nothing rendered. Whatever it
+  prints is then checked here as well, because a plist is not rendered on trust.
+- The plist carries the URL, the config directory and **the `PATH` you ran
+  `install.sh` with**, because launchd's own is `/usr/bin:/bin:/usr/sbin:/sbin`
+  and a collector that calls `node` or `gh` out of nvm or Homebrew would fail
+  under the agent and pass by hand. A `PATH` holding a character the plist could
+  not take is refused rather than escaped.
+- **A `WAVES_CA_FILE` in the install's environment is rendered into that plist**,
+  because a run under the agent has only what the plist gives it and a CA file
+  outside `~/.config/waves` would otherwise be found by hand and not by launchd.
+  It must be an absolute path to a file that is there and that the plist can hold,
+  or the install refuses; with no `WAVES_CA_FILE` the key is left out rather than
+  rendered empty, since an empty value is a path the client looks for.
+- Nothing in the plist or the wrapper holds a token: `waves sync` reads each
+  project's own token out of the config directory after its collector has exited.
+- Delete `sync.json` and re-run `install.sh` and the agent is booted out and its
+  two files removed, so a schedule with nothing to run does not keep asking for
+  it. A bootout that does not take is caught: `launchctl print` says whether the
+  job is still loaded, and the files stay until it is not, because deleting them
+  would take the schedule away while the program kept running.
+  `sh deploy/launchd/uninstall.sh` takes both agents out the same way.
+
+**The log is bounded by the wrapper, not by newsyslog.**
+`~/Library/Logs/waves-sync.log` gets one or two lines a minute, launchd only ever
+appends to it, and a run a minute is a machine on for weeks. So the wrapper
+counts the log before each run and, when it is over 5000 lines, keeps its last
+1000 and says so in one dated line. It rewrites the file where it lies rather
+than renaming a new one over it: launchd opened that file once, before it
+started this script, so a renamed file would leave the run writing to an inode
+with no name and reset the 0600 mode `install.sh` set. The copy it writes on the
+way is 0600 too, and if the rewrite cannot finish it is **kept** and its name
+printed — a `cat` that stops halfway has left the log short, and that file is
+then the only place those lines still are. `uninstall.sh` keeps the log, as it
+keeps the register-all one.
+
+```sh
+tail -n 20 ~/Library/Logs/waves-sync.log
+```
+
 ### Deploy-time checks
 
 Run these after the first deploy of the write path, in this order:

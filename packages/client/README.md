@@ -103,6 +103,8 @@ WAVES_URL=https://waves.example.com waves sync
 
 `waves sync` runs once and exits: it runs each project's own collector, sends what each one printed, and is done. A scheduler (a launchd agent, a cron entry, a systemd timer) is the loop — a crash then costs one tick, and a machine that is asleep lets every wave go stale, which is exactly what the dashboard is for.
 
+On a Mac, the repository's `deploy/launchd/install.sh <https url>` installs one for you: `cloud.krakowski.waves.sync`, on `every` seconds and at login, with the URL, the config directory and the `PATH` you installed it with, and a log of its own that the wrapper cuts to its last 1000 lines once it passes 5000. It is installed only while `sync.json` is there, so a run with nothing configured is not a run at all.
+
 The projects are read from `~/.config/waves/sync.json` (`WAVES_CONFIG_DIR` overrides the directory). It is read with the same secret rule as a token file — not a link, a regular file you own, no group or other bit, nothing executable — and any problem with it is exit 2 with nothing run at all:
 
 ```json
@@ -144,6 +146,8 @@ The projects are read from `~/.config/waves/sync.json` (`WAVES_CONFIG_DIR` overr
 **Pacing and time.** Every write for one project — a first attempt or a retry — waits until a second has passed since that project's previous one, so a healthy tick is never answered with a `429`. The whole run has one budget of `every` seconds: a collector is given `min(timeoutSeconds, what is left)`, a project stops sending waves once the budget is spent, and every project not yet started is reported as skipped. The budget is checked between writes, and a write's own retry waits are held to it too: a wait that would pass the budget is refused rather than taken, so a `429` that asks for a minute near the end of a tick ends that wave as out of time instead of overrunning the next one. Each run starts at project index `floor(now / every) mod n` and wraps round, so a slow project costs the ones after it one tick rather than every tick.
 
 **What it prints.** One stdout line per project that worked — `waves sync: my-project: 2 waves, status` — and one stderr line per project that did not: `waves sync: <project>: <reason>`, with any collector stderr cut to a single line of 200 characters. Exit 0 when every project was looked after, 1 when any project failed or was skipped for time, and 2 when the configuration itself is wrong.
+
+**`--check`.** `waves sync --check` reads that file with the same reader, the same rules and the same messages, and prints the period it would use — one number on stdout and nothing else. It starts no collector and sends nothing, which is what makes it safe to ask before anything is written: an agent installed over a configuration this client refuses would log the same refusal every minute. A refusal is the same exit 2 and the same line a tick would print, and `deploy/launchd/install.sh` asks it before it renders the sync agent's plist.
 
 ## Configuration
 

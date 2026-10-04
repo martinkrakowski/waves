@@ -19,6 +19,12 @@ import {
 
 const SECOND_MS = 1000;
 
+/** A session and the schedule it found, which is all a tick needs to start. */
+interface Schedule {
+  readonly session: Session;
+  readonly config: SyncConfig;
+}
+
 /**
  * One run of every project in `sync.json`, and then this process exits.
  *
@@ -34,17 +40,7 @@ const SECOND_MS = 1000;
  * must not cost the others their tick.
  */
 export async function sync(deps: UseCaseDeps): Promise<number> {
-  const session = await openSession(deps.env, deps.files);
-  const path = syncConfigPath(session.configDir);
-  const file = await deps.files.readSecret(path, SYNC_CONFIG_FILE);
-  if (file === undefined) {
-    throw new UsageError(`no ${SYNC_CONFIG_FILE} in ${session.configDir}`);
-  }
-  const read = readSyncConfig(file.text);
-  if (!read.ok) {
-    throw new UsageError(read.errors.join("; "));
-  }
-  const config = read.config;
+  const { session, config } = await readSchedule(deps);
   const started = deps.clock.now();
   const deadline = started + config.every * SECOND_MS;
   let failed = false;
@@ -60,6 +56,41 @@ export async function sync(deps: UseCaseDeps): Promise<number> {
       (await runProject(session, config, project, deadline, deps)) || failed;
   }
   return failed ? EXIT_FAILURE : EXIT_OK;
+}
+
+/**
+ * Whether the schedule could be run at all, answered as the one number an
+ * installer needs: the period, on stdout and nothing else.
+ *
+ * It is `sync`'s own reading — the same secret rule, the same reader, the same
+ * messages — with nothing started and nothing sent, which is what makes it safe
+ * to ask before a plist is written. An agent whose configuration this client
+ * refuses would otherwise run every minute and log the same refusal every minute.
+ */
+export async function checkSync(deps: UseCaseDeps): Promise<number> {
+  const { config } = await readSchedule(deps);
+  deps.out(String(config.every));
+  return EXIT_OK;
+}
+
+/**
+ * The session and the schedule a run is about, read whole before anything is
+ * started: one entry that could not work fails the run rather than being found
+ * halfway through it, because a scheduled run has nobody to answer a question in
+ * the middle of.
+ */
+async function readSchedule(deps: UseCaseDeps): Promise<Schedule> {
+  const session = await openSession(deps.env, deps.files);
+  const path = syncConfigPath(session.configDir);
+  const file = await deps.files.readSecret(path, SYNC_CONFIG_FILE);
+  if (file === undefined) {
+    throw new UsageError(`no ${SYNC_CONFIG_FILE} in ${session.configDir}`);
+  }
+  const read = readSyncConfig(file.text);
+  if (!read.ok) {
+    throw new UsageError(read.errors.join("; "));
+  }
+  return { session, config: read.config };
 }
 
 /**

@@ -12,7 +12,7 @@ import { push } from "./push.js";
 import { register } from "./register.js";
 import { registerAll } from "./register-all.js";
 import { sendStatus } from "./status.js";
-import { sync } from "./sync.js";
+import { checkSync, sync } from "./sync.js";
 
 export interface CliIo {
   readonly out: (line: string) => void;
@@ -60,7 +60,9 @@ export async function run(
       return await sendStatus(parsed.command, useCase);
     }
     if (parsed.command.kind === "sync") {
-      return await sync(useCase);
+      return parsed.command.check
+        ? await checkSync(useCase)
+        : await sync(useCase);
     }
     return await remove(parsed.command, useCase);
   } catch (error) {

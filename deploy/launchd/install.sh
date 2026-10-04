@@ -5,12 +5,19 @@
 #
 #   sh deploy/launchd/install.sh https://waves.midnight.lan
 #
-# It is idempotent: it renders both templates, boots the agent out and back in,
-# and running it twice leaves the same two files and the same agent. Re-run it
+# It is idempotent: it renders both templates, boots the agents out and back in,
+# and running it twice leaves the same files and the same agents. Re-run it
 # after a node upgrade, which moves the pinned node and client paths.
+#
+# It installs the `waves sync` agent as well, and only when there is a
+# sync.json in the config directory: that file is the configuration of a run of
+# collectors, so an agent with nothing to run is not installed. When the file is
+# gone and an agent is loaded, that agent is booted out and removed.
 #
 # Nothing here reads, prints or copies the enrollment token. Its file is only
 # ever stat'ed, for its mode, and the token's path is what reaches the wrapper.
+# The sync agent never holds a token at all: waves sync reads each project's own
+# token itself, from the config directory the plist names.
 
 set -eu
 
@@ -20,8 +27,19 @@ LC_ALL=C
 export LC_ALL
 
 LABEL=cloud.krakowski.waves.register-all
+SYNC_LABEL=cloud.krakowski.waves.sync
 TEMPLATE_URL_SET='A-Za-z0-9 ._~:/?=&%+-'
 TEMPLATE_PATH_SET='A-Za-z0-9 /._@+-'
+# A PATH goes into the plist like a path does, and it is a colon-separated list,
+# so it is the same set plus the one character that separates its parts. Nothing
+# else may be added to it: the plist is XML, so a `<` or an `&` would either be
+# rendered wrong or be XML this file cannot hold.
+TEMPLATE_ENV_PATH_SET='A-Za-z0-9 /._@+:-'
+# sync.json's `every`, in seconds: the client's own bounds (`sync-config.ts`),
+# which install.sh still asks about itself because the number it is given is
+# rendered into XML and nothing rendered here is taken on trust.
+EVERY_MIN=10
+EVERY_MAX=100
 URL_MAX=200
 
 say() {
@@ -149,11 +167,18 @@ fi
 # that matters, and the fix for it is a directory name without one.
 support="$HOME/Library/Application Support/waves"
 wrapper="$support/register-all.sh"
+sync_wrapper="$support/sync.sh"
 agents="$HOME/Library/LaunchAgents"
 plist="$agents/$LABEL.plist"
+sync_plist="$agents/$SYNC_LABEL.plist"
 logs="$HOME/Library/Logs"
 log="$logs/waves-register-all.log"
-for path in "$node" "$client" "$config" "$token" "$wrapper" "$log"; do
+sync_log="$logs/waves-sync.log"
+# The sync paths are checked whether or not the agent is installed below. They
+# are the same directory and the same kind of name, so a home that would be
+# refused here has nothing to do with sync.json either.
+for path in "$node" "$client" "$config" "$token" "$wrapper" "$log" \
+  "$sync_wrapper" "$sync_plist" "$sync_log"; do
   outside_path=$(outside "$path" "$TEMPLATE_PATH_SET")
   if [ -n "$outside_path" ]; then
     refuse "the path $path holds a character install.sh will not render: $outside_path"
@@ -166,21 +191,127 @@ here=$(CDPATH= cd "$(dirname "$0")" && pwd) ||
   refuse "cannot find the directory install.sh lives in"
 wrapper_template="$here/register-all.sh.template"
 plist_template="$here/$LABEL.plist.template"
+sync_wrapper_template="$here/sync.sh.template"
+sync_plist_template="$here/$SYNC_LABEL.plist.template"
 [ -f "$wrapper_template" ] ||
   refuse "no wrapper template at $wrapper_template"
 [ -f "$plist_template" ] ||
   refuse "no plist template at $plist_template"
 
-# 5. The three directories and the log. umask 077 first, so the directories and
-# the log are 0700 and 0600 as they are made; the log is created here rather
+# 5. The sync agent's configuration, and whether there is one at all. The client
+# reads sync.json itself and refuses a file it cannot use with exit 2, so it is
+# asked about the file rather than read here: `waves sync --check` is that same
+# reading, with its own messages, and a file this script cannot judge — an array
+# where the projects should be, a key the client does not know, a collector named
+# by a relative path — is one an installed agent would refuse every minute. A
+# refusal here renders nothing, so a schedule the client will not run is never a
+# half-installed agent.
+sync_config="$config/sync.json"
+every=""
+env_path=""
+ca_file="${WAVES_CA_FILE:-}"
+sync_installed=no
+sync_removed=no
+sync_stray=no
+if [ -e "$sync_config" ] || [ -L "$sync_config" ]; then
+  if [ -L "$sync_config" ]; then
+    refuse "the sync.json at $sync_config is a symbolic link; it must be the file itself, not a link to it"
+  fi
+  if [ ! -f "$sync_config" ]; then
+    refuse "the sync.json at $sync_config is not a regular file"
+  fi
+  # The same three questions the token file is asked, in the script's own order.
+  sync_mode=$(stat -c %a "$sync_config" 2>/dev/null || stat -f %Lp "$sync_config")
+  case "$sync_mode" in
+    600 | 400) ;;
+    *) refuse "the sync.json at $sync_config is mode $sync_mode; waves sync requires 600 or 400, and so does this install" ;;
+  esac
+  sync_owner=$(stat -c %u "$sync_config" 2>/dev/null || stat -f %u "$sync_config")
+  if [ "$sync_owner" != "$uid" ]; then
+    refuse "the sync.json at $sync_config belongs to uid $sync_owner, not to you ($uid)"
+  fi
+
+  # The period, asked of the client that will use it: `WAVES_URL` and
+  # `WAVES_CONFIG_DIR` are what the run will have too, `--check` starts nothing
+  # and sends nothing, and it prints the effective period and nothing else. Its
+  # refusal is the reason, folded onto one line because a refusal here is one line.
+  if ! every=$(WAVES_URL="$url" WAVES_CONFIG_DIR="$config" \
+    "$node" "$client" sync --check 2>&1); then
+    refuse "$sync_config is not one waves sync will run: $(printf '%s' "$every" | tr '\n' ' ')"
+  fi
+  # The printed number is rendered into XML below, so it is checked here as well
+  # as by the client: a client that printed something no shell would call a
+  # number must not reach a plist.
+  case "$every" in
+    '' | *[!0-9]*)
+      refuse "waves sync read $sync_config and printed '$every', which is not a whole number of seconds for every"
+      ;;
+  esac
+  # The length is asked before the value is. A number with more digits than the
+  # bounds have is out of range whatever it is — `1e20` in JSON prints as twenty
+  # of them — and `test -lt` does not answer on one: it errors out, two errors
+  # make a false `if`, and the value goes on into StartInterval and into
+  # launchd. With the length asked first, the two numeric tests only ever see one
+  # to three digits, which both shells compare.
+  if [ "${#every}" -gt 3 ] || [ "$every" -lt "$EVERY_MIN" ] ||
+    [ "$every" -gt "$EVERY_MAX" ]; then
+    refuse "every is $every, and waves sync takes $EVERY_MIN to $EVERY_MAX seconds; the agent's interval would be a period no wave is pushed with"
+  fi
+
+  # The PATH the agent runs collectors with. launchd's own is
+  # /usr/bin:/bin:/usr/sbin:/sbin, and a collector that calls node or gh out of
+  # nvm or Homebrew would fail under the agent and pass by hand, so the PATH
+  # this script was run with is what the plist carries.
+  if [ -z "${PATH:-}" ]; then
+    refuse "PATH is empty; run install.sh from a shell with the PATH your collectors are found under"
+  fi
+  outside_env_path=$(outside "$PATH" "$TEMPLATE_ENV_PATH_SET")
+  if [ -n "$outside_env_path" ]; then
+    refuse "the PATH holds a character install.sh will not render: $outside_env_path"
+  fi
+  env_path=$PATH
+
+  # The certificate authority, which is the client's own variable: a run under
+  # the agent has only what the plist gives it, so a WAVES_CA_FILE the install was
+  # run with has to be in that plist or the run cannot verify the server. One that
+  # is absolute, that is there and that this script can render is rendered; one
+  # that is not is refused rather than rendered and hoped for.
+  if [ -n "$ca_file" ]; then
+    case "$ca_file" in
+      /*) ;;
+      *) refuse "the WAVES_CA_FILE path $ca_file is not absolute" ;;
+    esac
+    if [ ! -f "$ca_file" ]; then
+      refuse "the WAVES_CA_FILE path $ca_file is not a file waves could read"
+    fi
+    outside_ca=$(outside "$ca_file" "$TEMPLATE_PATH_SET")
+    if [ -n "$outside_ca" ]; then
+      refuse "the WAVES_CA_FILE path $ca_file holds a character install.sh will not render: $outside_ca"
+    fi
+  fi
+
+  [ -f "$sync_wrapper_template" ] ||
+    refuse "no wrapper template at $sync_wrapper_template"
+  [ -f "$sync_plist_template" ] ||
+    refuse "no plist template at $sync_plist_template"
+  sync_installed=yes
+fi
+
+# 6. The three directories and the logs. umask 077 first, so the directories and
+# the logs are 0700 and 0600 as they are made; each log is created here rather
 # than left to launchd, which would make it 0644 and would drop the output
-# silently when the directory was missing.
+# silently when the directory was missing. The sync log exists only when the
+# sync agent does.
 umask 077
 mkdir -p "$support" "$agents" "$logs"
 : >>"$log"
 chmod 600 "$log"
+if [ "$sync_installed" = yes ]; then
+  : >>"$sync_log"
+  chmod 600 "$sync_log"
+fi
 
-# 6. Render both templates. Each goes to a fixed temporary name in the
+# 7. Render both templates. Each goes to a fixed temporary name in the
 # directory it belongs in and is then moved, so the rename is within one
 # directory and an interrupted run leaves the old file rather than a half
 # written one. `|` is the delimiter because step 4 proved no path holds one.
@@ -201,27 +332,88 @@ sed -e "s|@URL@|$url_xml|" -e "s|@WRAPPER@|$wrapper|" -e "s|@LOG@|$log|" \
 chmod 644 "$agents/.$LABEL.plist.tmp"
 mv "$agents/.$LABEL.plist.tmp" "$plist"
 
-# 7. Load the agent. bootout first, so a second run replaces the loaded agent
+# The sync agent, when there is one to install. The period and PATH were proved
+# in step 5 and hold nothing XML cannot take.
+if [ "$sync_installed" = yes ]; then
+  sed -e "s|@NODE@|$node|" -e "s|@CLIENT@|$client|" -e "s|@LOG@|$sync_log|" \
+    "$sync_wrapper_template" >"$support/.sync.sh.tmp"
+  chmod 700 "$support/.sync.sh.tmp"
+  mv "$support/.sync.sh.tmp" "$sync_wrapper"
+
+  # The CA file's pair is either filled in or gone. A plist cannot hold an empty
+  # value — the client would read an empty WAVES_CA_FILE as a path — and a sed
+  # replacement cannot carry a line break on either platform, so the pair is
+  # deleted by a POSIX range rather than emptied.
+  ca_rule="s|@CA_FILE@|$ca_file|"
+  if [ -z "$ca_file" ]; then
+    ca_rule="/<key>WAVES_CA_FILE<\/key>/,/<\/string>/d"
+  fi
+  sed -e "s|@URL@|$url_xml|" -e "s|@WRAPPER@|$sync_wrapper|" \
+    -e "s|@LOG@|$sync_log|" -e "s|@CONFIG@|$config|" \
+    -e "s|@PATH@|$env_path|" -e "s|@EVERY@|$every|" -e "$ca_rule" \
+    "$sync_plist_template" >"$agents/.$SYNC_LABEL.plist.tmp"
+  chmod 644 "$agents/.$SYNC_LABEL.plist.tmp"
+  mv "$agents/.$SYNC_LABEL.plist.tmp" "$sync_plist"
+fi
+
+# 8. Load the agents. bootout first, so a second run replaces the loaded agent
 # instead of failing to add one that is already there, and its failure is not
 # an error: there may be nothing loaded. bootstrap right after a bootout is
 # asynchronous on macOS and can answer "Bootstrap failed: 37/5" for a moment
 # while the old one drains, so it is retried.
 launchctl="${LAUNCHCTL:-launchctl}"
 domain="gui/$(id -u)"
-"$launchctl" bootout "$domain/$LABEL" 2>/dev/null || true
-attempt=1
-while :; do
-  if "$launchctl" bootstrap "$domain" "$plist"; then
-    break
-  fi
-  if [ "$attempt" -ge 5 ]; then
-    refuse "launchctl bootstrap $domain failed $attempt times, and the agent this replaced was already booted out, so nothing is scheduled now; the plist is at $plist and the log is at $log; run this again from a login session"
-  fi
-  attempt=$((attempt + 1))
-  sleep 1
-done
 
-# 8. What was installed. The token's path is deliberately absent from this: the
+load() {
+  load_label=$1
+  load_plist=$2
+  load_log=$3
+  "$launchctl" bootout "$domain/$load_label" 2>/dev/null || true
+  attempt=1
+  while :; do
+    if "$launchctl" bootstrap "$domain" "$load_plist"; then
+      return 0
+    fi
+    if [ "$attempt" -ge 5 ]; then
+      refuse "launchctl bootstrap $domain failed $attempt times, and the agent this replaced was already booted out, so $load_label is not scheduled now; the plist is at $load_plist and the log is at $load_log; run this again from a login session"
+    fi
+    attempt=$((attempt + 1))
+    sleep 1
+  done
+}
+
+load "$LABEL" "$plist" "$log"
+
+# A bootout that fails leaves the job running, and deleting the files of a job
+# that is still loaded takes the schedule away from the owner without stopping the
+# program. `launchctl print` is the question that answers whether the bootout
+# took, and it is asked before anything is deleted.
+refuse_if_loaded() {
+  if "$launchctl" print "$domain/$1" >/dev/null 2>&1; then
+    refuse "the agent $1 is still loaded, so nothing of its was removed"
+  fi
+}
+
+if [ "$sync_installed" = yes ]; then
+  load "$SYNC_LABEL" "$sync_plist" "$sync_log"
+elif [ -e "$sync_plist" ]; then
+  # sync.json is gone but the agent it scheduled is loaded. Leaving it would be
+  # a timer with nothing to run, filling the log with a refusal a minute. The
+  # bootout is only attempted because the plist is here: an agent that was never
+  # installed is not a thing to take out.
+  "$launchctl" bootout "$domain/$SYNC_LABEL" 2>/dev/null || true
+  refuse_if_loaded "$SYNC_LABEL"
+  rm -f "$sync_plist" "$sync_wrapper"
+  sync_removed=yes
+elif [ -e "$sync_wrapper" ]; then
+  # No sync.json and no plist: what is left is a wrapper an install interrupted
+  # between its two renames, naming a program the agent would have run. It goes
+  # with the rest rather than waiting for an install that may never come.
+  rm -f "$sync_wrapper"
+  sync_stray=yes
+fi
+
+# 9. What was installed. The token's path is deliberately absent from this: the
 # owner knows where it is, and a line that printed it would be one more copy in
 # a terminal scrollback.
 say "install.sh: installed $LABEL, running hourly and at login"
@@ -232,3 +424,22 @@ say "  node     $node"
 say "  client   $client"
 say "  read the log after the first run: it opens with one dated line per run"
 say "  re-run this after a node upgrade; sh deploy/launchd/uninstall.sh removes it"
+
+if [ "$sync_installed" = yes ]; then
+  say "install.sh: installed $SYNC_LABEL, running every $every seconds and at login"
+  say "  wrapper  $sync_wrapper"
+  say "  plist    $sync_plist"
+  say "  log      $sync_log"
+  say "  every    $every seconds, from $sync_config"
+  if [ -n "$ca_file" ]; then
+    say "  ca file  $ca_file"
+  fi
+  say "  the log is shortened to its last 1000 lines once it passes 5000"
+else
+  say "no sync.json in $config; the sync agent is not installed"
+  if [ "$sync_removed" = yes ]; then
+    say "  the $SYNC_LABEL it had scheduled was booted out, and its plist and wrapper removed"
+  elif [ "$sync_stray" = yes ]; then
+    say "  a $SYNC_LABEL wrapper an earlier install left behind was removed; it had no plist"
+  fi
+fi
