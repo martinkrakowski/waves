@@ -88,7 +88,9 @@ function reasonOf(
   if (outcome.kind === "overflow") {
     return "the collector printed more on stdout than this client reads";
   }
-  return `the collector could not be started: ${outcome.message}`;
+  // The message is the kernel's, and it names the program the file named, so it is
+  // made safe to print like every other word this client did not write.
+  return `the collector could not be started: ${safeText(outcome.message)}`;
 }
 
 /** The exit itself, and the one thing it says that the run cannot work without. */

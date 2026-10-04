@@ -153,25 +153,36 @@ async function runProject(
         deps.err(`${label(project)}: ${wave.wave}: ${error.message}`);
       }
     }
+    let statusSent = false;
     if (collection.output.status !== undefined) {
       if (deps.clock.now() >= deadline) {
         deps.err(`${label(project)}: out of time after ${sent} waves`);
         return true;
       }
-      await sendProjectStatus(
-        {
-          session,
-          project: project.project,
-          token,
-          input: collection.output.status,
-          intervalSeconds: config.every,
-        },
-        send,
-      );
-      deps.out(`${label(project)}: ${sent} waves, status`);
-      return refused;
+      try {
+        await sendProjectStatus(
+          {
+            session,
+            project: project.project,
+            token,
+            input: collection.output.status,
+            intervalSeconds: config.every,
+          },
+          send,
+        );
+        statusSent = true;
+      } catch (error) {
+        // A status the contract will not take is the status's own line, exactly as
+        // an invalid wave is that wave's: the waves this tick were good and are
+        // already stored, and the project's next tick is a whole tick away.
+        if (!(error instanceof UsageError)) {
+          throw error;
+        }
+        refused = true;
+        deps.err(`${label(project)}: status: ${error.message}`);
+      }
     }
-    deps.out(`${label(project)}: ${sent} waves`);
+    deps.out(`${label(project)}: ${sent} waves${statusSent ? ", status" : ""}`);
     return refused;
   } catch (error) {
     if (

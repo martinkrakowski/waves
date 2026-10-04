@@ -1,4 +1,5 @@
-import { realpath } from "node:fs/promises";
+import { realpath, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -114,6 +115,34 @@ describe("a program that will not stop", () => {
     // seconds here, so the cap is part of what this asserts.
     expect(Date.now() - started).toBeLessThan(5000);
   });
+
+  it("is a timeout even when the kill never lands and exit never comes", async () => {
+    // A signal the kernel will not deliver — EPERM, or a process in
+    // uninterruptible I/O — means no `exit` event, and a scheduled run that waits
+    // for one never fires again. The kill here does nothing at all, which is what
+    // makes that the only honest way to see the cap.
+    const pidFile = join(cwd, "unkillable.pid");
+    const sleeper = [
+      `require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));`,
+      "setTimeout(()=>{},30000);",
+    ].join("");
+    const started = Date.now();
+    const outcome = await processRunner({ kill: () => undefined }).run({
+      command: [NODE, "-e", sleeper],
+      cwd,
+      env: { PATH: "/usr/bin" },
+      timeoutMs: 200,
+    });
+
+    expect(outcome).toEqual({ kind: "timeout" });
+    expect(Date.now() - started).toBeLessThan(DRAIN_CAP_MS + 4000);
+
+    // The program really is still running, which is the whole point: nothing this
+    // client can do about it, and its pipe and its process handle are both let go.
+    const pid = Number(await readFile(pidFile, "utf8"));
+    expect(isAlive(pid)).toBe(true);
+    process.kill(pid, "SIGKILL");
+  }, 20_000);
 
   it("is an overflow once its stdout is past the cap, not a timeout", async () => {
     const outcome = await run(
@@ -237,6 +266,21 @@ describe("a program that could not be run at all", () => {
     const outcome = await run("", { cwd: "/nonexistent/waves" });
 
     expect(outcome.kind).toBe("spawn-error");
+  });
+
+  it("is a spawn error when the directory is a file, which Node throws at", async () => {
+    // Every other refusal of a spawn arrives as an `error` event; a `cwd` naming a
+    // file is thrown before there is a handle to listen with, so it has to be
+    // caught here or it escapes as a crash and takes the whole run with it.
+    const blocker = join(cwd, "not-a-directory");
+    await writeFile(blocker, "not a directory");
+
+    const outcome = await run("", { cwd: blocker });
+
+    expect(outcome.kind).toBe("spawn-error");
+    expect(outcome.kind === "spawn-error" && outcome.message).toContain(
+      "ENOTDIR",
+    );
   });
 });
 

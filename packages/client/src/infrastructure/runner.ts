@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import type { ChildProcessByStdio } from "node:child_process";
 import { finished } from "node:stream";
 import type { Readable } from "node:stream";
 
@@ -18,6 +19,16 @@ export const MAX_STDERR_BYTES = 64 * 1024;
  */
 export const DRAIN_CAP_MS = 1000;
 
+/** The seams a test replaces, and nothing else: the real ones are the defaults. */
+export interface RunnerOptions {
+  /** Sends `SIGKILL` to a process group. A test can make it do nothing at all. */
+  readonly kill?: (pid: number) => void;
+}
+
+function killGroupOf(pid: number): void {
+  process.kill(-pid, "SIGKILL");
+}
+
 /**
  * Runs one program and answers with how it ended.
  *
@@ -29,11 +40,15 @@ export const DRAIN_CAP_MS = 1000;
  * happens after *every* exit, so a child that outlives its own work by leaving
  * something behind does not leave it behind for the next tick.
  */
-export function processRunner(): Runner {
-  return { run: (request) => runOnce(request) };
+export function processRunner(options: RunnerOptions = {}): Runner {
+  const killGroup = options.kill ?? killGroupOf;
+  return { run: (request) => runOnce(request, killGroup) };
 }
 
-async function runOnce(request: RunRequest): Promise<RunOutcome> {
+async function runOnce(
+  request: RunRequest,
+  kill: (pid: number) => void,
+): Promise<RunOutcome> {
   const [program, ...args] = request.command;
   if (program === undefined || program === "") {
     // Node answers an empty program by throwing before it returns a handle, so
@@ -42,21 +57,39 @@ async function runOnce(request: RunRequest): Promise<RunOutcome> {
   }
   const maxStdout = request.maxStdout ?? MAX_STDOUT_BYTES;
   const maxStderr = request.maxStderr ?? MAX_STDERR_BYTES;
-  const child = spawn(program, args, {
-    cwd: request.cwd,
-    env: { ...request.env },
-    detached: true,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  let child: ChildProcessByStdio<null, Readable, Readable>;
+  try {
+    child = spawn(program, args, {
+      cwd: request.cwd,
+      env: { ...request.env },
+      detached: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (error) {
+    // Everything the kernel refuses with a code Node turns into an `error` event
+    // arrives below; anything else it throws before it returns a handle — a `cwd`
+    // naming a file is ENOTDIR. That is still a collector that could not be
+    // started, and it is that project's failure rather than the end of the run.
+    return { kind: "spawn-error", message: messageOf(error) };
+  }
 
   return await new Promise<RunOutcome>((resolve) => {
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
+    const pipes = [child.stdout, child.stderr];
     let outBytes = 0;
     let errKept = 0;
     let stderrTruncated = false;
     let overflowed = false;
     let timedOut = false;
+    /** Armed only when a kill was sent and `exit` may never come. */
+    let giveUp: NodeJS.Timeout | undefined;
+
+    const destroyPipes = (): void => {
+      for (const pipe of pipes) {
+        pipe.destroy();
+      }
+    };
 
     /**
      * The whole group, and never the child alone. A program that never started has
@@ -67,7 +100,7 @@ async function runOnce(request: RunRequest): Promise<RunOutcome> {
     const killGroup = (): void => {
       if (child.pid !== undefined) {
         try {
-          process.kill(-child.pid, "SIGKILL");
+          kill(child.pid);
         } catch {
           // Nothing here can be done about it, and a group that survived it is
           // the one thing a caller cannot be told about from a signal handler.
@@ -78,6 +111,17 @@ async function runOnce(request: RunRequest): Promise<RunOutcome> {
     const timer = setTimeout(() => {
       timedOut = true;
       killGroup();
+      // A signal that cannot be delivered — EPERM, or a child in uninterruptible
+      // I/O — means `exit` may never arrive, and a scheduled run that waits for
+      // it is a run that never ends and never fires again. So the wait is capped
+      // from here too: the pipes go, the child is unreferenced so it cannot hold
+      // this process open, and the answer is a timeout whether or not the kernel
+      // got round to it.
+      giveUp = setTimeout(() => {
+        destroyPipes();
+        child.unref();
+        settle({ kind: "timeout" });
+      }, DRAIN_CAP_MS);
     }, request.timeoutMs);
 
     child.stdout.on("data", (chunk: Buffer) => {
@@ -114,12 +158,16 @@ async function runOnce(request: RunRequest): Promise<RunOutcome> {
 
     /**
      * The one answer this run gives. A promise keeps the first answer it is
-     * given, so a late `error` after an `exit` changes nothing; what every answer
-     * has to do is stop the timeout, because a timer left armed is an event loop
-     * kept alive for the rest of its budget.
+     * given, so a late `error`, `exit` or give-up after another changes nothing;
+     * what every answer has to do is stop both timers, because a timer left armed
+     * is an event loop kept alive for the rest of its budget.
      */
     const settle = (outcome: RunOutcome): void => {
       clearTimeout(timer);
+      if (giveUp !== undefined) {
+        clearTimeout(giveUp);
+        giveUp = undefined;
+      }
       resolve(outcome);
     };
 
@@ -134,7 +182,7 @@ async function runOnce(request: RunRequest): Promise<RunOutcome> {
     child.on("exit", (code) => {
       clearTimeout(timer);
       killGroup();
-      void drain([child.stdout, child.stderr]).then(() => {
+      void drain(pipes, destroyPipes).then(() => {
         if (timedOut) {
           settle({ kind: "timeout" });
           return;
@@ -164,13 +212,11 @@ async function runOnce(request: RunRequest): Promise<RunOutcome> {
  * both pipes are destroyed when the cap passes, which is what stops a collector
  * somebody else's process is holding open from outliving the run.
  */
-function drain(pipes: readonly Readable[]): Promise<void> {
+function drain(pipes: readonly Readable[], destroy: () => void): Promise<void> {
   return new Promise<void>((ready) => {
     let left = pipes.length + 1;
     const cap = setTimeout(() => {
-      for (const pipe of pipes) {
-        pipe.destroy();
-      }
+      destroy();
       ready();
     }, DRAIN_CAP_MS);
     const tick = (): void => {
@@ -186,4 +232,15 @@ function drain(pipes: readonly Readable[]): Promise<void> {
     }
     tick();
   });
+}
+
+/**
+ * What a spawn that threw had to say. Everything Node throws here is one of its
+ * own errors — a `cwd` that is not a directory, a program that is not a string, an
+ * argument of the wrong type — and their message is the code and the reason the
+ * kernel gave. A token crossed no socket to reach here, so there is nothing in it
+ * to keep out of a log.
+ */
+function messageOf(error: unknown): string {
+  return (error as Error).message;
 }

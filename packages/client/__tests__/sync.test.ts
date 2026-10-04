@@ -198,6 +198,16 @@ describe("a collector that failed", () => {
       line: "waves sync: waves-demo: the collector could not be started: spawn ENOENT",
     },
     {
+      // The message is the kernel's, and it carries the program's own name: it is
+      // made safe to print like every other word this client did not write.
+      name: "cannot be started, with escapes in what the kernel said",
+      outcome: {
+        kind: "spawn-error",
+        message: "spawn \u001b[31m/nope\u001b[m ENOENT\n",
+      },
+      line: "waves sync: waves-demo: the collector could not be started: spawn /nope ENOENT",
+    },
+    {
       name: "prints something that is not JSON",
       outcome: exited("not json"),
       line: "waves sync: waves-demo: the collector printed something that is not JSON",
@@ -343,6 +353,46 @@ describe("a wave the contract will not take", () => {
       `${WAVES}/${DEMO}/waves/wv9`,
       `${WAVES}/${DEMO}/waves/wv7`,
     ]);
+  });
+});
+
+describe("a status the contract will not take", () => {
+  it("is the status's own line, and the waves of that tick still count", async () => {
+    const built = run({
+      file: syncFile([entry(DEMO)]),
+      runs: [
+        exited(printed(["wv5", "wv9"], { backlogg: { state: "recorded" } })),
+      ],
+      script: [reply(200, ACCEPTED), reply(200, ACCEPTED)],
+    });
+
+    expect(await sync(built.deps)).toBe(1);
+    // Both waves are already stored, so the project is counted as it was sent and
+    // the run is a failure because one of its documents was not.
+    expect(built.err).toEqual([
+      `waves sync: waves-demo: status: the status is not valid:\n  /backlogg: unknown key`,
+    ]);
+    expect(built.out).toEqual(["waves sync: waves-demo: 2 waves"]);
+    expect(built.requests.map((request) => request.url)).toEqual([
+      `${WAVES}/${DEMO}/waves/wv5`,
+      `${WAVES}/${DEMO}/waves/wv9`,
+    ]);
+  });
+
+  it("is the project's own failure when the server refused it", async () => {
+    const built = run({
+      file: syncFile([entry(DEMO)]),
+      runs: [exited(printed(["wv5"], { prs: { skipped: 1 } }))],
+      script: [reply(200, ACCEPTED), reply(403, '{"error":"another project"}')],
+    });
+
+    expect(await sync(built.deps)).toBe(1);
+    // A refusal from the server is not a document this client could have tidied up,
+    // so it ends the project the way any other refused write does.
+    expect(built.err).toEqual([
+      "waves sync: waves-demo: status failed: 403 Forbidden\n  another project",
+    ]);
+    expect(built.out).toEqual([]);
   });
 });
 

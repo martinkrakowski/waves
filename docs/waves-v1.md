@@ -390,7 +390,7 @@ no rule reads it.
 In the wave view, a stale wave keeps its lane data but a lane whose
 `derived.alive` is `true` is rendered as `"unknown"`, because the pusher has
 stopped telling the server whether the process is still up
-(`aliveView`, …/read-model.ts:275-277).
+(`aliveView`, `…/read-model.ts:275-277`).
 
 ### 4.1 Keeping waves fresh
 
