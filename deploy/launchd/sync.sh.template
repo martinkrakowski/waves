@@ -42,11 +42,17 @@ done
 # `wc -l` on BSD pads its answer with spaces, so the spaces go before the
 # comparison. The whole thing is under `if`, so a log that cannot be counted is
 # not a run that does not happen.
+#
+# The temporary file is made in a subshell with its own umask, so it is 0600
+# while it exists however permissive launchd's umask is: it is a copy of the log,
+# which is the only record of what the runs did, and a second copy of it in the
+# same directory is one more thing to clean up. The subshell ends with the tail,
+# so this script's own umask — and the client's run under it — is untouched.
 if [ -f "$log" ]; then
   lines=$(wc -l <"$log" | tr -d ' ')
   if [ "$lines" -gt 5000 ]; then
     tmp="$log.truncating.$$"
-    if tail -n 1000 "$log" >"$tmp" && cat "$tmp" >"$log"; then
+    if (umask 077; tail -n 1000 "$log" >"$tmp") && cat "$tmp" >"$log"; then
       rm -f "$tmp"
       echo "$(stamp) waves sync: the log was $lines lines; kept its last 1000"
     else

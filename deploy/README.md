@@ -346,8 +346,9 @@ The same `install.sh` installs a second agent, `cloud.krakowski.waves.sync`,
 **only when `~/.config/waves/sync.json` is there** — that file is the whole
 configuration of a run, so an agent with nothing to run is not installed, and
 without it the script says so in one line and installs the register-all agent
-alone. With a `sync.json` of mode 0600 or 0400 (the client's own rule, which the
-install repeats) it reads the one number the timer needs:
+alone. With a `sync.json` of mode 0600 or 0400 (the client asks for 0600 or
+stricter, which also takes a 0200; the install takes only these two, so its rule
+is the stricter of the two) it reads the one number the timer needs:
 
 ```sh
 sh deploy/launchd/install.sh https://waves.midnight.lan

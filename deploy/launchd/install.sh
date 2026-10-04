@@ -258,12 +258,13 @@ if [ -e "$sync_config" ] || [ -L "$sync_config" ]; then
 
   # `every` is read by node, because it is JSON and the client is what parses
   # it. The program is fixed text and the file's path is an argument, never part
-  # of it: nothing a file holds can become part of a command line here. It
-  # prints one number — the period, or the default when the key is absent — and
-  # exits non-zero with a reason on stderr for anything else, which the `if`
-  # turns into a refusal rather than letting `set -e` abort the script with no
-  # word of its own.
-  if ! every=$("$node" -e "$read_every" "$sync_config" "$EVERY_DEFAULT" 2>/dev/null); then
+  # of it: nothing a file holds can become part of a command line here. `--` ends
+  # node's own options, so a path beginning with a dash is a path and not one of
+  # its switches. It prints one number — the period, or the default when the key
+  # is absent — and exits non-zero with a reason on stderr for anything else,
+  # which the `if` turns into a refusal rather than letting `set -e` abort the
+  # script with no word of its own.
+  if ! every=$("$node" -e "$read_every" -- "$sync_config" "$EVERY_DEFAULT" 2>/dev/null); then
     refuse "waves sync could not use $sync_config: it is not JSON, or its every is not a whole number of seconds; run waves sync by hand for its own refusal"
   fi
   case "$every" in
@@ -271,7 +272,14 @@ if [ -e "$sync_config" ] || [ -L "$sync_config" ]; then
       refuse "waves sync read $sync_config and printed '$every', which is not a whole number of seconds for every"
       ;;
   esac
-  if [ "$every" -lt "$EVERY_MIN" ] || [ "$every" -gt "$EVERY_MAX" ]; then
+  # The length is asked before the value is. A number with more digits than the
+  # bounds have is out of range whatever it is — `1e20` in JSON prints as twenty
+  # of them — and `test -lt` does not answer on one: it errors out, two errors
+  # make a false `if`, and the value goes on into StartInterval and into
+  # launchd. With the length asked first, the two numeric tests only ever see one
+  # to three digits, which both shells compare.
+  if [ "${#every}" -gt 3 ] || [ "$every" -lt "$EVERY_MIN" ] ||
+    [ "$every" -gt "$EVERY_MAX" ]; then
     refuse "every is $every, and waves sync takes $EVERY_MIN to $EVERY_MAX seconds; the agent's interval would be a period no wave is pushed with"
   fi
 
@@ -365,7 +373,7 @@ load() {
       return 0
     fi
     if [ "$attempt" -ge 5 ]; then
-      refuse "launchctl bootstrap $domain failed $attempt times, and the agent this replaced was already booted out, so nothing is scheduled now; the plist is at $load_plist and the log is at $load_log; run this again from a login session"
+      refuse "launchctl bootstrap $domain failed $attempt times, and the agent this replaced was already booted out, so $load_label is not scheduled now; the plist is at $load_plist and the log is at $load_log; run this again from a login session"
     fi
     attempt=$((attempt + 1))
     sleep 1

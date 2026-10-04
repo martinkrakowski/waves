@@ -7,7 +7,8 @@
 #
 # It takes both agents out of the session and deletes the files they installed.
 # The register-all agent is always taken out, loaded or not; the sync agent only
-# when its plist is there, which is what tells this script there was one.
+# when its plist is there, which is what tells this script there was one, though
+# its wrapper is removed either way.
 # It leaves both logs, ~/.config/waves, every token file and sync.json alone:
 # those are the owner's, a log is the only record of what the runs did, a token
 # file is the credential the client reads, and sync.json is the configuration the
@@ -54,11 +55,16 @@ say "  kept     $log (the record of every run; delete it yourself if you want it
 say "  kept     $config and every token file in it"
 
 # The sync agent was only ever installed when sync.json was there, so its plist
-# is what says whether there is one to remove. Nothing is booted out and nothing
-# is reported for an agent this machine never had.
+# is what says whether there is an agent to take out. Its wrapper goes either
+# way: an install interrupted between the two renames leaves a wrapper with no
+# plist, and a wrapper is a shell script naming a program the agent would have
+# run — one this script should not leave behind on the strength of a file that is
+# missing.
+rm -f "$sync_wrapper"
+
 if [ -e "$sync_plist" ]; then
   "$launchctl" bootout "$domain/$SYNC_LABEL" 2>/dev/null || true
-  rm -f "$sync_plist" "$sync_wrapper"
+  rm -f "$sync_plist"
 
   say "uninstall.sh: removed $SYNC_LABEL"
   say "  removed  $sync_plist"
@@ -66,7 +72,7 @@ if [ -e "$sync_plist" ]; then
   say "  kept     $sync_log (the record of every run; delete it yourself if you want it gone)"
   say "  kept     $config/sync.json (the sync agent is installed again from it)"
 else
-  say "uninstall.sh: no $SYNC_LABEL was installed, so none was removed"
+  say "uninstall.sh: no $SYNC_LABEL.plist was there, so no agent was booted out"
 fi
 
 say "  to install it again: sh deploy/launchd/install.sh <https url>"

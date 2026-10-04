@@ -734,6 +734,15 @@ describe("the sync agent", { timeout: 20_000 }, () => {
     syncRefusal(syncWorld({ sync: syncJson(1e21) }), "whole number");
   });
 
+  it("refuses a period too long for a shell to compare, before it compares it", () => {
+    // 1e20 is a whole number in JSON too, and prints as twenty-one digits.
+    // `test -lt` does not answer on a number that long — it fails, both halves of
+    // the `||` fail, and a failed `if` is a false one — so without the length
+    // asked first this value would be rendered into StartInterval and the agent
+    // bootstrapped, on a period the client refuses.
+    syncRefusal(syncWorld({ sync: syncJson(1e20) }), "10 to 100");
+  });
+
   it("refuses a sync.json that is not JSON, with the client's own reason", () => {
     syncRefusal(syncWorld({ sync: "{\n" }), "could not use");
   });
@@ -1010,21 +1019,44 @@ describe("uninstall.sh", { timeout: 20_000 }, () => {
     expect(result.stdout).toContain("sync.json");
   });
 
-  it("says it removed no sync agent when none was there", () => {
-    // Nothing is booted out and nothing is reported for an agent this machine
-    // never had, which is what keeps the register-all call list unchanged.
+  it("says it booted nothing out when there is no sync plist", () => {
+    // Nothing is booted out for an agent this machine never had, which is what
+    // keeps the register-all call list unchanged.
     const w = world();
     expect(w.run(INSTALL, [GOOD_URL]).status).toBe(0);
 
     const result = w.run(UNINSTALL, []);
 
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toContain(`no ${SYNC_LABEL} was installed`);
+    expect(result.stdout).toContain(
+      `no ${SYNC_LABEL}.plist was there, so no agent was booted out`,
+    );
     expect(w.calls()).toEqual([
       `bootout gui/${UID}/${LABEL}`,
       `bootstrap gui/${UID} ${w.plist}`,
       `bootout gui/${UID}/${LABEL}`,
     ]);
+  });
+
+  it("removes a sync wrapper an interrupted install left with no plist", () => {
+    // install.sh renames the wrapper and then the plist, so an install killed
+    // between the two leaves a rendered wrapper that names a program the agent
+    // would have run, with no plist to say an agent was ever there.
+    const w = syncWorld({ sync: syncJson() });
+    expect(w.run(INSTALL, [GOOD_URL]).status).toBe(0);
+    rmSync(w.syncPlist);
+    const installed = w.calls().length;
+
+    const result = w.run(UNINSTALL, []);
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(existsSync(w.syncWrapper)).toBe(false);
+    expect(result.stdout).toContain(
+      `no ${SYNC_LABEL}.plist was there, so no agent was booted out`,
+    );
+    // The uninstall's own launchctl call is register-all's alone: there is no
+    // plist that could have been loaded, and none is booted out to say so.
+    expect(w.calls().slice(installed)).toEqual([`bootout gui/${UID}/${LABEL}`]);
   });
 });
 
