@@ -17,6 +17,7 @@ export const ALLOW_INSECURE_VARIABLE = "WAVES_ALLOW_INSECURE_HTTP";
 export const CONFIG_DIRECTORY = "waves";
 export const CA_FILE_NAME = "ca.crt";
 export const TOKEN_SUFFIX = ".token";
+export const SYNC_CONFIG_FILE = "sync.json";
 export const INSECURE_ENABLED = "1";
 
 /** Everything a command needs before it can send anything: the origin, the certificate authority and where the tokens live. */
@@ -41,6 +42,16 @@ function optional(env: Environment, name: string): string | undefined {
 
 export function tokenPath(configDir: string, project: string): string {
   return `${configDir}/${project}${TOKEN_SUFFIX}`;
+}
+
+/**
+ * The file a scheduled run reads: which programs to start, and how often. It is
+ * in the same directory as the tokens because it is the same kind of thing — the
+ * owner's own, held to the same rule — and because a machine that has a token
+ * file has the directory that holds the schedule beside it.
+ */
+export function syncConfigPath(configDir: string): string {
+  return `${configDir}/${SYNC_CONFIG_FILE}`;
 }
 
 /**
@@ -109,17 +120,31 @@ export function readProject(env: Environment): string {
 }
 
 /**
- * The token of `WAVES_PROJECT`, read from the config directory. Whether the file
- * can be trusted at all — a link, another owner, a loose mode — is settled by
- * the adapter that opens it, which refuses with the reason rather than handing
- * over whatever it found.
+ * The token of `WAVES_PROJECT`, read from the config directory.
+ *
+ * Which project a command belongs to is the environment's answer, and it is asked
+ * first: a command line that names no project is refused before a file is opened,
+ * and `sync`, which is sent for one project at a time out of a file it read
+ * itself, does not come through here at all.
  */
 export async function readProjectToken(
   session: Session,
   files: Files,
   env: Environment,
 ): Promise<ProjectToken> {
-  const project = readProject(env);
+  return await readTokenFor(session, files, readProject(env));
+}
+
+/**
+ * The token of a project the caller names. Whether the file can be trusted at all
+ * — a link, another owner, a loose mode — is settled by the adapter that opens
+ * it, which refuses with the reason rather than handing over whatever it found.
+ */
+export async function readTokenFor(
+  session: Session,
+  files: Files,
+  project: string,
+): Promise<ProjectToken> {
   const path = tokenPath(session.configDir, project);
   const file = await files.readSecret(path);
   if (file === undefined) {

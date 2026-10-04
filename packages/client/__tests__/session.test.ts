@@ -6,6 +6,7 @@ import {
   openSession,
   readProject,
   readProjectToken,
+  readTokenFor,
   tokenPath,
   transportFor,
 } from "../src/application/session.js";
@@ -214,6 +215,41 @@ describe("readProjectToken", () => {
         env,
       ),
     ).rejects.toBe(refusal);
+  });
+});
+
+describe("readTokenFor", () => {
+  const session = {
+    endpoint: {
+      origin: "https://waves.example.com",
+      secure: true,
+      warnInsecure: false,
+    },
+    configDir: "/run/waves",
+  };
+
+  it("reads the file of the project it was given, not the environment's", async () => {
+    const files = fakeFiles({
+      "/run/waves/waves-demo.token": { text: "demo\n", mode: 0o600 },
+      "/run/waves/client-portal.token": { text: "portal\n", mode: 0o600 },
+    });
+
+    expect(await readTokenFor(session, files.files, "client-portal")).toEqual({
+      project: "client-portal",
+      token: "portal",
+    });
+    expect(await readTokenFor(session, files.files, "waves-demo")).toEqual({
+      project: "waves-demo",
+      token: "demo",
+    });
+  });
+
+  it("names where the token of a project it cannot read should be", async () => {
+    await expect(
+      readTokenFor(session, fakeFiles().files, "client-portal"),
+    ).rejects.toThrow(
+      "no token for client-portal at /run/waves/client-portal.token",
+    );
   });
 });
 

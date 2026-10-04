@@ -2,6 +2,7 @@ import { type CliIo, run } from "./application/entrypoint.js";
 import type { CliDeps } from "./application/ports.js";
 import { environment } from "./infrastructure/env.js";
 import { fileSystem } from "./infrastructure/fs.js";
+import { processRunner } from "./infrastructure/runner.js";
 import { standardInput } from "./infrastructure/stdin.js";
 import { systemClock, systemSleeper } from "./infrastructure/timers.js";
 import { createTransport } from "./infrastructure/transport.js";
@@ -39,6 +40,7 @@ export async function main(
     clock: overrides.clock ?? systemClock(),
     sleeper: overrides.sleeper ?? systemSleeper(),
     transport: overrides.transport ?? ((options) => createTransport(options)),
+    runner: overrides.runner ?? processRunner(),
   };
   return await run(argv, io, deps);
 }

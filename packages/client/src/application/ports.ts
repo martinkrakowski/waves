@@ -45,8 +45,13 @@ export interface Files {
    * A file holding a secret. It is opened without following a link and checked
    * before a byte is read, so `readSecret` throws a `FileRefusal` rather than
    * returning the contents of whatever a link pointed at.
+   *
+   * `name` is how this file is called in a refusal that has to name it — a
+   * `sync.json` is held to the same rule as a token, and saying "the token file"
+   * about it would send the owner looking in the wrong place. The check itself is
+   * the same either way.
    */
-  readSecret(path: string): Promise<FileRead | undefined>;
+  readSecret(path: string, name?: string): Promise<FileRead | undefined>;
   /**
    * The rules the directory the tokens live in must satisfy: not a link, not
    * owned by somebody else, and reachable only by its owner. Asked before an
@@ -101,6 +106,46 @@ export interface Transport {
   send(request: HttpRequest): Promise<TransportOutcome>;
 }
 
+/**
+ * One program the client runs: a project's own collector. The command is the
+ * program and its arguments as an array, because it is spawned without a shell —
+ * there is no quoting to get right and nothing in a command line is expanded.
+ */
+export interface RunRequest {
+  readonly command: readonly string[];
+  readonly cwd: string;
+  /** The collector's whole environment, and nothing of this client's own. */
+  readonly env: Readonly<Record<string, string>>;
+  readonly timeoutMs: number;
+  readonly maxStdout?: number;
+  readonly maxStderr?: number;
+}
+
+/**
+ * How a program ended. Only an `exit` with a code of 0 is a collection; every
+ * other answer is that project's failure and nothing it printed is used.
+ *
+ * `exit` carries the streams as they were kept: stdout whole, stderr cut at its
+ * cap with `stderrTruncated` saying so, because a note in a log is worth a line
+ * and not a megabyte. A program killed by a signal has no code, which is why
+ * `code` is `number | null`.
+ */
+export type RunOutcome =
+  | {
+      readonly kind: "exit";
+      readonly code: number | null;
+      readonly stdout: string;
+      readonly stderr: string;
+      readonly stderrTruncated: boolean;
+    }
+  | { readonly kind: "timeout" }
+  | { readonly kind: "overflow" }
+  | { readonly kind: "spawn-error"; readonly message: string };
+
+export interface Runner {
+  run(request: RunRequest): Promise<RunOutcome>;
+}
+
 export interface TransportOptions {
   readonly origin: string;
   /** The PEM of a private certificate authority, when one was configured. */
@@ -118,6 +163,7 @@ export interface CliDeps {
   readonly clock: Clock;
   readonly sleeper: Sleeper;
   readonly transport: TransportFactory;
+  readonly runner: Runner;
 }
 
 /** The ports plus the two streams the use cases report on. */
