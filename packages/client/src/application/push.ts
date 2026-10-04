@@ -1,12 +1,8 @@
-import { validateEnvelope } from "@hexagen-monaco/waves-contract";
-
-import { wavePath } from "../domain/endpoint.js";
-import { issueLines, readReceivedAt } from "../domain/reply.js";
-import { buildEnvelope, formatTimestamp, lanesOf } from "../domain/envelope.js";
+import { lanesOf } from "../domain/envelope.js";
 import type { Command, InputSource } from "../domain/args.js";
-import { EXIT_OK, Failure, UsageError } from "./errors.js";
+import { EXIT_OK, UsageError } from "./errors.js";
 import type { UseCaseDeps } from "./ports.js";
-import { readJsonInput, sendIdempotent } from "./send.js";
+import { readJsonInput, sendWave } from "./send.js";
 import { openSession, readProjectToken, transportFor } from "./session.js";
 
 type PushCommand = Extract<Command, { readonly kind: "push" }>;
@@ -14,11 +10,11 @@ type PushCommand = Extract<Command, { readonly kind: "push" }>;
 /**
  * Sends the project's status for one wave.
  *
- * The envelope is built here and validated locally before a byte goes out, and
- * what is sent is the contract's own normalised value rather than the draft —
- * so the snapshot on the server is the snapshot that passed validation. A push
- * is idempotent, so a request that got no answer at all is worth repeating; a
- * server that refused one is not, however it refused.
+ * Reading the project, its token and the lanes is this command's own work; the
+ * document that goes on the wire is built, validated and sent by the shared send
+ * path, which is the same one a schedule uses for every project it looks after.
+ * A push is idempotent, so a request that got no answer at all is worth
+ * repeating; a server that refused one is not, however it refused.
  */
 export async function push(
   command: PushCommand,
@@ -31,32 +27,18 @@ export async function push(
     deps.env,
   );
   const lanes = await readLanes(command.source, deps);
-  const draft = buildEnvelope(lanes, {
-    project,
-    wave: command.wave,
-    generatedAt: formatTimestamp(deps.clock.now()),
-    intervalSeconds: command.intervalSeconds,
-    includeTails: command.includeTails,
-  });
-  const validated = validateEnvelope(draft);
-  if (!validated.ok) {
-    throw new UsageError(
-      `the envelope is not valid:\n${issueLines(validated.errors).join("\n")}`,
-    );
-  }
-  const transport = transportFor(session, deps);
-  const request = {
-    method: "PUT",
-    url: `${session.endpoint.origin}${wavePath(project, command.wave)}`,
-    bearer: token,
-    body: JSON.stringify(validated.value),
-  } as const;
-
-  const reply = await sendIdempotent("push", request, transport, deps);
-  const receivedAt = readReceivedAt(reply.body);
-  if (receivedAt === undefined) {
-    throw new Failure("push failed: the server sent no receivedAt");
-  }
+  const receivedAt = await sendWave(
+    {
+      session,
+      project,
+      token,
+      wave: command.wave,
+      lanes,
+      intervalSeconds: command.intervalSeconds,
+      includeTails: command.includeTails,
+    },
+    { ...deps, transport: transportFor(session, deps) },
+  );
   deps.out(`pushed ${project}/${command.wave} at ${receivedAt}`);
   return EXIT_OK;
 }

@@ -1,6 +1,19 @@
+import {
+  validateEnvelope,
+  validateStatus,
+} from "@hexagen-monaco/waves-contract";
+
 import type { InputSource } from "../domain/args.js";
-import { reasonPhrase, serverFailure } from "../domain/reply.js";
+import { statusPath, wavePath } from "../domain/endpoint.js";
+import { buildEnvelope, formatTimestamp } from "../domain/envelope.js";
+import {
+  issueLines,
+  readReceivedAt,
+  reasonPhrase,
+  serverFailure,
+} from "../domain/reply.js";
 import { decideRetry } from "../domain/retry.js";
+import { buildStatus } from "../domain/status.js";
 import { Failure, UsageError } from "./errors.js";
 import type {
   Files,
@@ -9,12 +22,21 @@ import type {
   Transport,
   UseCaseDeps,
 } from "./ports.js";
+import type { Session } from "./session.js";
 
 /** The two ports reading an input needs, and nothing else. */
 type InputDeps = Pick<UseCaseDeps, "files" | "input">;
 
 /** The two ports waiting between two attempts needs, and nothing else. */
 type WaitDeps = Pick<UseCaseDeps, "clock" | "sleeper">;
+
+/**
+ * The ports the whole send path needs: the clock and the sleeper its retries
+ * wait on, and the transport to send on. The transport is a parameter rather
+ * than something built here so that a caller which sends many documents for
+ * several projects can pace one transport and hand the same one to each send.
+ */
+type SendDeps = WaitDeps & { readonly transport: Transport };
 
 /**
  * The input a project gave, read from the place it named and parsed as JSON.
@@ -44,6 +66,124 @@ async function readFile(path: string, files: Files): Promise<string> {
     throw new UsageError(`cannot read ${path}`);
   }
   return text;
+}
+
+/** What one wave's send needs to know: which project and wave it is for, and the token that authorises it. */
+export interface WaveSend {
+  readonly session: Session;
+  readonly project: string;
+  readonly token: string;
+  readonly wave: string;
+  readonly lanes: readonly unknown[];
+  readonly intervalSeconds: number | null;
+  readonly includeTails: boolean;
+}
+
+/** What one status document's send needs: the same, without a wave or any lanes. */
+export interface StatusSend {
+  readonly session: Session;
+  readonly project: string;
+  readonly token: string;
+  readonly input: unknown;
+  readonly intervalSeconds: number | null;
+}
+
+/**
+ * Sends one wave for one project, and answers the instant the server recorded it.
+ *
+ * This is everything a `push` does after reading its input, with the project and
+ * the token as arguments rather than as the ambient `WAVES_PROJECT`, so that a
+ * caller working through a list of projects can send for each of them with the
+ * same rules a hand push follows. The envelope is built and validated locally
+ * before a byte goes out, and what is sent is the contract's own normalised
+ * value rather than the draft — so the snapshot on the server is the snapshot
+ * that passed validation.
+ *
+ * Every refusal is the one a push raises, worded as it has always been worded:
+ * a bad envelope is a `UsageError` naming the contract's pointers, a `200`
+ * without a `receivedAt` or a server that refused is a `Failure` labelled
+ * `push`, because that is what this request is whether a person or a schedule
+ * asked for it.
+ */
+export async function sendWave(
+  send: WaveSend,
+  deps: SendDeps,
+): Promise<string> {
+  const { session, project, token } = send;
+  const draft = buildEnvelope(send.lanes, {
+    project,
+    wave: send.wave,
+    generatedAt: formatTimestamp(deps.clock.now()),
+    intervalSeconds: send.intervalSeconds,
+    includeTails: send.includeTails,
+  });
+  const validated = validateEnvelope(draft);
+  if (!validated.ok) {
+    throw new UsageError(
+      `the envelope is not valid:\n${issueLines(validated.errors).join("\n")}`,
+    );
+  }
+  const request = {
+    method: "PUT",
+    url: `${session.endpoint.origin}${wavePath(project, send.wave)}`,
+    bearer: token,
+    body: JSON.stringify(validated.value),
+  } as const;
+
+  const reply = await sendIdempotent("push", request, deps.transport, deps);
+  return receivedAtOf("push", reply);
+}
+
+/**
+ * Sends one project's status document for one project, and answers the instant
+ * the server recorded it.
+ *
+ * A status PUT replaces the project's one status document, so repeating it can
+ * only store the same thing again — which is what makes the shared retry loop the
+ * right one, and it is the same loop a push uses. The refusals are the ones a
+ * `status` raises: an input that is not a status at all is a `UsageError` before
+ * the contract is asked, and anything the contract or the server refuses is a
+ * `Failure` labelled `status`.
+ */
+export async function sendProjectStatus(
+  send: StatusSend,
+  deps: SendDeps,
+): Promise<string> {
+  const { session, project, token } = send;
+  const draft = buildStatus(send.input, {
+    project,
+    generatedAt: formatTimestamp(deps.clock.now()),
+    intervalSeconds: send.intervalSeconds,
+  });
+  if (draft === undefined) {
+    throw new UsageError(
+      "the input must be a JSON object with optional prs and backlog",
+    );
+  }
+  const validated = validateStatus(draft);
+  if (!validated.ok) {
+    throw new UsageError(
+      `the status is not valid:\n${issueLines(validated.errors).join("\n")}`,
+    );
+  }
+  const request = {
+    method: "PUT",
+    url: `${session.endpoint.origin}${statusPath(project)}`,
+    bearer: token,
+    body: JSON.stringify(validated.value),
+  } as const;
+
+  const reply = await sendIdempotent("status", request, deps.transport, deps);
+  return receivedAtOf("status", reply);
+}
+
+/** The server's own timestamp for a write that succeeded, or the refusal it always ends in. */
+function receivedAtOf(label: "push" | "status", reply: HttpReply): string {
+  const receivedAt = readReceivedAt(reply.body);
+  if (receivedAt === undefined) {
+    throw new Failure(`${label} failed: the server sent no receivedAt`);
+  }
+  return receivedAt;
 }
 
 /**

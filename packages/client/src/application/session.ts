@@ -109,17 +109,31 @@ export function readProject(env: Environment): string {
 }
 
 /**
- * The token of `WAVES_PROJECT`, read from the config directory. Whether the file
- * can be trusted at all — a link, another owner, a loose mode — is settled by
- * the adapter that opens it, which refuses with the reason rather than handing
- * over whatever it found.
+ * The token of `WAVES_PROJECT`, read from the config directory.
+ *
+ * Which project a command belongs to is the environment's answer, and it is asked
+ * first: a command line that names no project is refused before a file is opened,
+ * and `sync`, which is sent for one project at a time out of a file it read
+ * itself, does not come through here at all.
  */
 export async function readProjectToken(
   session: Session,
   files: Files,
   env: Environment,
 ): Promise<ProjectToken> {
-  const project = readProject(env);
+  return await readTokenFor(session, files, readProject(env));
+}
+
+/**
+ * The token of a project the caller names. Whether the file can be trusted at all
+ * — a link, another owner, a loose mode — is settled by the adapter that opens
+ * it, which refuses with the reason rather than handing over whatever it found.
+ */
+export async function readTokenFor(
+  session: Session,
+  files: Files,
+  project: string,
+): Promise<ProjectToken> {
   const path = tokenPath(session.configDir, project);
   const file = await files.readSecret(path);
   if (file === undefined) {
