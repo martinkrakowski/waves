@@ -7,6 +7,9 @@ import type {
   Environment,
   Files,
   HttpRequest,
+  RunOutcome,
+  RunRequest,
+  Runner,
   Transport,
   TransportOptions,
   TransportOutcome,
@@ -185,6 +188,34 @@ export function scriptedTransport(
   };
 }
 
+export interface FakeRunner {
+  readonly runner: Runner;
+  /** Every program that was asked for, in the order it was asked for. */
+  readonly runs: RunRequest[];
+}
+
+/**
+ * The runner as a script: each run takes the next answer, and a run with none
+ * left is a test that asked for more programs than it scripted. `runs` keeps the
+ * request, which is where the environment and the deadline of each collector
+ * are asserted.
+ */
+export function fakeRunner(script: readonly RunOutcome[] = []): FakeRunner {
+  const remaining = [...script];
+  const runs: RunRequest[] = [];
+  const runner: Runner = {
+    run: async (request) => {
+      runs.push(request);
+      const next = remaining.shift();
+      if (next === undefined) {
+        throw new Error("the fake runner ran out of answers");
+      }
+      return next;
+    },
+  };
+  return { runner, runs };
+}
+
 export interface Harness {
   readonly io: CliIo;
   readonly out: string[];
@@ -195,14 +226,19 @@ export interface Harness {
   readonly requests: HttpRequest[];
   readonly sent: () => number;
   readonly files: FakeFiles;
+  readonly runs: RunRequest[];
 }
 
 export interface HarnessInput {
   readonly script?: readonly TransportOutcome[];
+  /** The answers the fake runner gives, one per collector. */
+  readonly runs?: readonly RunOutcome[];
   readonly vars?: Readonly<Record<string, string | undefined>>;
   readonly files?: Readonly<Record<string, FileEntry>>;
   readonly stdin?: string;
   readonly now?: number;
+  /** A clock of the test's own, for a run that measures how long it took. */
+  readonly clock?: { now(): number };
 }
 
 /**
@@ -214,6 +250,7 @@ export function harness(input: HarnessInput = {}): Harness {
   const recorded = recorder();
   const waits: number[] = [];
   const scripted = scriptedTransport(input.script ?? []);
+  const programs = fakeRunner(input.runs ?? []);
   const files = fakeFiles(input.files ?? {});
   const stdin = input.stdin ?? "";
   const deps: UseCaseDeps = {
@@ -224,13 +261,14 @@ export function harness(input: HarnessInput = {}): Harness {
     }),
     files: files.files,
     input: { read: async () => stdin },
-    clock: { now: () => input.now ?? NOW },
+    clock: input.clock ?? { now: () => input.now ?? NOW },
     sleeper: {
       sleep: async (ms) => {
         waits.push(ms);
       },
     },
     transport: scripted.factory,
+    runner: programs.runner,
     out: recorded.io.out,
     err: recorded.io.err,
   };
@@ -244,6 +282,7 @@ export function harness(input: HarnessInput = {}): Harness {
     requests: scripted.requests,
     sent: () => scripted.sent,
     files,
+    runs: programs.runs,
   };
 }
 
