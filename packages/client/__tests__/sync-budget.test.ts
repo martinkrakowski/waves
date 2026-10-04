@@ -30,14 +30,18 @@ function ticking(input: {
   readonly answers: readonly RunOutcome[];
   /** What each collector costs, and what each write costs. */
   readonly collectMs?: number;
+  /** What each collector costs, when they do not all cost the same. */
+  readonly collectEachMs?: readonly number[];
   readonly sendMs?: number;
   readonly replies?: number;
+  /** The server's own answers, when a test needs one that is not a 200. */
+  readonly script?: readonly ReturnType<typeof reply>[];
 }) {
   const time = handClock();
   const built = harness({
-    script: Array.from({ length: input.replies ?? 8 }, () =>
-      reply(200, ACCEPTED),
-    ),
+    script:
+      input.script ??
+      Array.from({ length: input.replies ?? 8 }, () => reply(200, ACCEPTED)),
     files: {
       [SYNC_FILE]: { text: input.file, mode: 0o600 },
       ...tokenFiles(...PROJECTS),
@@ -52,7 +56,7 @@ function ticking(input: {
     runner: {
       run: async (request: RunRequest): Promise<RunOutcome> => {
         asked.push(request);
-        time.pass(input.collectMs ?? 0);
+        time.pass(input.collectEachMs?.[answered] ?? input.collectMs ?? 0);
         const answer = input.answers[answered];
         answered += 1;
         if (answer === undefined) {
@@ -181,6 +185,25 @@ describe("one budget of every seconds for the whole run", () => {
       "waves sync: gamma: skipped, out of time",
     ]);
     expect(asked).toHaveLength(1);
+  });
+
+  it("ends a write whose own wait would pass the budget, and starts the next project", async () => {
+    const { built, deps } = ticking({
+      file: syncFile([entry("alpha"), entry("beta")]),
+      // 30 seconds of collecting leaves half the tick, and the server then asks for
+      // a minute: a wait this client would happily take, and cannot.
+      answers: [exited(printed(["wv5"])), exited(printed(["wv7"]))],
+      collectEachMs: [30_000, 0],
+      script: [reply(429, "", { "retry-after": "60" }), reply(200, ACCEPTED)],
+    });
+
+    expect(await sync(deps)).toBe(1);
+    expect(built.err).toEqual(["waves sync: alpha: out of time"]);
+    expect(built.out).toEqual(["waves sync: beta: 1 waves"]);
+    // Nothing slept for a minute: the wait was refused rather than taken, which is
+    // the whole difference between this project costing itself and costing the run.
+    expect(built.waits).toEqual([]);
+    expect(built.requests).toHaveLength(2);
   });
 
   it("starts the first project whatever the clock says, because the budget begins here", async () => {

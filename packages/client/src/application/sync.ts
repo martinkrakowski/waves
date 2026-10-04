@@ -83,6 +83,36 @@ function label(project: SyncProject): string {
 }
 
 /**
+ * The sleeper the writes of one project share, capped by the run's own budget.
+ *
+ * A write that is refused has one wait in it that nothing else bounds: the retry
+ * policy honours a `Retry-After` for as long as the server asked, up to a minute,
+ * up to three times, and a network or 5xx retry adds its own backoff. That is
+ * right for a push someone is waiting for and wrong here, where one throttled
+ * wave could spend three minutes of a sixty second tick and leave nothing for the
+ * projects after it — a budget checked only between writes would not notice until
+ * the next tick had already been missed.
+ *
+ * So a wait that would pass the deadline is not waited for at all: it ends that
+ * write as this project's failure, the project reports itself out of time, and the
+ * next project runs with whatever is left. The `Failure` is the one the entrypoint
+ * would have made of a server that said no, because from here it is the same thing.
+ */
+function withinBudget(
+  deps: UseCaseDeps,
+  deadline: number,
+): UseCaseDeps["sleeper"] {
+  return {
+    sleep: async (ms) => {
+      if (deps.clock.now() + ms > deadline) {
+        throw new Failure("out of time");
+      }
+      await deps.sleeper.sleep(ms);
+    },
+  };
+}
+
+/**
  * One project: its collector, its token, its waves and then its status.
  *
  * The token is read after the collector has exited, never before: a collector
@@ -115,7 +145,15 @@ async function runProject(
     }
     const { token } = await readTokenFor(session, deps.files, project.project);
     const transport = pacedTransport(transportFor(session, deps), deps);
-    const send = { ...deps, transport };
+    // The pace between two writes is this client's own and is never refused; the
+    // waits *inside* a write are not, because a retry policy will sit on a
+    // `Retry-After` for as long as the server asked and the run's budget is
+    // smaller than that.
+    const send = {
+      ...deps,
+      transport,
+      sleeper: withinBudget(deps, deadline),
+    };
     let sent = 0;
     let refused = false;
     for (const wave of collection.output.waves) {
