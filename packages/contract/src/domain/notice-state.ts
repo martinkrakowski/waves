@@ -1,6 +1,6 @@
 import { TEXT_RULE, readNoticeText, readOptionKey } from "./notice.js";
 import { isLaneId } from "./ids.js";
-import type { StateEntryRequest, DecisionState } from "./model.js";
+import type { StateEntryRequest, DecisionState, StateSource } from "./model.js";
 import type { Collector, ValidationResult } from "./validation.js";
 import {
   IssueCollector,
@@ -132,8 +132,8 @@ function readStateEntry(
     "/expectedEntries",
     0,
   );
-  const by = readNoticeText(ctx, own(record, "by"), "/by", BY_RULE) ?? "";
-  const at = readTimestamp(ctx, own(record, "at"), "/at") ?? "";
+  const by = readNoticeText(ctx, own(record, "by"), "/by", BY_RULE);
+  const at = readTimestamp(ctx, own(record, "at"), "/at");
   const wordsRaw = own(record, "words");
   const words =
     wordsRaw === undefined
@@ -174,13 +174,13 @@ function readStateEntry(
   if (ctx.issues.length > 0) return undefined;
 
   return {
-    state: (state ?? "") as DecisionState,
-    source: source ?? "session",
-    revision: revision ?? 0,
-    textSha256: textSha256 ?? "",
-    expectedEntries: expectedEntries ?? 0,
-    by,
-    at,
+    state: state as DecisionState,
+    source: source as StateSource,
+    revision: revision!,
+    textSha256: textSha256!,
+    expectedEntries: expectedEntries!,
+    by: by!,
+    at: at!,
     words,
     option,
     reason,

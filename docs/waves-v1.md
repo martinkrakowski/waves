@@ -355,6 +355,222 @@ A full valid status document:
 }
 ```
 
+## The notice document
+
+A project may also push **notices** beside its waves and its status: one-off
+records that are not carried in a wave envelope, are not subject to wave staleness
+or retention, and are addressed by their own id. A notice has a `kind`:
+`decision` or `event`. Neither is a lane, and neither lives in a wave (W52).
+(`packages/contract/src/domain/notice-decision.ts`,
+`packages/contract/src/domain/notice-state.ts`,
+`packages/contract/src/domain/notice-event.ts`,
+`packages/contract/src/index.ts`)
+
+### The decision revision
+
+`validateDecision` is the gate. It is pure, exported from
+`@hexagen-monaco/waves-contract`, and returns either `{ ok: true, value }` or
+`{ ok: false, errors }`. A decision revision is a closed object with keys exactly
+`schema`, `kind`, `project`, `id`, `shape`, `question`, `options`, `recommended`,
+`hardToUndo`, `commits`, `decider`, `appliesTo`, `evidence`, `actElsewhere`,
+`raisedBy`, `raisedAt`, `refs`, `changeNote` (`DECISION_KEYS`,
+`packages/contract/src/domain/notice-decision-readers.ts`).
+
+| field          | type             | required | bounds                                                          |
+| -------------- | ---------------- | -------- | --------------------------------------------------------------- |
+| `schema`       | string           | yes      | exactly `"waves-notice/v1"` (`NOTICE_SCHEMA`, `…/model.ts`)     |
+| `kind`         | string           | yes      | exactly `"decision"`                                            |
+| `project`      | string           | yes      | the project id of section 2.1                                   |
+| `id`           | string           | yes      | the lane id shape of section 2.1 (1 to 80 chars, `A-Za-z0-9_-`) |
+| `shape`        | string           | yes      | `choice` \| `action` \| `instruction`                           |
+| `question`     | string           | yes      | 1 to 300 characters, NFC, no leading/trailing white space       |
+| `options`      | array            | yes      | see below                                                       |
+| `recommended`  | object           | no       | `{ option, reason }`, see below                                 |
+| `hardToUndo`   | object           | yes      | `{ value, reason? }`, see below                                 |
+| `commits`      | array of strings | yes      | at most 8, each 1 to 2000 chars                                 |
+| `decider`      | string           | yes      | `owner` \| `delegated`                                          |
+| `appliesTo`    | array of strings | yes      | project ids, unique, at most 16, may be empty                   |
+| `evidence`     | array            | yes      | at most 8, see below                                            |
+| `actElsewhere` | object           | no       | `{ where, what }`; required for `action`                        |
+| `raisedBy`     | string           | yes      | at most 80 characters, NFC, no leading/trailing white space     |
+| `raisedAt`     | string           | yes      | strict ISO-8601 UTC, see 2.5                                    |
+| `refs`         | object           | no       | `{ wave?, lane?, pr? }`, see below                              |
+| `changeNote`   | string           | no       | 1 to 2000 characters, NFC, no leading/trailing white space      |
+
+**Optional keys are absent, never `null`.** If a key appears with the value
+`null` the validator refuses it as "expected an object" (or "expected a string",
+as the field's reader decides). This corrects the JSON example in
+`docs/planning/2026-10-08_decisions-inbox.md` section 4.1, which showed
+`"actElsewhere": null`.
+
+**Every text is refused when it is not Unicode NFC or has leading or trailing
+white space; it is never repaired.** The reader checks
+`value.normalize("NFC") === value` and `value.trim() === value`
+(`readNoticeText`, `packages/contract/src/domain/notice.ts`). `readText` from
+section 2.6 is not changed; this document has its own strict reader because the
+envelope never applied the NFC or trim rule.
+
+**Options.** A closed object with keys exactly `key`, `text`, `cost`, all
+required strings. `key` matches `^[a-z0-9]{1,8}$` (`OPTION_KEY_PATTERN`,
+`…/model.ts`); keys are unique (`…/notice-decision-readers.ts:112-124`). At most
+8 options (`MAX_OPTIONS`, `…/model.ts`).
+
+**Recommended.** A closed object with keys exactly `option` and `reason`, both
+required text. `option` must be one of the option keys of this decision.
+Absent is valid for `choice`; it is refused on `action` and `instruction`
+(shape rule, below).
+
+**`hardToUndo`.** A closed object with keys exactly `value` and `reason`. `value`
+is `true`, `false` or the string `"partly"` (`DoorValue`, `…/model.ts`).
+`reason` is required unless `value` is `false`. The reason is one sentence; the
+page shows it verbatim (`packages/contract/src/domain/notice-decision-readers.ts:95-109`).
+
+**Evidence.** Each entry is a closed object with keys exactly `label` and
+`href`. `label` is 1 to 80 characters. `href` must begin `https://` and hold no
+white space or control character (`…/notice-decision-readers.ts:42-55`).
+
+**`refs`.** A closed object with keys exactly `wave`, `lane`, `pr`. `wave` is a
+wave id, `lane` a lane id, `pr` an integer ≥ 1. All optional (`readRefs`,
+`packages/contract/src/domain/notice.ts`).
+
+**Bounds** (`packages/contract/src/domain/model.ts`):
+
+| constant              | value             |
+| --------------------- | ----------------- |
+| `MAX_OPTIONS`         | 8                 |
+| `MAX_COMMITS`         | 8                 |
+| `MAX_EVIDENCE`        | 8                 |
+| `MAX_APPLIES_TO`      | 16                |
+| `MAX_QUESTION_CHARS`  | 300               |
+| `MAX_TEXT_CHARS`      | 2000              |
+| `MAX_LABEL_CHARS`     | 80                |
+| `MAX_RAISED_BY_CHARS` | 80                |
+| `OPTION_KEY_PATTERN`  | `^[a-z0-9]{1,8}$` |
+
+**Shape rules.** Each is refused at the path of the field it is about:
+
+| shape         | options | recommended | actElsewhere | appliesTo |
+| ------------- | ------- | ----------- | ------------ | --------- |
+| `choice`      | 2 to 8  | optional    | optional     | any       |
+| `action`      | empty   | forbidden   | **required** | any       |
+| `instruction` | empty   | forbidden   | optional     | ≥ 1       |
+
+### The binding text
+
+`decisionBindingText` returns the canonical JSON text that the server hashes to
+produce `textSha256` and that the client hashes to verify a signed answer
+(stage 2). It is pure and total: given a validated `DecisionRevision` it returns
+one JSON text, no white space between tokens, built with an explicit key order
+(`packages/contract/src/domain/notice-decision.ts:143-162`):
+
+```
+{"question":…,"shape":…,"options":[{"key":…,"text":…,"cost":…}],"recommended":{"option":…,"reason":…}|null,"hardToUndo":{"value":…,"reason":…|null},"commits":[…],"decider":…,"appliesTo":[…],"actElsewhere":{"where":…,"what":…}|null}
+```
+
+Two revisions that differ only in `evidence`, `refs`, `raisedBy`, `raisedAt`,
+`changeNote`, `project` or `id` produce the same text; any difference in a
+binding field — including the order of options — produces a different text. The
+hashing itself is done by the server and client in their own `infrastructure/`
+in later lanes.
+
+### The state-entry request
+
+A session posts a state entry to change a decision's state. `validateStateEntry`
+is the gate (`packages/contract/src/domain/notice-state.ts`). A state entry is a
+closed object with keys exactly `state`, `source`, `revision`, `textSha256`,
+`expectedEntries`, `by`, `at`, `words`, `option`, `reason`, `supersededBy`.
+
+| field             | type    | required | bounds                                                                                                        |
+| ----------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------- |
+| `state`           | string  | yes      | `delegated` \| `approved` \| `declined` \| `answered` \| `withdrawn` \| `superseded`; `open` is never written |
+| `source`          | string  | yes      | `session` \| `reported`; `signed` is refused (stage 2 only)                                                   |
+| `revision`        | integer | yes      | ≥ 1                                                                                                           |
+| `textSha256`      | string  | yes      | 64 lower-case hex characters                                                                                  |
+| `expectedEntries` | integer | yes      | ≥ 0                                                                                                           |
+| `by`              | string  | yes      | 1 to 80 characters, NFC, no leading/trailing space                                                            |
+| `at`              | string  | yes      | strict ISO-8601 UTC                                                                                           |
+| `words`           | string  | no       | 1 to 2000 characters, NFC, no leading/trailing space                                                          |
+| `option`          | string  | no       | `^[a-z0-9]{1,8}$`                                                                                             |
+| `reason`          | string  | no       | 1 to 2000 characters                                                                                          |
+| `supersededBy`    | string  | no       | a lane id                                                                                                     |
+
+**Source by state.** `approved`, `declined` and `answered` require
+`source: "reported"` and `words`; they are refused with `source: "session"`.
+`delegated`, `withdrawn` and `superseded` require `source: "session"`
+(`applySourceRules`, `…/notice-state.ts:93-126`). `delegated` also requires
+`option` or `words`. `withdrawn` requires `reason`. `superseded` requires
+`supersededBy`; `supersededBy` is refused on any other state.
+
+Whether the revision, the hash and the entry count are current is the server's
+check (lane I2), not this function's. A `textSha256` of any 64 hex characters is
+accepted here; the server recomputes it from the revision via
+`decisionBindingText`.
+
+### The event
+
+`validateEvent` is the gate (`packages/contract/src/domain/notice-event.ts`). An
+event is a closed object with keys exactly `schema`, `kind`, `project`, `topic`,
+`text`, `detail`, `at`, `refs`.
+
+| field     | type   | required | bounds                                              |
+| --------- | ------ | -------- | --------------------------------------------------- |
+| `schema`  | string | yes      | exactly `"waves-notice/v1"`                         |
+| `kind`    | string | yes      | exactly `"event"`                                   |
+| `project` | string | yes      | the project id                                      |
+| `topic`   | string | yes      | the stage shape `^[a-z][a-z-]{0,31}$`               |
+| `text`    | string | yes      | 1 to 300 characters, NFC, no leading/trailing space |
+| `detail`  | string | no       | 1 to 2000 characters                                |
+| `at`      | string | yes      | strict ISO-8601 UTC                                 |
+| `refs`    | object | no       | see above                                           |
+
+An event is one immutable entry: no states, no revisions, no answer.
+
+### Worked example
+
+A small choice decision:
+
+```json
+{
+  "schema": "waves-notice/v1",
+  "kind": "decision",
+  "project": "alpha",
+  "id": "d1",
+  "shape": "choice",
+  "question": "What should we do?",
+  "options": [
+    { "key": "a", "text": "A", "cost": "C1" },
+    { "key": "b", "text": "B", "cost": "C2" }
+  ],
+  "hardToUndo": { "value": false },
+  "commits": [],
+  "decider": "owner",
+  "appliesTo": [],
+  "evidence": [],
+  "raisedBy": "session",
+  "raisedAt": "2026-10-08T12:00:00Z"
+}
+```
+
+Its binding text (one JSON text, no white space between tokens) is:
+
+```
+{"question":"What should we do?","shape":"choice","options":[{"key":"a","text":"A","cost":"C1"},{"key":"b","text":"B","cost":"C2"}],"recommended":null,"hardToUndo":{"value":false,"reason":null},"commits":[],"decider":"owner","appliesTo":[],"actElsewhere":null}
+```
+
+### Per-project and per-decision caps
+
+These constants are exported so the server and client read the same numbers
+(`packages/contract/src/domain/model.ts`):
+
+| constant                           | value |
+| ---------------------------------- | ----- |
+| `MAX_DECISIONS_PER_PROJECT`        | 500   |
+| `MAX_EVENTS_PER_PROJECT`           | 2000  |
+| `MAX_REVISIONS_PER_DECISION`       | 20    |
+| `MAX_SESSION_ENTRIES_PER_DECISION` | 50    |
+
+The routes that serve these documents come with the server in a later change.
+
 ## 3. Errors
 
 A failure is a list of issues, each exactly `{ path, message }`
@@ -1195,6 +1411,12 @@ the envelope schema, and a minor version may tighten it.
 Contract **0.2.0** adds the project status document and tightens `repo`: a new
 document, a new export, a stricter character rule and a `repo` that carries no
 user or password, which is what a minor version of this package is for.
+
+Contract **0.3.0** adds the notice document: a `decision` and an `event` record,
+their validators, the `StateEntryRequest` validator, the per-decision bounds and
+the per-project and per-decision caps shared with the server and client. The
+binding text behind `textSha256` is produced here too, but the hashing itself is
+done in `infrastructure/` by each package that needs it.
 
 ## 8. A curl example
 

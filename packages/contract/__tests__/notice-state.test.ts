@@ -193,4 +193,33 @@ describe("validateStateEntry — refusals", () => {
       ["/source", "/revision"],
     );
   });
+
+  it("requires a valid at timestamp", () => {
+    expectStatePaths({ ...minimalState(), at: "yesterday" }, ["/at"]);
+  });
+
+  it("rejects an undefined root", () => {
+    expectStatePaths(undefined, [""]);
+  });
+
+  it("rejects an invalid supersededBy", () => {
+    expectStatePaths(
+      {
+        ...minimalState(),
+        state: "superseded",
+        source: "session",
+        supersededBy: "bad id",
+      },
+      ["/supersededBy"],
+    );
+    expectStatePaths(
+      {
+        ...minimalState(),
+        state: "superseded",
+        source: "session",
+        supersededBy: 42,
+      },
+      ["/supersededBy"],
+    );
+  });
 });

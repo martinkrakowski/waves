@@ -153,6 +153,7 @@ describe("validateDecision — remaining refusals", () => {
   it("requires a lane id for the decision id", () => {
     expectDecisionPaths({ ...minimalChoice(), id: "Bad Id" }, ["/id"]);
     expectDecisionPaths({ ...minimalChoice(), id: "a".repeat(81) }, ["/id"]);
+    expectDecisionPaths({ ...minimalChoice(), id: 123 }, ["/id"]);
   });
 
   it("requires a project id", () => {
@@ -260,5 +261,120 @@ describe("validateDecision — remaining refusals", () => {
       },
       ["/committed", "/schema", "/project", "/question"],
     );
+  });
+
+  it("rejects an undefined root", () => {
+    expectDecisionPaths(undefined, [""]);
+  });
+
+  it("rejects refs with an invalid wave or lane id", () => {
+    expectDecisionPaths({ ...minimalChoice(), refs: { wave: "bad id" } }, [
+      "/refs/wave",
+    ]);
+    expectDecisionPaths({ ...minimalChoice(), refs: { wave: 42 } }, [
+      "/refs/wave",
+    ]);
+    expectDecisionPaths({ ...minimalChoice(), refs: { lane: "bad id" } }, [
+      "/refs/lane",
+    ]);
+    expectDecisionPaths({ ...minimalChoice(), refs: { lane: 42 } }, [
+      "/refs/lane",
+    ]);
+  });
+
+  it("rejects an href with white space", () => {
+    expectDecisionPaths(
+      {
+        ...minimalChoice(),
+        evidence: [{ label: "L", href: "https://bad url.com" }],
+      },
+      ["/evidence/0/href"],
+    );
+  });
+
+  it("rejects an option missing a field", () => {
+    expectDecisionPaths(
+      {
+        ...minimalChoice(),
+        options: [
+          { key: "a", text: "A" },
+          { key: "b", text: "B", cost: "C2" },
+        ],
+      },
+      ["/options/0/cost"],
+    );
+  });
+
+  it("rejects duplicate project ids in appliesTo", () => {
+    expectDecisionPaths({ ...minimalChoice(), appliesTo: ["alpha", "alpha"] }, [
+      "/appliesTo/1",
+    ]);
+  });
+
+  it("rejects an invalid project id in appliesTo", () => {
+    expectDecisionPaths({ ...minimalChoice(), appliesTo: ["Alpha"] }, [
+      "/appliesTo/0",
+    ]);
+  });
+
+  it("rejects a non-object evidence entry", () => {
+    expectDecisionPaths({ ...minimalChoice(), evidence: ["not-an-object"] }, [
+      "/evidence/0",
+    ]);
+  });
+
+  it("rejects actElsewhere missing a field", () => {
+    expectDecisionPaths({ ...minimalChoice(), actElsewhere: { what: "d" } }, [
+      "/actElsewhere/where",
+    ]);
+    expectDecisionPaths({ ...minimalChoice(), actElsewhere: { where: "w" } }, [
+      "/actElsewhere/what",
+    ]);
+  });
+
+  it("rejects an option missing key or text", () => {
+    expectDecisionPaths(
+      {
+        ...minimalChoice(),
+        options: [
+          { text: "A", cost: "C1" },
+          { key: "b", text: "B", cost: "C2" },
+        ],
+      },
+      ["/options/0/key"],
+    );
+    expectDecisionPaths(
+      {
+        ...minimalChoice(),
+        options: [
+          { key: "a", cost: "C1" },
+          { key: "b", text: "B", cost: "C2" },
+        ],
+      },
+      ["/options/0/text"],
+    );
+  });
+
+  it("rejects a non-string href", () => {
+    expectDecisionPaths(
+      { ...minimalChoice(), evidence: [{ label: "L", href: 123 }] },
+      ["/evidence/0/href"],
+    );
+  });
+
+  it("rejects a non-object option entry", () => {
+    expectDecisionPaths(
+      {
+        ...minimalChoice(),
+        options: ["not-an-object", { key: "b", text: "B", cost: "C2" }],
+      },
+      ["/options/0"],
+    );
+  });
+
+  it("rejects a non-object recommended", () => {
+    expectDecisionPaths({ ...minimalChoice(), recommended: "not-an-object" }, [
+      "/recommended",
+    ]);
   });
 });

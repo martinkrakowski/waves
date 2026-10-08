@@ -102,4 +102,8 @@ describe("validateEvent", () => {
   it("rejects a non-NFC text", () => {
     expectEventPaths({ ...minimalEvent(), text: "cafe\u0301" }, ["/text"]);
   });
+
+  it("rejects an undefined root", () => {
+    expectEventPaths(undefined, [""]);
+  });
 });
