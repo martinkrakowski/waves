@@ -1,3 +1,9 @@
+/**
+ * The fourteen test decisions of docs/planning/2026-10-08_decisions-inbox.md
+ * section 7, worded from the fleet's requirements table. Where that table
+ * records no cost, reason or words, the text says so (`UNRECORDED`) rather than
+ * inventing one: these are shown on a page the owner reads.
+ */
 import { NOTICE_SCHEMA } from "../../src/domain/model.js";
 
 export interface NoticeFixture {
@@ -44,103 +50,87 @@ function state(overrides: Record<string, unknown>): Record<string, unknown> {
   };
 }
 
+const UNRECORDED = "Not recorded in the fleet's summary";
+
+const YES_NO = [
+  { key: "yes", text: "Yes", cost: UNRECORDED },
+  { key: "no", text: "No", cost: UNRECORDED },
+];
+
+function one(
+  project: string,
+  id: string,
+  overrides: Record<string, unknown>,
+  states: Record<string, unknown>[] = [],
+): NoticeFixture {
+  return {
+    id,
+    project,
+    revisions: [decision({ project, id, ...overrides })],
+    states,
+  };
+}
+
+const GIVE_UP = {
+  project: "gate-lock",
+  id: "give-up-bound",
+  decider: "delegated",
+  recommended: { option: "a", reason: UNRECORDED },
+};
+
 export const NOTICE_DECISIONS: NoticeFixture[] = [
-  {
-    id: "d12-document-owner",
-    project: "hexagen-monaco",
-    revisions: [
-      decision({
-        id: "d12-document-owner",
-        project: "hexagen-monaco",
-        question: "Should the D-12 document owner field be printed?",
-        options: [
-          {
-            key: "a",
-            text: "Never print it",
-            cost: "Cannot tell which to retry",
-          },
-          {
-            key: "b",
-            text: "Print on failure only",
-            cost: "Appears in one terminal",
-          },
-          {
-            key: "c",
-            text: "Store it",
-            cost: "A new record of an erased user",
-          },
-        ],
-        recommended: { option: "c", reason: "The owner needs the trail" },
-        hardToUndo: {
-          value: true,
-          reason: "the key is in every row and route",
-        },
-        commits: ["Commit one", "Commit two", "Commit three"],
-      }),
-    ],
-    states: [
+  one(
+    "hexagen-monaco",
+    "d12-document-owner",
+    {
+      question:
+        "Who owns a document: a user, a tenant, or a tenant and an author?",
+      options: [
+        { key: "a", text: "A user", cost: UNRECORDED },
+        { key: "b", text: "A tenant", cost: UNRECORDED },
+        { key: "c", text: "A tenant and an author", cost: UNRECORDED },
+      ],
+      recommended: { option: "c", reason: UNRECORDED },
+      hardToUndo: { value: true, reason: "the key is in every row and route" },
+      commits: [
+        "A removed member's unpushed edits are destroyed",
+        "A second commitment, to be supplied by the hexagen-monaco session",
+        "A third commitment, to be supplied by the hexagen-monaco session",
+      ],
+    },
+    [
       state({
-        state: "approved",
         option: "c",
-        words: "Go with option 3 for D-12",
         by: "hexagen-monaco session",
+        words: "Go with option 3 for D-12",
       }),
     ],
-  },
-  {
-    id: "prod-postgres-home",
-    project: "hexagen-monaco",
-    revisions: [
-      decision({
-        id: "prod-postgres-home",
-        project: "hexagen-monaco",
-        question: "Should production postgres keep its home directory?",
-        hardToUndo: { value: true, reason: "The data is not backed up" },
-        actElsewhere: {
-          where: "session postgres-1",
-          what: "set it up yourself",
-        },
-      }),
+  ),
+  one("hexagen-monaco", "prod-postgres-home", {
+    question: "Where does production Postgres run?",
+    options: [
+      { key: "a", text: "Managed", cost: UNRECORDED },
+      { key: "b", text: "Self-hosted", cost: UNRECORDED },
     ],
-    states: [],
-  },
-  {
-    id: "erase-user-prints-id",
-    project: "campaign-foundry",
-    revisions: [
-      decision({
-        id: "erase-user-prints-id",
-        project: "campaign-foundry",
-        question: "Print the erased user's id on incomplete erasure?",
-        options: [
-          {
-            key: "a",
-            text: "Never print it",
-            cost: "Cannot tell which to retry",
-          },
-          {
-            key: "b",
-            text: "On failure only",
-            cost: "Appears in one terminal",
-          },
-          {
-            key: "c",
-            text: "Store it",
-            cost: "A new record of an erased user",
-          },
-        ],
-        recommended: {
-          option: "b",
-          reason: "The operator needs it once, and it is stored nowhere",
-        },
-        hardToUndo: { value: false, reason: "A message text" },
-        decider: "delegated",
-        evidence: [{ label: "PR 731", href: "https://github.com/x/pull/731" }],
-        raisedBy: "campaign-foundry session",
-        refs: { wave: "platform-and-tenancy-w07", lane: "PT-9x", pr: 731 },
-      }),
-    ],
-    states: [
+    hardToUndo: { value: true, reason: "where production data lives" },
+    actElsewhere: { where: "your own setup", what: "you set it up yourself" },
+  }),
+  one(
+    "campaign-foundry",
+    "erase-user-prints-id",
+    {
+      question:
+        "May erase:user print the erased user's id when an erasure ends incomplete?",
+      options: [
+        { key: "a", text: "Never", cost: UNRECORDED },
+        { key: "b", text: "On failure only", cost: UNRECORDED },
+        { key: "c", text: "Store it", cost: UNRECORDED },
+      ],
+      recommended: { option: "b", reason: UNRECORDED },
+      hardToUndo: { value: false, reason: "a message text" },
+      decider: "delegated",
+    },
+    [
       state({
         state: "delegated",
         source: "session",
@@ -149,73 +139,53 @@ export const NOTICE_DECISIONS: NoticeFixture[] = [
         words: undefined,
       }),
     ],
-  },
-  {
-    id: "first-purge-org-apply",
-    project: "campaign-foundry",
-    revisions: [
-      decision({
-        id: "first-purge-org-apply",
-        project: "campaign-foundry",
-        shape: "action",
-        question: "Apply the first org purge now?",
-        options: [],
-        hardToUndo: { value: true, reason: "deletes an org's data" },
-        actElsewhere: {
-          where: "session campaign-foundry-74",
-          what: "run yarn purge:org --apply",
-        },
-      }),
+  ),
+  one("campaign-foundry", "first-purge-org-apply", {
+    shape: "action",
+    question: "Run the first yarn purge:org --apply",
+    options: [],
+    hardToUndo: { value: true, reason: "deletes an org's data" },
+    actElsewhere: { where: "your terminal", what: "yarn purge:org --apply" },
+  }),
+  one("campaign-foundry", "required-check-on-main", {
+    question: "Add a required status check to main",
+    options: [
+      { key: "a", text: "A separate ruleset", cost: UNRECORDED },
+      { key: "b", text: "Edit the existing ruleset", cost: UNRECORDED },
     ],
-    states: [],
-  },
-  {
-    id: "required-check-on-main",
-    project: "campaign-foundry",
-    revisions: [
-      decision({
-        id: "required-check-on-main",
-        project: "campaign-foundry",
-        question: "Should a required check run on main?",
-        actElsewhere: {
-          where: "session campaign-foundry-74",
-          what: "allow the ruleset edit there",
-        },
-      }),
-    ],
-    states: [],
-  },
+    recommended: { option: "a", reason: UNRECORDED },
+    actElsewhere: {
+      where: "session campaign-foundry",
+      what: "allow the ruleset edit at its prompt",
+    },
+  }),
   {
     id: "give-up-bound",
     project: "gate-lock",
     revisions: [
       decision({
-        id: "give-up-bound",
-        project: "gate-lock",
-        question: "Should we give up the bound?",
+        ...GIVE_UP,
+        question:
+          "Bound a 13-minute give-up at about a minute, accepting it can fire on a slow supervisor?",
         options: [
-          { key: "a", text: "Give it up", cost: "The lock is obsolete" },
-          { key: "b", text: "Keep it", cost: "Safety remains" },
-          { key: "c", text: "Adjust it", cost: "A tighter fit" },
+          { key: "a", text: "Count sleeps", cost: UNRECORDED },
+          { key: "b", text: "Leave it", cost: UNRECORDED },
+          { key: "c", text: "Wall clock", cost: UNRECORDED },
         ],
-        recommended: { option: "a", reason: "The lock has served its purpose" },
-        hardToUndo: { value: false, reason: "A message" },
-        decider: "delegated",
-        raisedBy: "gate-lock session",
       }),
       decision({
-        id: "give-up-bound",
-        project: "gate-lock",
-        question: "Should we give up the bound when idle?",
+        ...GIVE_UP,
+        question:
+          "Bound a 13-minute give-up at about a minute, accepting it can fire on a slow supervisor?",
         options: [
-          { key: "a", text: "Give it up", cost: "The lock is obsolete" },
-          { key: "b", text: "Keep it", cost: "Safety remains" },
-          { key: "c", text: "Adjust it", cost: "A tighter fit" },
+          {
+            key: "a",
+            text: "Count sleeps, narrowed for the reported window",
+            cost: UNRECORDED,
+          },
+          { key: "b", text: "Leave it", cost: UNRECORDED },
+          { key: "c", text: "Wall clock", cost: UNRECORDED },
         ],
-        recommended: { option: "a", reason: "The lock has served its purpose" },
-        hardToUndo: { value: false, reason: "A message" },
-        decider: "delegated",
-        raisedBy: "gate-lock session",
         changeNote: "narrowed after the session reported a window",
       }),
     ],
@@ -226,187 +196,116 @@ export const NOTICE_DECISIONS: NoticeFixture[] = [
         option: "a",
         by: "fleet session",
         words: undefined,
-        revision: 1,
       }),
       state({
         state: "delegated",
         source: "session",
+        revision: 2,
+        expectedEntries: 1,
         option: "a",
         by: "fleet session",
         words: undefined,
-        revision: 2,
-        expectedEntries: 1,
       }),
     ],
   },
-  {
-    id: "heartbeat-lock",
-    project: "gate-lock",
-    revisions: [
-      decision({
-        id: "heartbeat-lock",
-        project: "gate-lock",
-        question: "Should the heartbeat lock check remain?",
-        options: [
-          { key: "a", text: "Yes, keep it", cost: "Detects dead peers" },
-          { key: "b", text: "No, remove it", cost: "Less noise" },
-        ],
-        hardToUndo: { value: "partly", reason: "a design change" },
-        evidence: [
-          { label: "Issue 15", href: "https://github.com/x/issues/15" },
-        ],
-      }),
-    ],
-    states: [],
-  },
-  {
-    id: "test-db-switch-hold",
-    project: "fleet",
-    revisions: [
-      decision({
-        id: "test-db-switch-hold",
-        project: "fleet",
-        question: "Hold or lift the test db switch?",
-        options: [
-          { key: "hold", text: "Keep the old test db", cost: "No risk" },
-          {
-            key: "lift",
-            text: "Switch to the new test db",
-            cost: "Better tests",
-          },
-        ],
-        recommended: { option: "lift", reason: "The new db is ready" },
-        hardToUndo: { value: false },
-        decider: "owner",
-      }),
-    ],
-    states: [
-      state({ state: "answered", option: "hold", words: "Hold the switch" }),
-      state({
-        state: "approved",
+  one("gate-lock", "heartbeat-lock", {
+    question: "Close the heartbeat's check-and-write window with a lock?",
+    options: YES_NO,
+    hardToUndo: { value: "partly", reason: "a design change" },
+  }),
+  one(
+    "fleet",
+    "test-db-switch-hold",
+    {
+      question: "Keep the test-database switch on hold?",
+      options: [
+        { key: "hold", text: "Hold", cost: UNRECORDED },
+        { key: "lift", text: "Lift", cost: UNRECORDED },
+      ],
+      recommended: {
         option: "lift",
-        words: "Lift the switch",
-        expectedEntries: 1,
-      }),
-    ],
-  },
-  {
-    id: "offsite-backup-cost",
-    project: "fleet",
-    revisions: [
-      decision({
-        id: "offsite-backup-cost",
-        project: "fleet",
-        question: "Keep the offsite backup given its cost?",
-        options: [
-          { key: "a", text: "Yes, keep it", cost: "USD 50 per month" },
-          { key: "b", text: "No, drop it", cost: "Save money" },
-        ],
-        hardToUndo: { value: false },
-      }),
-    ],
-    states: [],
-  },
-  {
-    id: "rls-before-first-client",
-    project: "client-portal",
-    revisions: [
-      decision({
-        id: "rls-before-first-client",
-        project: "client-portal",
-        question: "Enable RLS before the first client?",
-        evidence: [
-          { label: "Issue 71", href: "https://github.com/x/issues/71" },
-        ],
-      }),
-    ],
-    states: [],
-  },
-  {
-    id: "delete-three-branches",
-    project: "client-portal",
-    revisions: [
-      decision({
-        id: "delete-three-branches",
-        project: "client-portal",
-        question: "Delete the three stale branches?",
-        hardToUndo: {
-          value: "partly",
-          reason:
-            "the deletion cannot be undone; the work is merged or obsolete",
-        },
-      }),
-    ],
-    states: [],
-  },
-  {
-    id: "install-sync-agent",
-    project: "waves",
-    revisions: [
-      decision({
-        id: "install-sync-agent",
-        project: "waves",
-        question: "Install the sync agent on this machine?",
-        options: [
-          {
-            key: "a",
-            text: "Yes, install it",
-            cost: "a change to your machine",
-          },
-          { key: "b", text: "No, skip it", cost: "No changes" },
-        ],
-        hardToUndo: { value: false },
-      }),
-    ],
-    states: [],
-  },
-  {
-    id: "backup-job-in-freeze",
-    project: "fleet",
-    revisions: [
-      decision({
-        id: "backup-job-in-freeze",
-        project: "fleet",
-        question: "Run the backup job during the standing freeze?",
-        options: [
-          { key: "a", text: "Yes, run it", cost: "Covers the weekend" },
-          {
-            key: "b",
-            text: "No, skip it",
-            cost: "The standing freeze covers it",
-          },
-        ],
-        hardToUndo: { value: true, reason: "a production deployment" },
-      }),
-    ],
-    states: [],
-  },
-  {
-    id: "clean-merged-worktrees",
-    project: "fleet",
-    revisions: [
-      decision({
-        id: "clean-merged-worktrees",
-        project: "fleet",
-        shape: "instruction",
-        question: "Clean the merged worktrees",
-        options: [],
-        hardToUndo: { value: "partly", reason: "deleting; branches kept" },
-        appliesTo: [
-          "campaign-foundry",
-          "client-portal",
-          "hexagen-monaco",
-          "waves",
-          "gate-lock",
-        ],
-      }),
-    ],
-    states: [
+        reason: "the measurement did not support the hold",
+      },
+    },
+    [
       state({
-        state: "approved",
-        option: undefined,
-        words: "Clean the merged worktrees",
+        state: "answered",
+        option: "hold",
+        by: "fleet session",
+        words: UNRECORDED,
+      }),
+      state({
+        option: "lift",
+        expectedEntries: 1,
+        by: "fleet session",
+        words: UNRECORDED,
       }),
     ],
-  },
+  ),
+  one("fleet", "offsite-backup-cost", {
+    question: "Pay for an off-machine copy of production data?",
+    options: [
+      { key: "yes", text: "Yes", cost: "A monthly charge" },
+      {
+        key: "no",
+        text: "No",
+        cost: "Production data has no copy off the machine",
+      },
+    ],
+    recommended: { option: "yes", reason: "yes for production only" },
+    hardToUndo: { value: false, reason: "no, but it costs money monthly" },
+  }),
+  one("client-portal", "rls-before-first-client", {
+    question:
+      "Do the database role and row-level security work (#71) before the first real client?",
+    options: YES_NO,
+    recommended: { option: "yes", reason: UNRECORDED },
+  }),
+  one("client-portal", "delete-three-branches", {
+    question:
+      "Delete two merged branches and one closed branch with its worktree?",
+    options: YES_NO,
+    recommended: { option: "yes", reason: UNRECORDED },
+    hardToUndo: {
+      value: "partly",
+      reason: "the deletion cannot be undone; the work is merged or obsolete",
+    },
+  }),
+  one("waves", "install-sync-agent", {
+    question: "Install the sync agent on the owner's laptop?",
+    options: [
+      { key: "yes", text: "Yes", cost: "A change to your machine" },
+      { key: "no", text: "No", cost: UNRECORDED },
+    ],
+  }),
+  one("fleet", "backup-job-in-freeze", {
+    question:
+      "Deploy hexagen-monaco's backup job to production during the freeze?",
+    options: YES_NO,
+    recommended: { option: "no", reason: "the standing freeze covers it" },
+    hardToUndo: { value: true, reason: "a production deployment" },
+  }),
+  one(
+    "fleet",
+    "clean-merged-worktrees",
+    {
+      shape: "instruction",
+      question: "Clean up worktrees already merged via a PR",
+      options: [],
+      hardToUndo: { value: "partly", reason: "deleting; branches kept" },
+      appliesTo: [
+        "campaign-foundry",
+        "client-portal",
+        "hexagen-monaco",
+        "waves",
+        "gate-lock",
+      ],
+    },
+    [
+      state({
+        by: "fleet session",
+        words: "Yes clean up worktrees that have already been merged via a PR.",
+      }),
+    ],
+  ),
 ];

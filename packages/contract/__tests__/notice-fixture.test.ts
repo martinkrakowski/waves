@@ -72,6 +72,28 @@ describe("the fourteen fixture decisions", () => {
     expect(decision13?.states).toHaveLength(0);
   });
 
+  it("recommends no for decision 13 and leaves it unanswered", () => {
+    const decision13 = NOTICE_DECISIONS.find(
+      (f) => f.id === "backup-job-in-freeze",
+    );
+    expect(
+      (decision13?.revisions[0] as Record<string, unknown>).recommended,
+    ).toEqual({ option: "no", reason: "the standing freeze covers it" });
+  });
+
+  it("stores decision 8 as one decision answered twice", () => {
+    const decision8 = NOTICE_DECISIONS.find(
+      (f) => f.id === "test-db-switch-hold",
+    );
+    expect(decision8?.revisions).toHaveLength(1);
+    expect(decision8?.states.map((s) => [s.state, s.option, s.source])).toEqual(
+      [
+        ["answered", "hold", "reported"],
+        ["approved", "lift", "reported"],
+      ],
+    );
+  });
+
   it("has an instruction for decision 14", () => {
     const decision14 = NOTICE_DECISIONS.find(
       (f) => f.id === "clean-merged-worktrees",
