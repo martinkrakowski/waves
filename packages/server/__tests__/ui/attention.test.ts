@@ -172,4 +172,11 @@ describe("reasonLabel", () => {
   it("passes a reason it does not know through untouched", () => {
     expect(reasonLabel("yelled")).toBe("yelled");
   });
+
+  it.each(["constructor", "toString", "__proto__"])(
+    "passes %s through as the string it is",
+    (reason) => {
+      expect(reasonLabel(reason)).toBe(reason);
+    },
+  );
 });

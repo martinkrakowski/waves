@@ -25,27 +25,12 @@ export const REASONS = [
 ];
 
 /**
- * The word each reason is said in. A reason's label is its own value, save for
- * `no-pr`, which reads as "no PR" — a hyphenated id the reader did not choose
- * is one more thing to translate when the label is shown.
- */
-const REASON_LABELS = {
-  failed: "failed",
-  disagreement: "disagreement",
-  checks: "checks",
-  gate: "gate",
-  exit: "exit",
-  silent: "silent",
-  "no-pr": "no PR",
-};
-
-/**
  * The label a reason is drawn under. It is the reason's own value, except for
  * `no-pr`, so a badge or a chip reads "no PR" where the value stays `no-pr` in
  * the address and the response (`?reason=no-pr`).
  */
 export function reasonLabel(reason) {
-  return REASON_LABELS[reason] ?? reason;
+  return reason === "no-pr" ? "no PR" : reason;
 }
 
 /** One project's own count, as the `projects` list answers it. */
