@@ -8,6 +8,7 @@ import {
 } from "@hexagen-monaco/waves-contract";
 
 import type { StorePort, StoredStatus } from "./ports/store.js";
+import type { NoticeStorePort } from "./ports/notice-store.js";
 import type { Now } from "./read-model.js";
 
 /**
@@ -18,6 +19,7 @@ export const REGISTRATION_KEYS: readonly string[] = ["id", "name", "repo"];
 
 export interface WriteModelDeps {
   readonly store: StorePort<Project, StoredSnapshot>;
+  readonly noticeStore: NoticeStorePort;
   readonly now: Now;
   /** Mints a new project token. Injected: randomness is an adapter's. */
   readonly mintToken: () => string;
@@ -96,7 +98,7 @@ function projectIdOf(record: Record<string, unknown>): string | undefined {
 }
 
 export function createWriteModel(deps: WriteModelDeps) {
-  const { store, now, mintToken, digestHex } = deps;
+  const { store, noticeStore, now, mintToken, digestHex } = deps;
 
   function closed(body: unknown): Closed {
     const issues = closedIssues(body);
@@ -237,7 +239,9 @@ export function createWriteModel(deps: WriteModelDeps) {
 
     /**
      * False when there was no such project. The store deletes silently, so the
-     * caller reads first: an unknown id is a 404, not a 204.
+     * caller reads first: an unknown id is a 404, not a 204. The project's
+     * notices go with it (design W60): the registry's own delete takes the
+     * waves and the status, and the notice store takes the decisions and events.
      */
     async deleteProject(id: string): Promise<boolean> {
       const stored = await store.getProject(id);
@@ -245,6 +249,7 @@ export function createWriteModel(deps: WriteModelDeps) {
         return false;
       }
       await store.deleteProject(id);
+      await noticeStore.deleteNotices(id);
       return true;
     },
   };

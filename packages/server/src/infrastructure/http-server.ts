@@ -9,10 +9,12 @@ import {
   createFailureLimiter,
   createRateLimiter,
 } from "../application/limiters.js";
+import type { NoticeStorePort } from "../application/ports/notice-store.js";
 import type { Now } from "../application/read-model.js";
 import { createReadModel, type ReadModel } from "../application/read-model.js";
 import type { StorePort } from "../application/ports/store.js";
 import { digestsEqual, mintToken } from "./digest.js";
+import { sha256Hex } from "./sha256.js";
 import {
   authorised,
   CHALLENGE,
@@ -62,6 +64,7 @@ const ALL_WAVES = "all=1";
 
 export interface HttpServerDeps {
   readonly store: StorePort<Project, StoredSnapshot>;
+  readonly noticeStore: NoticeStorePort;
   readonly now: Now;
   readonly publicDir: string;
   readonly log: (line: string) => void;
@@ -73,6 +76,7 @@ export interface HttpServerDeps {
   readonly trustProxy?: boolean;
   readonly compare?: DigestComparer;
   readonly mint?: () => string;
+  readonly hashText?: (text: string) => string;
 }
 
 async function staticReply(
@@ -163,7 +167,7 @@ function extraFor(pathname: string): Headers {
 }
 
 export function createHttpServer(deps: HttpServerDeps): Server {
-  const { store, now, publicDir, log, readToken } = deps;
+  const { store, noticeStore, now, publicDir, log, readToken } = deps;
   const root = resolve(publicDir);
   const expected = readToken === undefined ? undefined : sha256(readToken);
   const readModel = createReadModel({ store, now });
@@ -171,7 +175,9 @@ export function createHttpServer(deps: HttpServerDeps): Server {
   const compare: DigestComparer = deps.compare ?? digestsEqual;
   const write = createWriteHandler({
     store,
+    noticeStore,
     now,
+    hashText: deps.hashText ?? sha256Hex,
     adminToken: deps.adminToken,
     enrollToken: deps.enrollToken,
     log,

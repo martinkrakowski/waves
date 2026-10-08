@@ -7,9 +7,11 @@ import { join } from "node:path";
 import type { Project, StoredSnapshot } from "@hexagen-monaco/waves-contract";
 
 import type { DigestComparer } from "../src/application/bearer.js";
+import type { NoticeStorePort } from "../src/application/ports/notice-store.js";
 import type { StorePort } from "../src/application/ports/store.js";
 import { createHttpServer } from "../src/infrastructure/http-server.js";
 import { MemoryStore } from "../src/infrastructure/memory-store.js";
+import { sha256Hex } from "../src/infrastructure/sha256.js";
 import {
   expectingRequest,
   type RawResult,
@@ -29,12 +31,14 @@ const CANARY = "canary-outside-the-public-directory\n";
 
 export interface HarnessOptions {
   readonly store?: StorePort<Project, StoredSnapshot>;
+  readonly noticeStore?: NoticeStorePort;
   readonly readToken?: string;
   readonly adminToken?: string;
   readonly enrollToken?: string;
   readonly trustProxy?: boolean;
   readonly compare?: DigestComparer;
   readonly mint?: () => string;
+  readonly hashText?: (text: string) => string;
   readonly now?: () => number;
   readonly publicDir?: string;
 }
@@ -133,9 +137,14 @@ export async function startHarness(
 ): Promise<Started> {
   const lines: string[] = [];
   const sockets: Socket[] = [];
+  const store = options.store ?? new MemoryStore();
+  const noticeStore: NoticeStorePort =
+    options.noticeStore ?? (store as unknown as NoticeStorePort);
   const server: Server = createHttpServer({
-    store: options.store ?? new MemoryStore(),
+    store,
+    noticeStore,
     now: options.now ?? (() => NOW_MS),
+    hashText: options.hashText ?? sha256Hex,
     publicDir: options.publicDir ?? (await publicDir()),
     readToken: options.readToken,
     adminToken: options.adminToken,
