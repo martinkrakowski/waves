@@ -32,7 +32,7 @@ describe("parseQuery", () => {
     expect(parsed("?&")).toStrictEqual(EMPTY);
   });
 
-  it("takes a reason only from the six the server knows", () => {
+  it("takes a reason only from the seven the server knows", () => {
     for (const reason of [
       "failed",
       "disagreement",
@@ -40,6 +40,7 @@ describe("parseQuery", () => {
       "gate",
       "exit",
       "silent",
+      "no-pr",
     ] as const) {
       expect(parsed(`?reason=${reason}`).reason).toBe(reason);
     }
@@ -177,6 +178,7 @@ describe("the round trip", () => {
     { tab: "quiet", q: "alpha", all: false },
     { reason: "failed", all: false },
     { reason: "silent", all: true },
+    { reason: "no-pr", all: false },
     { stage: "plan-review", all: false },
     { seat: "seat one", all: false },
     { seat: "a&b=c", all: false },

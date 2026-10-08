@@ -5,15 +5,15 @@
  * out of: an id that fails its pattern is a response the page has no path for,
  * and a page that guesses one is a dead end a reader can see and not follow.
  *
- * The reason list is the same six the server derives them from, written out
+ * The reason list is the same seven the server derives them from, written out
  * again rather than imported, because `query.js` keeps its own copy for the
  * query string and the page reads no module for a constant it is going to
- * compare six strings against anyway.
+ * compare seven strings against anyway.
  */
 
 import { isProjectId, isWaveId } from "./patterns.js";
 
-/** The six reasons a lane is asked about, in the order the server writes them. */
+/** The seven reasons a lane is asked about, in the order the server writes them. */
 export const REASONS = [
   "failed",
   "disagreement",
@@ -21,7 +21,17 @@ export const REASONS = [
   "gate",
   "exit",
   "silent",
+  "no-pr",
 ];
+
+/**
+ * The label a reason is drawn under. It is the reason's own value, except for
+ * `no-pr`, so a badge or a chip reads "no PR" where the value stays `no-pr` in
+ * the address and the response (`?reason=no-pr`).
+ */
+export function reasonLabel(reason) {
+  return reason === "no-pr" ? "no PR" : reason;
+}
 
 /** One project's own count, as the `projects` list answers it. */
 function projectCount(entry) {
@@ -42,7 +52,7 @@ function omitted(value) {
   return Number.isSafeInteger(value) && value >= 0;
 }
 
-/** A lane asked about: at least one reason, and only the six. */
+/** A lane asked about: at least one reason, and only the seven. */
 function reasons(reasons_) {
   return (
     Array.isArray(reasons_) &&

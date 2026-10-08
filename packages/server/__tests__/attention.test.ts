@@ -26,8 +26,15 @@ function reported(event: "started" | "settled" | "failed"): Lane["reported"] {
   return { stage: "implement", event, ts: PUSHED_AT };
 }
 
+function mergeStage(
+  stage: string,
+  event: "started" | "settled" | "failed",
+): Lane["reported"] {
+  return { stage, event, ts: PUSHED_AT };
+}
+
 describe("the attention reasons", () => {
-  it("names the six reasons in one order and the two numbers around them", () => {
+  it("names the seven reasons in one order and the two numbers around them", () => {
     expect(ATTENTION_REASONS).toEqual([
       "failed",
       "disagreement",
@@ -35,6 +42,7 @@ describe("the attention reasons", () => {
       "gate",
       "exit",
       "silent",
+      "no-pr",
     ]);
     expect(ATTENTION_WINDOW_MS).toBe(72 * 60 * 60 * 1000);
     expect(MAX_ATTENTION_LANES).toBe(200);
@@ -178,7 +186,9 @@ describe("the attention reasons", () => {
       "gate",
       "exit",
     ]);
-    expect(reasons).toEqual(ATTENTION_REASONS.filter((r) => r !== "silent"));
+    expect(reasons).toEqual(
+      ATTENTION_REASONS.filter((r) => r !== "silent" && r !== "no-pr"),
+    );
   });
 
   it("answers the silence last, after the lane's own faults", () => {
@@ -192,6 +202,124 @@ describe("the attention reasons", () => {
 
     expect(reasons).toEqual(["disagreement", "gate", "silent"]);
     expect(reasons[reasons.length - 1]).toBe("silent");
+  });
+
+  it("cites a lane whose merge settled with no pull request", () => {
+    expect(
+      attentionReasons(
+        lane({ reported: mergeStage("merge", "settled") }),
+        false,
+      ),
+    ).toEqual(["no-pr"]);
+  });
+
+  it("cites a lane whose merge settled when the project calls it merged", () => {
+    expect(
+      attentionReasons(
+        lane({ reported: mergeStage("merged", "settled") }),
+        false,
+      ),
+    ).toEqual(["no-pr"]);
+  });
+
+  it("cites a lane that recorded its merge however it ended", () => {
+    for (const event of ["settled", "started"] as const) {
+      expect(
+        attentionReasons(
+          lane({ reported: mergeStage("record", event) }),
+          false,
+        ),
+      ).toEqual(["no-pr"]);
+    }
+  });
+
+  it("does not cite no-pr around a pull request's state", () => {
+    // An open pull request is not merged or closed, so the early return does not
+    // catch it: the `derived.pr === undefined` clause must answer for it.
+    expect(
+      attentionReasons(
+        lane({
+          reported: mergeStage("merge", "settled"),
+          derived: {
+            alive: true,
+            pr: { number: 7, state: "open", checks: "pass" },
+          },
+        }),
+        false,
+      ),
+    ).toEqual([]);
+    // A merged or closed pull request is the early return, which answers nothing.
+    expect(
+      attentionReasons(
+        lane({
+          reported: mergeStage("merge", "settled"),
+          derived: { alive: false, exit: 1, pr: mergedOrClosed("merged") },
+        }),
+        true,
+      ),
+    ).toEqual([]);
+    expect(
+      attentionReasons(
+        lane({
+          reported: mergeStage("merge", "settled"),
+          derived: { alive: false, exit: 1, pr: mergedOrClosed("closed") },
+        }),
+        true,
+      ),
+    ).toEqual([]);
+  });
+
+  it("drops no-pr for a lane that reported a pull request number", () => {
+    expect(
+      attentionReasons(
+        lane({
+          reported: { stage: "merge", event: "settled", ts: PUSHED_AT, pr: 12 },
+          derived: { alive: true },
+        }),
+        false,
+      ),
+    ).toEqual([]);
+  });
+
+  it("drops no-pr for a merge that has not settled, but keeps failed", () => {
+    expect(
+      attentionReasons(
+        lane({ reported: mergeStage("merge", "started") }),
+        false,
+      ),
+    ).toEqual([]);
+    expect(
+      attentionReasons(
+        lane({ reported: mergeStage("merge", "failed") }),
+        false,
+      ),
+    ).toEqual(["failed"]);
+  });
+
+  it("drops no-pr for stages that are not merge work", () => {
+    expect(
+      attentionReasons(
+        lane({ reported: mergeStage("deploy", "settled") }),
+        false,
+      ),
+    ).toEqual([]);
+  });
+
+  it("does not cite no-pr without a reported merge stage", () => {
+    expect(attentionReasons(lane(), false)).toEqual([]);
+  });
+
+  it("answers no-pr last, after the lane's own faults", () => {
+    const reasons = attentionReasons(
+      lane({
+        reported: mergeStage("merge", "settled"),
+        disagreements: ["scope"],
+      }),
+      false,
+    );
+
+    expect(reasons).toEqual(["disagreement", "no-pr"]);
+    expect(reasons[reasons.length - 1]).toBe("no-pr");
   });
 
   it("cites nothing for a lane whose pull request is merged", () => {

@@ -1,4 +1,5 @@
 import { el, internalLink, stamp, text } from "../dom.js";
+import { reasonLabel } from "../attention.js";
 import { formatQuery, TABS } from "../query.js";
 import { matches, phaseOf, tabCounts, tabOf, totals } from "./fleet-model.js";
 import { projectRow } from "./fleet-rows.js";
@@ -364,7 +365,10 @@ function attentionItem(entry, nowMs) {
   ];
   for (const reason of entry.reasons) {
     children.push(
-      el("span", { attrs: { class: "badge reason" }, text: reason }),
+      el("span", {
+        attrs: { class: "badge reason" },
+        text: reasonLabel(reason),
+      }),
     );
   }
   if (entry.stale) {

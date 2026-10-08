@@ -100,7 +100,7 @@ export declare function filterRows(
 ): readonly LaneRow[];
 
 /**
- * How many rows carry each of the six reasons, in the order `attention.js`
+ * How many rows carry each of the seven reasons, in the order `attention.js`
  * writes them. Every reason is answered, including the ones no row carries.
  */
 export declare function reasonCounts(
