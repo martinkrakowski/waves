@@ -95,6 +95,22 @@ describe("validateEvent", () => {
     expectEventPaths({ ...minimalEvent(), refs: { pr: 0 } }, ["/refs/pr"]);
   });
 
+  it("takes a wave and a lane in refs", () => {
+    expectValidEvent({
+      ...minimalEvent(),
+      refs: { wave: "wave-1", lane: "lane-1" },
+    });
+  });
+
+  it.each([
+    ["a wave that is not a string", { wave: 5 }, "/refs/wave"],
+    ["a wave that is not a wave id", { wave: "no good" }, "/refs/wave"],
+    ["a lane that is not a string", { lane: 5 }, "/refs/lane"],
+    ["a lane that is not a lane id", { lane: "no good" }, "/refs/lane"],
+  ])("rejects %s in refs", (_name, refs, path) => {
+    expectEventPaths({ ...minimalEvent(), refs }, [path]);
+  });
+
   it("rejects a null optional", () => {
     expectEventPaths({ ...minimalEvent(), refs: null }, ["/refs"]);
   });
