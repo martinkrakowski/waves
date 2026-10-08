@@ -11,6 +11,7 @@ import { MemoryStore } from "../src/index.js";
 import { sha256Hex } from "../src/infrastructure/sha256.js";
 import {
   cleanupHarnesses,
+  finalStatus,
   logLeaks,
   NOW_MS,
   startHarness,
@@ -457,4 +458,56 @@ describe("notice ids do not collide with waves", () => {
     expect(response.status).toBe(200);
     expect((await response.json()).revision).toBe(1);
   });
+});
+
+describe("notice write framing", () => {
+  function chunked(payload: string): string {
+    const hex = payload.length.toString(16);
+    return `${hex}\r\n${payload}\r\n0\r\n\r\n`;
+  }
+
+  it.each([
+    ["PUT a decision", "PUT", decisionPath()],
+    ["POST a state", "POST", statesPath()],
+    ["POST an event", "POST", EVENTS_PATH],
+  ])("400s a body that is not json on %s", async (_label, method, path) => {
+    const { started, pass } = await wired();
+    pass();
+    const raw = await started.raw(
+      `${method} ${path} HTTP/1.1`,
+      [
+        "Content-Type: application/json",
+        `Authorization: Bearer ${PROJECT_TOKEN}`,
+        "Content-Length: 7",
+        "Connection: close",
+      ],
+      "{ not ]",
+    );
+    expect(finalStatus(raw)).toBe("HTTP/1.1 400");
+    expect(raw).toContain('{"error":"bad json"}');
+  });
+
+  it.each([
+    ["POST a state", "POST", statesPath(), 16_384],
+    ["POST an event", "POST", EVENTS_PATH, 16_384],
+    ["PUT a decision", "PUT", decisionPath(), 1_048_576],
+  ])(
+    "413s a chunked body past the cap on %s",
+    async (_label, method, path, cap) => {
+      const { started, pass } = await wired();
+      pass();
+      const over = chunked("x".repeat(cap + 1));
+      const raw = await started.raw(
+        `${method} ${path} HTTP/1.1`,
+        [
+          "Content-Type: application/json",
+          `Authorization: Bearer ${PROJECT_TOKEN}`,
+          "Transfer-Encoding: chunked",
+          "Connection: close",
+        ],
+        over,
+      );
+      expect(finalStatus(raw)).toBe("HTTP/1.1 413");
+    },
+  );
 });

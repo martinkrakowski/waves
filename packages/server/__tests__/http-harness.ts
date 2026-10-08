@@ -11,7 +11,6 @@ import type { NoticeStorePort } from "../src/application/ports/notice-store.js";
 import type { StorePort } from "../src/application/ports/store.js";
 import { createHttpServer } from "../src/infrastructure/http-server.js";
 import { MemoryStore } from "../src/infrastructure/memory-store.js";
-import { sha256Hex } from "../src/infrastructure/sha256.js";
 import {
   expectingRequest,
   type RawResult,
@@ -144,7 +143,7 @@ export async function startHarness(
     store,
     noticeStore,
     now: options.now ?? (() => NOW_MS),
-    hashText: options.hashText ?? sha256Hex,
+    hashText: options.hashText,
     publicDir: options.publicDir ?? (await publicDir()),
     readToken: options.readToken,
     adminToken: options.adminToken,
