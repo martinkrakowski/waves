@@ -99,7 +99,7 @@ describe("decisionBindingText", () => {
 
   it("differs when shape changes", () => {
     const base = baseRevision();
-    const changed = { ...base, shape: "instruction" };
+    const changed = { ...base, shape: "instruction" as const };
     expect(decisionBindingText(base)).not.toEqual(decisionBindingText(changed));
   });
 
@@ -107,7 +107,7 @@ describe("decisionBindingText", () => {
     const base = baseRevision();
     const changed = {
       ...base,
-      options: [{ key: "a", text: "X", cost: "C1" }, base.options[1]],
+      options: [{ key: "a", text: "X", cost: "C1" }, base.options[1]!],
     };
     expect(decisionBindingText(base)).not.toEqual(decisionBindingText(changed));
   });
@@ -146,7 +146,7 @@ describe("decisionBindingText", () => {
 
   it("differs when decider changes", () => {
     const base = baseRevision();
-    const changed = { ...base, decider: "delegated" };
+    const changed = { ...base, decider: "delegated" as const };
     expect(decisionBindingText(base)).not.toEqual(decisionBindingText(changed));
   });
 
@@ -164,7 +164,7 @@ describe("decisionBindingText", () => {
 
   it("differs when options are swapped", () => {
     const base = baseRevision();
-    const swapped = { ...base, options: [base.options[1], base.options[0]] };
+    const swapped = { ...base, options: [base.options[1]!, base.options[0]!] };
     expect(decisionBindingText(base)).not.toEqual(decisionBindingText(swapped));
   });
 });

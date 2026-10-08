@@ -74,17 +74,19 @@ function applySourceRules(
   const answers = new Set(["approved", "declined", "answered"]);
   const sessionStates = new Set(["delegated", "withdrawn", "superseded"]);
 
-  if (answers.has(state)) {
-    if (source !== "reported") {
-      ctx.add("/source", "expected reported for an answer state");
+  if (source !== undefined) {
+    if (answers.has(state)) {
+      if (source !== "reported") {
+        ctx.add("/source", "expected reported for an answer state");
+      }
+      if (!wordsPresent) {
+        ctx.add("/words", "expected words for a reported answer");
+      }
     }
-    if (!wordsPresent) {
-      ctx.add("/words", "expected words for a reported answer");
-    }
-  }
-  if (sessionStates.has(state)) {
-    if (source !== "session") {
-      ctx.add("/source", "expected session for this state");
+    if (sessionStates.has(state)) {
+      if (source !== "session") {
+        ctx.add("/source", "expected session for this state");
+      }
     }
   }
   if (state === "delegated") {
