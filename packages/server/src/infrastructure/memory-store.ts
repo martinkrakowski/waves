@@ -7,14 +7,28 @@ import {
   type StoredStatus,
   snapshotHead,
 } from "../application/ports/store.js";
-import { assertIds } from "./ids.js";
+import {
+  type AppendOutcome,
+  type NoticeStorePort,
+  type StoredDecision,
+  type StoredEntry,
+  type StoredEvent,
+  type StoredRevision,
+} from "../application/ports/notice-store.js";
+import { assertIds, assertNoticeIds } from "./ids.js";
 
-export class MemoryStore implements StorePort<Project, StoredSnapshot> {
+export class MemoryStore
+  implements StorePort<Project, StoredSnapshot>, NoticeStorePort
+{
   readonly #projects = new Map<string, Project>();
   readonly #waves = new Map<string, Map<string, StoredSnapshot>>();
   readonly #heads = new Map<string, Map<string, SnapshotHead>>();
   /** One document per project, cloned in and out exactly as a snapshot is. */
   readonly #statuses = new Map<string, StoredStatus>();
+  /** Decisions: `project` -> `id` -> StoredDecision. */
+  readonly #decisions = new Map<string, Map<string, StoredDecision>>();
+  /** Events: `project` -> StoredEvent[], newest last. */
+  readonly #events = new Map<string, StoredEvent[]>();
 
   async getProject(id: string): Promise<Project | undefined> {
     assertIds(id);
@@ -129,5 +143,120 @@ export class MemoryStore implements StorePort<Project, StoredSnapshot> {
       return undefined;
     }
     return structuredClone(stored);
+  }
+
+  async getDecision(
+    project: string,
+    id: string,
+  ): Promise<StoredDecision | undefined> {
+    assertNoticeIds(project, id);
+    const stored = this.#decisions.get(project)?.get(id);
+    if (stored === undefined) {
+      return undefined;
+    }
+    return structuredClone(stored);
+  }
+
+  async listDecisions(project: string): Promise<readonly StoredDecision[]> {
+    assertIds(project);
+    const decisions = this.#decisions.get(project);
+    if (decisions === undefined) {
+      return [];
+    }
+    return [...decisions.keys()]
+      .sort()
+      .map((id) => structuredClone(decisions.get(id) as StoredDecision));
+  }
+
+  /**
+   * The create and the update read and write with nothing awaited between them,
+   * the same property the file store's queue gives: one call cannot interleave
+   * with another, so two writers with the same `expectRevisions` cannot both win.
+   */
+  async appendRevision(
+    project: string,
+    id: string,
+    revision: StoredRevision,
+    expectRevisions: number,
+    ceiling: number,
+  ): Promise<AppendOutcome> {
+    assertNoticeIds(project, id);
+    const decisions =
+      this.#decisions.get(project) ?? new Map<string, StoredDecision>();
+    const existing = decisions.get(id);
+    const count = existing?.revisions.length ?? 0;
+    if (count !== expectRevisions) {
+      return "conflict";
+    }
+    if (expectRevisions === 0) {
+      if (decisions.size >= ceiling) {
+        return "ceiling";
+      }
+      decisions.set(id, {
+        project,
+        id,
+        revisions: [structuredClone(revision)],
+        entries: [],
+      });
+      this.#decisions.set(project, decisions);
+      return "stored";
+    }
+    existing!.revisions.push(structuredClone(revision));
+    return "stored";
+  }
+
+  async appendEntry(
+    project: string,
+    id: string,
+    entry: StoredEntry,
+    expectEntries: number,
+  ): Promise<AppendOutcome> {
+    assertNoticeIds(project, id);
+    const decisions = this.#decisions.get(project);
+    if (decisions === undefined) {
+      return "missing";
+    }
+    const existing = decisions.get(id);
+    if (existing === undefined) {
+      return "missing";
+    }
+    if (existing.entries.length !== expectEntries) {
+      return "conflict";
+    }
+    existing.entries.push(structuredClone(entry));
+    return "stored";
+  }
+
+  async appendEvent(
+    project: string,
+    stored: StoredEvent,
+    keep: number,
+  ): Promise<{ dropped: number }> {
+    assertIds(project);
+    const current = this.#events.get(project) ?? [];
+    const next = [...current, structuredClone(stored)];
+    const dropped = Math.max(0, next.length - keep);
+    this.#events.set(project, next.slice(dropped));
+    return { dropped };
+  }
+
+  async listEvents(
+    project: string,
+    limit: number,
+  ): Promise<readonly StoredEvent[]> {
+    assertIds(project);
+    const events = this.#events.get(project);
+    if (events === undefined) {
+      return [];
+    }
+    return structuredClone(
+      [...events].reverse().slice(0, Math.max(0, limit)),
+    ) as StoredEvent[];
+  }
+
+  async deleteNotices(project: string): Promise<void> {
+    assertIds(project);
+    this.#decisions.delete(project);
+    this.#events.delete(project);
   }
 }
