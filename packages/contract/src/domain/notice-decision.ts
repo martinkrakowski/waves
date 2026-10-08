@@ -57,7 +57,7 @@ function readDecision(
     "";
   const optionsRaw = own(record, "options");
   const { options, optionKeys } = readOptions(ctx, optionsRaw, "/options");
-  const optionCount = Array.isArray(optionsRaw) ? optionsRaw.length : 0;
+  const optionCount = Array.isArray(optionsRaw) ? optionsRaw.length : undefined;
   const recommendedRaw = own(record, "recommended");
   const recommended =
     recommendedRaw === undefined

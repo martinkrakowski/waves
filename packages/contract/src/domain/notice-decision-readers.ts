@@ -309,16 +309,16 @@ export function readActElsewhere(
 export function applyShapeRules(
   ctx: Collector,
   shape: string,
-  optionCount: number,
+  optionCount: number | undefined,
   recommendedPresent: boolean,
   appliesTo: ProjectId[],
   actElsewherePresent: boolean,
 ): void {
   if (shape === "choice") {
-    if (optionCount < 2) {
+    if (optionCount !== undefined && optionCount < 2) {
       ctx.add("/options", "expected at least 2 options for a choice");
     }
-  } else if (optionCount > 0) {
+  } else if (optionCount !== undefined && optionCount > 0) {
     ctx.add("/options", `expected no options for a ${shape}`);
   }
   if (shape !== "choice" && recommendedPresent) {
