@@ -7,8 +7,6 @@ import {
   type Project,
   type StoredSnapshot,
   type ValidationIssue,
-  MAX_DECISIONS_PER_PROJECT,
-  MAX_REVISIONS_PER_DECISION,
 } from "@hexagen-monaco/waves-contract";
 
 import {
@@ -32,6 +30,7 @@ import {
   createNoticeWriteModel,
   type NoticeWriteModel,
 } from "../application/notice-write-model.js";
+import { eventReply, raiseReply, stateReply } from "./notice-replies.js";
 import {
   createWriteModel,
   type Registration,
@@ -607,60 +606,7 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
       return answer(res, method, socket, decoded);
     }
     const result = await noticeModel.raiseDecision(project, id, decoded.value);
-    switch (result.kind) {
-      case "stored":
-        return answer(
-          res,
-          method,
-          socket,
-          afterRead(
-            jsonReply(200, {
-              revision: result.revision,
-              textSha256: result.textSha256,
-              created: result.created,
-              entries: result.entries,
-            }),
-          ),
-        );
-      case "ceiling":
-        return answer(
-          res,
-          method,
-          socket,
-          afterRead(
-            jsonReply(409, {
-              error: `at most ${MAX_DECISIONS_PER_PROJECT} decisions per project`,
-            }),
-          ),
-        );
-      case "tooManyRevisions":
-        return answer(
-          res,
-          method,
-          socket,
-          afterRead(
-            jsonReply(409, {
-              error: `at most ${MAX_REVISIONS_PER_DECISION} revisions per decision`,
-            }),
-          ),
-        );
-      case "conflict":
-        return answer(
-          res,
-          method,
-          socket,
-          afterRead(
-            jsonReply(409, { error: "the decision changed; re-read it" }),
-          ),
-        );
-      case "invalid":
-        return answer(
-          res,
-          method,
-          socket,
-          afterRead(jsonReply(400, { errors: result.errors })),
-        );
-    }
+    return answer(res, method, socket, afterRead(raiseReply(result)));
   }
 
   /**
@@ -685,43 +631,7 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
       return answer(res, method, socket, decoded);
     }
     const result = await noticeModel.postState(project, id, decoded.value);
-    switch (result.kind) {
-      case "posted":
-        return answer(
-          res,
-          method,
-          socket,
-          afterRead(jsonReply(201, { index: result.index })),
-        );
-      case "notFound":
-        return answer(
-          res,
-          method,
-          socket,
-          afterRead(jsonReply(404, { error: "not found" })),
-        );
-      case "conflict":
-        return answer(
-          res,
-          method,
-          socket,
-          afterRead(
-            jsonReply(409, {
-              error: result.error,
-              revision: result.revision,
-              textSha256: result.textSha256,
-              entries: result.entries,
-            }),
-          ),
-        );
-      case "invalid":
-        return answer(
-          res,
-          method,
-          socket,
-          afterRead(jsonReply(400, { errors: result.errors })),
-        );
-    }
+    return answer(res, method, socket, afterRead(stateReply(result)));
   }
 
   /**
@@ -744,22 +654,7 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
       return answer(res, method, socket, decoded);
     }
     const result = await noticeModel.postEvent(project, decoded.value);
-    switch (result.kind) {
-      case "posted":
-        return answer(
-          res,
-          method,
-          socket,
-          afterRead(jsonReply(201, { id: result.id, dropped: result.dropped })),
-        );
-      case "invalid":
-        return answer(
-          res,
-          method,
-          socket,
-          afterRead(jsonReply(400, { errors: result.errors })),
-        );
-    }
+    return answer(res, method, socket, afterRead(eventReply(result)));
   }
 
   /**

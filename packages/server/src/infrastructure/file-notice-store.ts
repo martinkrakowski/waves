@@ -1,14 +1,5 @@
-import { randomUUID } from "node:crypto";
 import type { Stats } from "node:fs";
-import {
-  lstat,
-  mkdir,
-  readFile,
-  readdir,
-  rename,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { lstat, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import type {
@@ -20,10 +11,13 @@ import type {
   StoredRevision,
 } from "../application/ports/notice-store.js";
 import { assertIds, assertNoticeIds } from "./ids.js";
-import { assertRealDirectory, errorCode } from "./store-helpers.js";
+import {
+  assertRealDirectory,
+  errorCode,
+  writeAtomic,
+} from "./store-helpers.js";
 
 const DATA_DIR_MODE = 0o700;
-const FILE_MODE = 0o600;
 const DECISIONS_DIR = "decisions";
 const EVENTS_DIR = "events";
 const SNAPSHOT_SUFFIX = ".json";
@@ -104,7 +98,7 @@ export class FileNoticeStore implements NoticeStorePort {
         if ((await this.#decisionCount(project)) >= ceiling) {
           return "ceiling";
         }
-        await this.#writeAtomic(
+        await writeAtomic(
           this.#decisionPath(project, id),
           JSON.stringify(
             {
@@ -124,7 +118,7 @@ export class FileNoticeStore implements NoticeStorePort {
         return "conflict";
       }
       stored.revisions.push(revision);
-      await this.#writeAtomic(
+      await writeAtomic(
         this.#decisionPath(project, id),
         JSON.stringify(stored, null, 2),
       );
@@ -152,7 +146,7 @@ export class FileNoticeStore implements NoticeStorePort {
         return "conflict";
       }
       stored.entries.push(entry);
-      await this.#writeAtomic(path, JSON.stringify(stored, null, 2));
+      await writeAtomic(path, JSON.stringify(stored, null, 2));
       return "stored";
     });
   }
@@ -174,7 +168,7 @@ export class FileNoticeStore implements NoticeStorePort {
       current.push(stored);
       const dropped = Math.max(0, current.length - keep);
       const kept = current.slice(dropped);
-      await this.#writeAtomic(path, JSON.stringify(kept, null, 2));
+      await writeAtomic(path, JSON.stringify(kept, null, 2));
       return { dropped };
     });
   }
@@ -295,24 +289,6 @@ export class FileNoticeStore implements NoticeStorePort {
       throw error;
     }
     return entries.filter(keep);
-  }
-
-  async #writeAtomic(target: string, payload: string): Promise<void> {
-    const temporary = `${target}.tmp-${process.pid}-${randomUUID()}`;
-    try {
-      await writeFile(temporary, payload, {
-        encoding: "utf8",
-        mode: FILE_MODE,
-      });
-      await rename(temporary, target);
-    } catch (error) {
-      try {
-        await rm(temporary, { force: true });
-      } catch {
-        void ignore();
-      }
-      throw error;
-    }
   }
 
   #decisionsDir(): string {
