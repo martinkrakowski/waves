@@ -541,29 +541,35 @@ the status's own receive time and its own `intervalSeconds`
 is listed when it holds at least one of seven reasons, and the reasons always come
 back in this order:
 
-| reason         | holds when                                                                                                        |
-| -------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `failed`       | `reported.event` is `"failed"`                                                                                    |
-| `disagreement` | `disagreements` is not empty                                                                                      |
-| `checks`       | `derived.pr.checks` is `"fail"`                                                                                   |
-| `gate`         | `derived.gate.exit` is a number other than `0`                                                                    |
-| `exit`         | `derived.alive` is `false` and `derived.exit` is a number other than `0`                                          |
-| `silent`       | the wave is stale, `derived.alive` is `true` and `derived.exit` is not there                                      |
-| `no-pr`        | `reported` holds a settled `merge`/`merged`/`record` stage, and neither `reported.pr` nor `derived.pr` is present |
+| reason         | holds when                                                                                                                                                      |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `failed`       | `reported.event` is `"failed"`                                                                                                                                  |
+| `disagreement` | `disagreements` is not empty                                                                                                                                    |
+| `checks`       | `derived.pr.checks` is `"fail"`                                                                                                                                 |
+| `gate`         | `derived.gate.exit` is a number other than `0`                                                                                                                  |
+| `exit`         | `derived.alive` is `false` and `derived.exit` is a number other than `0`                                                                                        |
+| `silent`       | the wave is stale, `derived.alive` is `true` and `derived.exit` is not there                                                                                    |
+| `no-pr`        | `reported.stage` is `merge` or `merged` with `reported.event` `"settled"`, or `reported.stage` is `record`, and neither `reported.pr` nor `derived.pr` is there |
 
-The stage names are the server's fixed list, because the contract leaves `stage`
-to the project: two projects write `merge`, one writes `merged`, and `record` is
-the stage after a merge. `deploy`, `deployed`, `tag` and any other stage name are
-not merge work and do not hold the reason. A lane with a pull request in any state
-never holds it — the merged-or-closed case is already excluded above — and a lane
-that named a `reported.pr` did not hold it either: a number was given.
+The contract leaves `stage` to the project, so it has no order of stages to
+read "merged or later" from, and `no-pr` knows three names and no others:
+`merge` and `merged`, which count only once the event is `settled`, and `record`,
+the stage after a merge, which counts at any event (`NO_PR_STAGES`, `holdsNoPr`,
+`packages/server/src/domain/attention.ts:51-77`). A lane at `deploy`, `deployed`, `tag`
+or any other stage never holds it, because such a lane can have no pull request
+and be right. The cost is silent: **a project that names its merge stage
+anything else is never asked about by this reason**, and nothing on the page
+says so. A project that adopts another name for it has to say so here, so the
+name can be added to the list. A lane with a pull request in any state never
+holds the reason, and neither does a lane that named a `reported.pr` with no
+`derived.pr`: a number was given.
 
 A lane whose `derived.pr.state` is `merged` or `closed` holds none of them,
 whatever else it is carrying (`attentionReasons`,
-`packages/server/src/domain/attention.ts:94-129`). Only the waves the server
+`packages/server/src/domain/attention.ts:93-128`). Only the waves the server
 received in the last 72 hours take part, counted on the receive time as
 `nowMs - Date.parse(receivedAt) <= 72 * 60 * 60 * 1000` (`inAttentionWindow`,
-`ATTENTION_WINDOW_MS`, `…/domain/attention.ts:132-137`, `22`). Those heads are
+`ATTENTION_WINDOW_MS`, `…/domain/attention.ts:131-136`, `22`). Those heads are
 collected from every project and sorted newest receive first before any snapshot
 is read, and at most `MAX_ATTENTION_WAVES` (256) of them are read at all, so
 which waves a request reads is decided by receive time and never by the order the

@@ -51,12 +51,11 @@ export function prSettled(state: PullRequestState | undefined): boolean {
 const NO_PR_STAGES: readonly string[] = ["merge", "merged", "record"];
 
 /**
- * Whether a lane that reported its merge as settled (or recorded it) and carries
- * no pull request anywhere holds the `no-pr` reason. A lane with a `derived.pr`
- * in any state already answered for in `attentionReasons` cannot reach here with
- * a merged or closed one, so only an `open` one is the `derived.pr === undefined`
- * check excludes. A `reported.pr`, however, is this function's own concern: a
- * number was given and the lane was not silent about it.
+ * Whether a lane reported its merge as settled, or is already being recorded,
+ * and carries no pull request number anywhere. `attentionReasons` has already
+ * answered a merged or closed pull request with no reasons before it asks, so
+ * the `derived.pr` check here is what keeps an open one out. A `reported.pr`
+ * with no `derived.pr` is not held either: a number was given.
  */
 function holdsNoPr(lane: Lane): boolean {
   const reported = lane.reported;
