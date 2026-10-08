@@ -180,6 +180,24 @@ describe("raiseDecision", () => {
     ]);
     expect([a.kind, b.kind].sort()).toEqual(["conflict", "stored"]);
   });
+
+  it("lets one of two concurrent updates win, the other a conflict", async () => {
+    const m = model();
+    await m.raiseDecision(PROJECT, ID, BODY);
+    const [a, b] = await Promise.all([
+      m.raiseDecision(
+        PROJECT,
+        ID,
+        decisionRevision(ID, PROJECT, { question: "A" }),
+      ),
+      m.raiseDecision(
+        PROJECT,
+        ID,
+        decisionRevision(ID, PROJECT, { question: "B" }),
+      ),
+    ]);
+    expect([a.kind, b.kind].sort()).toEqual(["conflict", "stored"]);
+  });
 });
 
 describe("postState", () => {
@@ -292,6 +310,59 @@ describe("postState", () => {
           state: "superseded",
           source: "session",
           supersededBy: "missing",
+          expectedEntries: 0,
+        }),
+      ),
+    ).toEqual({
+      kind: "invalid",
+      errors: [
+        {
+          path: "/supersededBy",
+          message: "expected another existing decision of this project",
+        },
+      ],
+    });
+  });
+
+  it("accepts an option that is a key of the current revision", async () => {
+    const m = await seed();
+    expect(
+      await m.postState(
+        PROJECT,
+        ID,
+        stateEntry({ option: "a", expectedEntries: 0 }),
+      ),
+    ).toEqual({ kind: "posted", index: 0 });
+  });
+
+  it("accepts a supersededBy that is another decision of the project", async () => {
+    const m = model();
+    await m.raiseDecision(PROJECT, ID, BODY);
+    await m.raiseDecision(PROJECT, "d2", decisionRevision("d2", PROJECT));
+    expect(
+      await m.postState(
+        PROJECT,
+        ID,
+        stateEntry({
+          state: "superseded",
+          source: "session",
+          supersededBy: "d2",
+          expectedEntries: 0,
+        }),
+      ),
+    ).toEqual({ kind: "posted", index: 0 });
+  });
+
+  it("refuses a supersededBy that is the decision itself", async () => {
+    const m = await seed();
+    expect(
+      await m.postState(
+        PROJECT,
+        ID,
+        stateEntry({
+          state: "superseded",
+          source: "session",
+          supersededBy: ID,
           expectedEntries: 0,
         }),
       ),

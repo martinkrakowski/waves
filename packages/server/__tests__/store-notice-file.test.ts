@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -364,6 +365,103 @@ describe("FileNoticeStore", () => {
       await expect(store.getDecision("alpha", "../escape")).rejects.toThrow(
         "invalid notice id",
       );
+    } finally {
+      await dispose();
+    }
+  });
+});
+
+describe("FileNoticeStore edge cases", () => {
+  it("answers conflict when appendRevision is stale on a missing decision", async () => {
+    const { store, dispose } = harness();
+    try {
+      const outcome = await store.appendRevision(
+        "alpha",
+        "d1",
+        storedRevision(1),
+        3,
+        3,
+      );
+      expect(outcome).toBe("conflict");
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("creates a missing data directory on write", async () => {
+    const root = mkdtempSync(join(tmpdir(), "waves-notice-file-"));
+    try {
+      const store = new FileNoticeStore(join(root, "data"));
+      await store.appendRevision("alpha", "d1", storedRevision(1), 0, 3);
+
+      expect(
+        statSync(join(root, "data", "decisions", "alpha")).mode & 0o777,
+      ).toBe(0o700);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("surfaces a stat error that is not ENOENT", async () => {
+    const root = mkdtempSync(join(tmpdir(), "waves-notice-file-"));
+    try {
+      writeFileSync(join(root, "file"), "");
+      await expect(
+        new FileNoticeStore(join(root, "file", "data")).getDecision(
+          "alpha",
+          "d1",
+        ),
+      ).rejects.toThrow();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("surfaces a read error that is not ENOENT", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.appendRevision("alpha", "d1", storedRevision(1), 0, 3);
+      // Replace the decision file with a directory: readFile on it throws EISDIR.
+      await rm(join(dataDir, "decisions", "alpha", "d1.json"));
+      mkdirSync(join(dataDir, "decisions", "alpha", "d1.json"));
+
+      await expect(store.getDecision("alpha", "d1")).rejects.toThrow();
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("surfaces a readdir error that is not ENOENT", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.appendRevision("alpha", "d1", storedRevision(1), 0, 3);
+      chmodSync(join(dataDir, "decisions", "alpha"), 0o000);
+
+      await expect(store.listDecisions("alpha")).rejects.toThrow(/EACCES/);
+    } finally {
+      chmodSync(join(dataDir, "decisions", "alpha"), 0o700);
+      await dispose();
+    }
+  });
+
+  it("removes the temporary file when the rename fails", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.appendRevision("alpha", "d1", storedRevision(1), 0, 3);
+      // Make the target a directory so the atomic rename fails.
+      await rm(join(dataDir, "decisions", "alpha", "d1.json"));
+      mkdirSync(join(dataDir, "decisions", "alpha", "d1.json"), {
+        mode: 0o700,
+      });
+
+      await expect(
+        store.appendRevision("alpha", "d1", storedRevision(2), 1, 3),
+      ).rejects.toThrow();
+      // No temp file left behind in the project directory.
+      const left = readdirSync(join(dataDir, "decisions", "alpha")).filter(
+        (name) => !name.endsWith(".json"),
+      );
+      expect(left).toEqual([]);
     } finally {
       await dispose();
     }
