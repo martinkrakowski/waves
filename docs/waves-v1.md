@@ -405,14 +405,15 @@ as the field's reader decides). This corrects the JSON example in
 
 **Every text is refused when it is not Unicode NFC or has leading or trailing
 white space; it is never repaired.** The reader checks
-`value.normalize("NFC") === value` and `value.trim() === value`
-(`readNoticeText`, `packages/contract/src/domain/notice.ts`). `readText` from
+`value.normalize("NFC") === value`, and a first or last character that matches
+`/[\s\u0085]/u` is refused, which `trim()` would not do for U+0085
+(`readNoticeText`, `packages/contract/src/domain/notice.ts:38-57`). `readText` from
 section 2.6 is not changed; this document has its own strict reader because the
 envelope never applied the NFC or trim rule.
 
 **Options.** A closed object with keys exactly `key`, `text`, `cost`, all
 required strings. `key` matches `^[a-z0-9]{1,8}$` (`OPTION_KEY_PATTERN`,
-`…/model.ts`); keys are unique (`…/notice-decision-readers.ts:112-124`). At most
+`…/model.ts`); keys are unique (`…/notice-decision-readers.ts:96-149`). At most
 8 options (`MAX_OPTIONS`, `…/model.ts`).
 
 **Recommended.** A closed object with keys exactly `option` and `reason`, both
@@ -423,11 +424,11 @@ Absent is valid for `choice`; it is refused on `action` and `instruction`
 **`hardToUndo`.** A closed object with keys exactly `value` and `reason`. `value`
 is `true`, `false` or the string `"partly"` (`DoorValue`, `…/model.ts`).
 `reason` is required unless `value` is `false`. The reason is one sentence; the
-page shows it verbatim (`packages/contract/src/domain/notice-decision-readers.ts:95-109`).
+page shows it verbatim (`packages/contract/src/domain/notice-decision-readers.ts:179-197`).
 
 **Evidence.** Each entry is a closed object with keys exactly `label` and
 `href`. `label` is 1 to 80 characters. `href` must begin `https://` and hold no
-white space or control character (`…/notice-decision-readers.ts:42-55`).
+white space or control character (`…/notice-decision-readers.ts:75-94`).
 
 **`refs`.** A closed object with keys exactly `wave`, `lane`, `pr`. `wave` is a
 wave id, `lane` a lane id, `pr` an integer ≥ 1. All optional (`readRefs`,
@@ -461,7 +462,7 @@ wave id, `lane` a lane id, `pr` an integer ≥ 1. All optional (`readRefs`,
 produce `textSha256` and that the client hashes to verify a signed answer
 (stage 2). It is pure and total: given a validated `DecisionRevision` it returns
 one JSON text, no white space between tokens, built with an explicit key order
-(`packages/contract/src/domain/notice-decision.ts:143-162`):
+(`packages/contract/src/domain/notice-decision.ts:142-172`):
 
 ```
 {"question":…,"shape":…,"options":[{"key":…,"text":…,"cost":…}],"recommended":{"option":…,"reason":…}|null,"hardToUndo":{"value":…,"reason":…|null},"commits":[…],"decider":…,"appliesTo":[…],"actElsewhere":{"where":…,"what":…}|null}
@@ -497,7 +498,7 @@ closed object with keys exactly `state`, `source`, `revision`, `textSha256`,
 **Source by state.** `approved`, `declined` and `answered` require
 `source: "reported"` and `words`; they are refused with `source: "session"`.
 `delegated`, `withdrawn` and `superseded` require `source: "session"`
-(`applySourceRules`, `…/notice-state.ts:93-126`). `delegated` also requires
+(`applySourceRules`, `…/notice-state.ts:61-106`). `delegated` also requires
 `option` or `words`. `withdrawn` requires `reason`. `superseded` requires
 `supersededBy`; `supersededBy` is refused on any other state.
 
