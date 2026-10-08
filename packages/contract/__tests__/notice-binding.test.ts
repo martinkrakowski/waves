@@ -167,4 +167,41 @@ describe("decisionBindingText", () => {
     const swapped = { ...base, options: [base.options[1]!, base.options[0]!] };
     expect(decisionBindingText(base)).not.toEqual(decisionBindingText(swapped));
   });
+
+  it("ignores key order in nested objects", () => {
+    const base = {
+      ...baseRevision(),
+      recommended: { option: "a", reason: "r" },
+    };
+    const reordered = {
+      ...base,
+      options: [
+        { cost: "C1", text: "A", key: "a" },
+        { cost: "C2", text: "B", key: "b" },
+      ] as DecisionRevision["options"],
+      recommended: { reason: "r", option: "a" },
+    };
+    expect(decisionBindingText(base)).toEqual(decisionBindingText(reordered));
+  });
+
+  it("ignores key order in actElsewhere", () => {
+    const base = { ...baseRevision(), actElsewhere: { where: "w", what: "d" } };
+    const reordered = {
+      ...base,
+      actElsewhere: { what: "d", where: "w" },
+    };
+    expect(decisionBindingText(base)).toEqual(decisionBindingText(reordered));
+  });
+
+  it("ignores an extra key on an option", () => {
+    const base = baseRevision();
+    const withExtra = {
+      ...base,
+      options: [
+        { key: "a", text: "A", cost: "C1", extra: true },
+        base.options[1]!,
+      ],
+    };
+    expect(decisionBindingText(base)).toEqual(decisionBindingText(withExtra));
+  });
 });

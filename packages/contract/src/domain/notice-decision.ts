@@ -140,22 +140,33 @@ export function validateDecision(
 }
 
 export function decisionBindingText(revision: DecisionRevision): string {
-  const recommended = revision.recommended ?? null;
+  const recommended = revision.recommended
+    ? {
+        option: revision.recommended.option,
+        reason: revision.recommended.reason,
+      }
+    : null;
   const hardToUndo: { value: DoorValue; reason: string | null } = {
     value: revision.hardToUndo.value,
     reason: revision.hardToUndo.reason ?? null,
   };
-  const actElsewhere = revision.actElsewhere ?? null;
-  const binding = {
+  const actElsewhere = revision.actElsewhere
+    ? { where: revision.actElsewhere.where, what: revision.actElsewhere.what }
+    : null;
+  const bindings = {
     question: revision.question,
     shape: revision.shape,
-    options: revision.options,
+    options: revision.options.map((o) => ({
+      key: o.key,
+      text: o.text,
+      cost: o.cost,
+    })),
     recommended,
     hardToUndo,
-    commits: revision.commits,
+    commits: [...revision.commits],
     decider: revision.decider,
-    appliesTo: revision.appliesTo,
+    appliesTo: [...revision.appliesTo],
     actElsewhere,
   };
-  return JSON.stringify(binding);
+  return JSON.stringify(bindings);
 }
