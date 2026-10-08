@@ -115,6 +115,15 @@ describe("validateDecision — remaining refusals", () => {
     ]);
   });
 
+  it("rejects a string with leading or trailing U+0085", () => {
+    expectDecisionPaths({ ...minimalChoice(), question: "\u0085What?" }, [
+      "/question",
+    ]);
+    expectDecisionPaths({ ...minimalChoice(), question: "What?\u0085" }, [
+      "/question",
+    ]);
+  });
+
   it("requires raisedBy of 1 to 80 characters", () => {
     expectValidDecision({ ...minimalChoice(), raisedBy: "b".repeat(80) });
     expectDecisionPaths({ ...minimalChoice(), raisedBy: "b".repeat(81) }, [

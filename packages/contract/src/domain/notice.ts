@@ -49,7 +49,7 @@ export function readNoticeText(
     ctx.add(path, "expected NFC-normalised text");
     return undefined;
   }
-  if (text.trim() !== text) {
+  if (/^[\s\u0085]/.test(text) || /[\s\u0085]$/u.test(text)) {
     ctx.add(path, "expected no leading or trailing white space");
     return undefined;
   }
