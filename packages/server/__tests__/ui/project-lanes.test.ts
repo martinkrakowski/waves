@@ -38,7 +38,15 @@ const FULL_ROW: LaneRow = laneRow({
   },
   disagreements: 2,
   disagreement: "seat 1 says pass, the gate says fail",
-  reasons: ["failed", "disagreement", "checks", "gate", "exit", "silent"],
+  reasons: [
+    "failed",
+    "disagreement",
+    "checks",
+    "gate",
+    "exit",
+    "silent",
+    "no-pr",
+  ],
 });
 
 /** The same view, with one row that is not `FULL_ROW` in exactly one way. */
@@ -313,7 +321,7 @@ const INVALID: readonly (readonly [string, unknown])[] = [
   ["a lane with no reasons", withRow({ ...FULL_ROW, reasons: undefined })],
   ["reasons that are not a list", withRow({ ...FULL_ROW, reasons: "failed" })],
   [
-    "a reason outside the six",
+    "a reason outside the seven",
     withRow({ ...FULL_ROW, reasons: ["failed", "yelled"] }),
   ],
 ];

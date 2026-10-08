@@ -1978,7 +1978,7 @@ describe("filterRows", () => {
 });
 
 describe("reasonCounts", () => {
-  it("answers every reason in the order the six are written in", () => {
+  it("answers every reason in the order the seven are written in", () => {
     expect([
       ...reasonCounts([
         laneRow({ id: "wv-a", reasons: ["silent"] }),
@@ -1992,6 +1992,7 @@ describe("reasonCounts", () => {
       ["gate", 0],
       ["exit", 0],
       ["silent", 1],
+      ["no-pr", 0],
     ]);
   });
 
@@ -2009,6 +2010,7 @@ describe("reasonCounts", () => {
       ["gate", 0],
       ["exit", 0],
       ["silent", 0],
+      ["no-pr", 0],
     ]);
   });
 });

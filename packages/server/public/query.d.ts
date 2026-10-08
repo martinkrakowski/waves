@@ -2,7 +2,7 @@
 export type FleetTab = "active" | "flagged" | "quiet";
 
 export type Reason =
-  "failed" | "disagreement" | "checks" | "gate" | "exit" | "silent";
+  "failed" | "disagreement" | "checks" | "gate" | "exit" | "silent" | "no-pr";
 
 export interface ViewQuery {
   /**

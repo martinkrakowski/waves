@@ -1869,6 +1869,49 @@ describe("the attention view", () => {
     expect(stale.lanes[0]?.stale).toBe(true);
   });
 
+  it("lists a lane whose merge settled with no pull request, and not past the window", async () => {
+    const store = new MemoryStore();
+    await store.putProject(project("alpha"));
+    await store.putSnapshot(
+      pushed("alpha", "wv1", RECEIVED_AT, [
+        laneOf("wv1-a", {
+          reported: {
+            stage: "merge",
+            event: "settled",
+            ts: "2026-10-01T12:00:00Z",
+          },
+          derived: { alive: true },
+        }),
+      ]),
+    );
+
+    const view = await model(store).listAttention();
+
+    expect(view.lanes.map((entry) => entry.reasons)).toEqual([["no-pr"]]);
+    expect(view.lanes[0]?.pr).toBeUndefined();
+    expect(view.projects).toEqual([{ id: "alpha", attention: 1 }]);
+
+    // The same lane, received older than the 72-hour window, is not listed.
+    const oldStore = new MemoryStore();
+    await oldStore.putProject(project("alpha"));
+    await oldStore.putSnapshot(
+      pushed("alpha", "wv1", agoFrom(NOW_MS, 73 * HOUR_MS), [
+        laneOf("wv1-a", {
+          reported: {
+            stage: "merge",
+            event: "settled",
+            ts: "2026-10-01T12:00:00Z",
+          },
+          derived: { alive: true },
+        }),
+      ]),
+    );
+
+    const oldView = await model(oldStore, NOW_MS).listAttention();
+    expect(oldView.lanes).toEqual([]);
+    expect(oldView.projects).toEqual([{ id: "alpha", attention: 0 }]);
+  });
+
   it("judges a wave by the interval of the snapshot it read", async () => {
     const store = new ReplacedStore("wv-absent");
     await store.putProject(project("alpha"));

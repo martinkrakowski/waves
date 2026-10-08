@@ -538,24 +538,32 @@ the status's own receive time and its own `intervalSeconds`
 `getStatus`, `…/read-model.ts:1096-1110`).
 
 `GET /api/v1/attention` is the same view across every registered project. A lane
-is listed when it holds at least one of six reasons, and the reasons always come
+is listed when it holds at least one of seven reasons, and the reasons always come
 back in this order:
 
-| reason         | holds when                                                                   |
-| -------------- | ---------------------------------------------------------------------------- |
-| `failed`       | `reported.event` is `"failed"`                                               |
-| `disagreement` | `disagreements` is not empty                                                 |
-| `checks`       | `derived.pr.checks` is `"fail"`                                              |
-| `gate`         | `derived.gate.exit` is a number other than `0`                               |
-| `exit`         | `derived.alive` is `false` and `derived.exit` is a number other than `0`     |
-| `silent`       | the wave is stale, `derived.alive` is `true` and `derived.exit` is not there |
+| reason         | holds when                                                                                                        |
+| -------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `failed`       | `reported.event` is `"failed"`                                                                                    |
+| `disagreement` | `disagreements` is not empty                                                                                      |
+| `checks`       | `derived.pr.checks` is `"fail"`                                                                                   |
+| `gate`         | `derived.gate.exit` is a number other than `0`                                                                    |
+| `exit`         | `derived.alive` is `false` and `derived.exit` is a number other than `0`                                          |
+| `silent`       | the wave is stale, `derived.alive` is `true` and `derived.exit` is not there                                      |
+| `no-pr`        | `reported` holds a settled `merge`/`merged`/`record` stage, and neither `reported.pr` nor `derived.pr` is present |
+
+The stage names are the server's fixed list, because the contract leaves `stage`
+to the project: two projects write `merge`, one writes `merged`, and `record` is
+the stage after a merge. `deploy`, `deployed`, `tag` and any other stage name are
+not merge work and do not hold the reason. A lane with a pull request in any state
+never holds it — the merged-or-closed case is already excluded above — and a lane
+that named a `reported.pr` did not hold it either: a number was given.
 
 A lane whose `derived.pr.state` is `merged` or `closed` holds none of them,
 whatever else it is carrying (`attentionReasons`,
-`packages/server/src/domain/attention.ts:40-72`). Only the waves the server
+`packages/server/src/domain/attention.ts:94-129`). Only the waves the server
 received in the last 72 hours take part, counted on the receive time as
 `nowMs - Date.parse(receivedAt) <= 72 * 60 * 60 * 1000` (`inAttentionWindow`,
-`ATTENTION_WINDOW_MS`, `…/domain/attention.ts:75-80`, `21`). Those heads are
+`ATTENTION_WINDOW_MS`, `…/domain/attention.ts:132-137`, `22`). Those heads are
 collected from every project and sorted newest receive first before any snapshot
 is read, and at most `MAX_ATTENTION_WAVES` (256) of them are read at all, so
 which waves a request reads is decided by receive time and never by the order the
@@ -566,7 +574,7 @@ out, and `truncated` is `true` whenever it is above zero: the list may then be
 missing lanes, and no other field says how many waves were behind them.
 
 The lanes are ordered by receive time descending and cut at 200
-(`MAX_ATTENTION_LANES`, `…/domain/attention.ts:24`); the sort is stable, so lanes
+(`MAX_ATTENTION_LANES`, `…/domain/attention.ts:25`); the sort is stable, so lanes
 received within the same millisecond keep the order they were found in.
 `projects` carries one entry per registered project, in the order the registry
 answers it, and `attention` counts that project's lanes **before** the lane cut —
@@ -792,7 +800,7 @@ the page and never passed on (`parseQuery`,
 | --------- | ---------- | ---------------------------------------------------------- |
 | `tab`     | `/`        | `active`, `flagged` or `quiet`; absent means every project |
 | `q`       | every page | up to 80 printable characters, case-insensitively          |
-| `reason`  | a project  | one of the six reasons of section 5.1                      |
+| `reason`  | a project  | one of the seven reasons of section 5.1                    |
 | `stage`   | a project  | the contract's stage shape, 1 to 32 characters of `[a-z-]` |
 | `seat`    | a project  | up to 128 printable characters                             |
 | `lane`    | a project  | the pusher's own lane id shape; opens the drawer           |

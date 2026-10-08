@@ -1204,6 +1204,18 @@ describe("the attention panel", () => {
     expect(row?.querySelectorAll(".badge.stale")).toHaveLength(0);
   });
 
+  it("labels no-pr as 'no PR' on its attention badge", () => {
+    const row = oneOf(
+      draw({
+        attention: attentionView({
+          lanes: [attentionLane({ reasons: ["no-pr"] })],
+        }),
+      }),
+      ".attention li",
+    );
+    expect(textsOf(row as Element, ".badge")).toStrictEqual(["no PR"]);
+  });
+
   it("links a lane to its own page, with the lane chosen and nothing else", () => {
     const host = draw({
       attention: attentionView({ lanes: [attentionLane()] }),

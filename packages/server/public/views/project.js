@@ -1,4 +1,4 @@
-import { REASONS } from "../attention.js";
+import { REASONS, reasonLabel } from "../attention.js";
 import { el, internalLink, repoLink, stamp, text } from "../dom.js";
 import {
   aliveView,
@@ -222,10 +222,10 @@ export function filterRows(rows, query) {
 }
 
 /**
- * How many rows carry each of the six reasons, in the order `attention.js`
+ * How many rows carry each of the seven reasons, in the order `attention.js`
  * writes them. Every reason is answered, including the ones no row carries: a
- * chip that is not drawn still has a count to be found by, and the six are the
- * same six the server derives its rows' reasons from.
+ * chip that is not drawn still has a count to be found by, and the seven are the
+ * same seven the server derives its rows' reasons from.
  */
 export function reasonCounts(rows) {
   const carried = new Map();
@@ -815,7 +815,7 @@ function stageRail(scope) {
 }
 
 /**
- * The six reasons as chips, each with the number of rows in scope that carry it.
+ * The seven reasons as chips, each with the number of rows in scope that carry it.
  * The chips are links and not buttons, so a filter is a place a reader can be
  * sent, read aloud, copied or opened in a new tab, and the address is where the
  * filter lives. A reason no row carries is left out; the one the reader has
@@ -842,7 +842,7 @@ function reasonChips(model, scope) {
     const current = reason === active;
     children.push(
       internalLink(
-        `${reason} · ${count}`,
+        `${reasonLabel(reason)} · ${count}`,
         hrefFor(projectId(model), model.wave, {
           ...model.query,
           reason: current ? undefined : reason,
@@ -1068,7 +1068,7 @@ function reasonsCell(row) {
   }
   return cell(
     "Reasons",
-    row.reasons.map((reason) => badge(reason, "reason")),
+    row.reasons.map((reason) => badge(reasonLabel(reason), "reason")),
   );
 }
 

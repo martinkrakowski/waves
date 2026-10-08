@@ -1,4 +1,5 @@
 import { el, httpsUrl, repoLink, stamp, text } from "../dom.js";
+import { reasonLabel } from "../attention.js";
 import {
   aliveView,
   detailValue,
@@ -126,7 +127,9 @@ function seatLine(lane, stale) {
 function reasonsSection(reasons) {
   return section(
     "Needs attention",
-    el("p", { children: reasons.map((reason) => badge(reason, "reason")) }),
+    el("p", {
+      children: reasons.map((reason) => badge(reasonLabel(reason), "reason")),
+    }),
   );
 }
 

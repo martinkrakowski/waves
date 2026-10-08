@@ -9,7 +9,15 @@
 import { isWaveId } from "./patterns.js";
 
 /** The reasons a lane can be asked about, in the order the URL writes them. */
-const REASONS = ["failed", "disagreement", "checks", "gate", "exit", "silent"];
+const REASONS = [
+  "failed",
+  "disagreement",
+  "checks",
+  "gate",
+  "exit",
+  "silent",
+  "no-pr",
+];
 
 /**
  * The tabs the fleet page is divided into, in the order it offers them. Absent

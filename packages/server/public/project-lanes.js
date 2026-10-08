@@ -9,7 +9,7 @@
  * rather than imported: the contract's own types are not values, and a check
  * that has to re-read a type at every call site is a check nobody keeps right.
  * What is imported is the one list the page has to compare against by value —
- * the six reasons of `attention.js`, which are the six the server derives them
+ * the seven reasons of `attention.js`, which are the seven the server derives them
  * from — and the wave list check, which is a rule about the same wave heads the
  * wave strip draws.
  */
@@ -141,7 +141,7 @@ function reported(value) {
   );
 }
 
-/** The reasons, and only the six. An empty list is an answer, not a hole. */
+/** The reasons, and only the seven. An empty list is an answer, not a hole. */
 function reasons(value) {
   return (
     Array.isArray(value) && value.every((reason) => REASONS.includes(reason))

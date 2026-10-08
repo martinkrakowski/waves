@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { REASONS, drawableAttention } from "../../public/attention.js";
+import {
+  REASONS,
+  drawableAttention,
+  reasonLabel,
+} from "../../public/attention.js";
 
 import { attentionLane, attentionView } from "./fixtures.js";
 
@@ -66,7 +70,7 @@ const INVALID: readonly (readonly [string, unknown])[] = [
     { ...attentionView(), lanes: [{ ...attentionLane(), reasons: "failed" }] },
   ],
   [
-    "a lane with a reason outside the six",
+    "a lane with a reason outside the seven",
     {
       ...attentionView(),
       lanes: [{ ...attentionLane(), reasons: ["failed", "yelled"] }],
@@ -129,6 +133,7 @@ describe("drawableAttention", () => {
                 "gate",
                 "exit",
                 "silent",
+                "no-pr",
               ],
               seat: "s1",
               stale: true,
@@ -156,5 +161,15 @@ describe("drawableAttention", () => {
     expect(drawableAttention(undefined)).toBe(false);
     expect(drawableAttention(7)).toBe(false);
     expect(drawableAttention(true)).toBe(false);
+  });
+});
+
+describe("reasonLabel", () => {
+  it.each(REASONS)("labels %s", (reason) => {
+    expect(reasonLabel(reason)).toBe(reason === "no-pr" ? "no PR" : reason);
+  });
+
+  it("passes a reason it does not know through untouched", () => {
+    expect(reasonLabel("yelled")).toBe("yelled");
   });
 });
