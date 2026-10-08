@@ -9,6 +9,7 @@ import {
 } from "@hexagen-monaco/waves-contract";
 
 import { MemoryStore } from "../src/index.js";
+import type { NoticeStorePort } from "../src/application/ports/notice-store.js";
 import { createNoticeWriteModel } from "../src/application/notice-write-model.js";
 import { sha256Hex } from "../src/infrastructure/sha256.js";
 import {
@@ -234,6 +235,23 @@ describe("postState", () => {
     });
   });
 
+  it("pins before field validation: a stale count is a 409 over an invalid option", async () => {
+    const m = await seed();
+    expect(
+      await m.postState(
+        PROJECT,
+        ID,
+        stateEntry({ expectedEntries: 5, option: "z" }),
+      ),
+    ).toEqual({
+      kind: "conflict",
+      error: "the state entry is out of date",
+      revision: 1,
+      textSha256: BINDING_HASH,
+      entries: 0,
+    });
+  });
+
   it("lets one of two posts with the same expectedEntries win, the other a 409", async () => {
     const m = await seed();
     const [a, b] = await Promise.all([
@@ -285,6 +303,42 @@ describe("postState", () => {
           message: "expected another existing decision of this project",
         },
       ],
+    });
+  });
+
+  it("returns notFound if the decision vanishes between the read and the append", async () => {
+    // A store whose getDecision still finds the decision but whose
+    // appendEntry reports it missing — the admin delete raced the write.
+    const stub: NoticeStorePort = {
+      getDecision: () =>
+        Promise.resolve({
+          project: PROJECT,
+          id: ID,
+          revisions: [
+            {
+              revision: 1,
+              textSha256: BINDING_HASH,
+              receivedAt: RECEIVED,
+              decision: BODY,
+            },
+          ],
+          entries: [],
+        }),
+      listDecisions: () => Promise.resolve([]),
+      appendRevision: () => Promise.resolve("stored"),
+      appendEntry: () => Promise.resolve("missing"),
+      appendEvent: () => Promise.resolve({ dropped: 0 }),
+      listEvents: () => Promise.resolve([]),
+      deleteNotices: () => Promise.resolve(),
+    };
+    const m = createNoticeWriteModel({
+      noticeStore: stub,
+      now: () => NOW_MS,
+      hashText: sha256Hex,
+    });
+
+    expect(await m.postState(PROJECT, ID, stateEntry())).toEqual({
+      kind: "notFound",
     });
   });
 
