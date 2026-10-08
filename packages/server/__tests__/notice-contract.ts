@@ -1,16 +1,14 @@
 import type {
   DecisionRevision,
   NoticeEvent,
+  StateEntryRequest,
 } from "@hexagen-monaco/waves-contract";
 
 import type {
-  AppendOutcome,
   NoticeStorePort,
   StoredEntry,
   StoredRevision,
 } from "../src/application/ports/notice-store.js";
-
-const HASH = "0".repeat(64);
 
 export interface NoticeHarness {
   readonly store: NoticeStorePort;
@@ -29,10 +27,10 @@ export function decisionRevision(
     project,
     id,
     shape: "choice",
-    question: "Ship it?",
+    question: "Question?",
     options: [
-      { key: "a", text: "Yes", cost: "a" },
-      { key: "b", text: "No", cost: "b" },
+      { key: "a", text: "Yes", cost: "C1" },
+      { key: "b", text: "No", cost: "C2" },
     ],
     hardToUndo: { value: false, reason: "a message text" },
     commits: [],
@@ -51,20 +49,25 @@ export function storedRevision(
 ): StoredRevision {
   return {
     revision,
-    textSha256: HASH,
+    textSha256: "0".repeat(64),
     receivedAt: "2026-10-08T12:00:00Z",
     decision,
   };
 }
 
-export function entryFields(
-  overrides: Partial<StoredEntry> = {},
-): Omit<StoredEntry, "index" | "receivedAt"> {
+/**
+ * A state-entry request as a writer posts it: the pin fields plus
+ * `expectedEntries`, and no `index` or `receivedAt`, which the server fills.
+ */
+export function stateEntryRequest(
+  overrides: Partial<StateEntryRequest> = {},
+): StateEntryRequest {
   return {
     state: "approved",
     source: "reported",
     revision: 1,
-    textSha256: HASH,
+    textSha256: "0".repeat(64),
+    expectedEntries: 0,
     by: "owner",
     at: "2026-10-08T13:00:00Z",
     words: "ship it",
@@ -72,15 +75,16 @@ export function entryFields(
   };
 }
 
+/** A state entry as the store holds and appends it, with `expectedEntries`
+ * dropped and the server's own `index` and `receivedAt` filled in. */
 export function storedEntry(
   index: number,
-  overrides: Partial<StoredEntry> = {},
+  overrides: Partial<StateEntryRequest> = {},
+  receivedAt = "2026-10-08T13:00:00Z",
 ): StoredEntry {
-  return {
-    ...entryFields(overrides),
-    index,
-    receivedAt: "2026-10-08T13:00:00Z",
-  };
+  const { expectedEntries: _dropped, ...rest } = stateEntryRequest(overrides);
+  void _dropped;
+  return { ...rest, index, receivedAt };
 }
 
 export function event(overrides: Partial<NoticeEvent> = {}): NoticeEvent {
@@ -94,5 +98,3 @@ export function event(overrides: Partial<NoticeEvent> = {}): NoticeEvent {
     ...overrides,
   };
 }
-
-export type { AppendOutcome, NoticeStorePort, StoredEntry, StoredRevision };
