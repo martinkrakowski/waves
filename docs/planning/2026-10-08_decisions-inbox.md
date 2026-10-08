@@ -1,9 +1,12 @@
 # Design: a decisions inbox on the status page
 
-_Date: 2026-10-08 · Status: **design, revision 3, not approved; nothing is built
-from it yet** · Requirements:
+_Date: 2026-10-08 · Status: **stage 1 approved by the owner on 2026-10-08
+("Approved, proceed with your recommendations", relayed by the fleet session):
+sections 3 to 5 and 7, the read-only inbox. Stage 2 (section 6) is NOT approved
+and is not to be built; whether to build it at all (W71) is decided after stage 1
+has had a week of use, and W68 to W70 wait with it.** · Requirements:
 `~/Projects/fleet/docs/planning/2026-10-08_decisions-inbox.md` (R1 to R12, F26 to
-F28), owner's "go" relayed by the fleet session on 2026-10-08._
+F28)._
 
 _Revision 2 answered the review of the record and stage 1; revision 3 answers the
 review of stage 2 (section 11). The reviewer's verdict: stage 1 may be approved
