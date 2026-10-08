@@ -1,8 +1,12 @@
 # Design: a decisions inbox on the status page
 
-_Date: 2026-10-08 · Status: **design, not approved; nothing is built from it yet** ·
-Requirements: `~/Projects/fleet/docs/planning/2026-10-08_decisions-inbox.md` (R1 to
-R12, F26 to F28), owner's "go" relayed by the fleet session on 2026-10-08._
+_Date: 2026-10-08 · Status: **design, revision 2, not approved; nothing is built
+from it yet** · Requirements:
+`~/Projects/fleet/docs/planning/2026-10-08_decisions-inbox.md` (R1 to R12, F26 to
+F28), owner's "go" relayed by the fleet session on 2026-10-08._
+
+_Revision 2 answers the review of the record and stage 1 (section 11). Section 6,
+stage 2, is unchanged and not yet reviewed._
 
 Decisions continue the numbering of `2026-10-04_sync.md` (W51 was its last). This
 document is step 1 of the requirements' six. Step 2 is a read-only review by a
@@ -60,24 +64,24 @@ model other than its author, with R5 first; step 3 is the owner's own approval.
 
 ## 3. Decisions
 
-| #       | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **W52** | **A third document, `waves-notice/v1`,** beside `waves/v1` and `waves-status/v1`, in the contract package. A notice belongs to one project, has an id the project chooses (the lane id shape), and a `kind`: `decision` or `event`. It is not carried in a wave envelope and is not subject to wave retention or staleness.                                                                                                                                                                                                                               |
-| **W53** | **A decision is revisions plus state entries, both append-only.** A write with changed binding text makes revision `n + 1`; the server never rewrites a stored revision. Each revision carries `textSha256`, computed by the server over a canonical serialisation of the binding fields (W54), and returned to the writer.                                                                                                                                                                                                                               |
-| **W54** | **The binding fields** are the question, the shape, the options with their costs, the recommendation and reason, the hard-to-undo flag and reason, the commitments, and who may decide. Evidence links, the raiser and the act-elsewhere pointer are not binding: correcting a link does not void an answer. An answer names one revision's `textSha256` and applies to that revision only (R9).                                                                                                                                                          |
-| **W55** | **Three shapes:** `choice` (two or more options), `action` (something only he performs: no options, an act-elsewhere pointer is required), and `instruction` (a standing instruction in his words covering many items; `appliesTo` lists the projects).                                                                                                                                                                                                                                                                                                   |
-| **W56** | **States** (section 4.2): `open`, `delegated`, `approved`, `declined`, `answered`, `withdrawn`, `superseded`. The current state is the last state entry that refers to the current revision; a new revision returns the decision to `open` and the page shows the earlier answer as "answered an earlier text".                                                                                                                                                                                                                                           |
-| **W57** | **An answer has a source: `reported` or `signed`.** `reported` is written by a project session with the project token and quotes the owner's words from the terminal. `signed` is written by nobody's token: it is accepted only with a valid passkey assertion over that revision (W61). Stage 1 has only `reported`.                                                                                                                                                                                                                                    |
-| **W58** | **An event is one immutable entry:** a `topic` (the stage shape, the project's own word: `relay`, `policy`, `alert`), one sentence, optional detail text, optional references, and a time. No states, no revisions, no answer. Events are listed newest first and capped per project (W59).                                                                                                                                                                                                                                                               |
-| **W59** | **Bounds, so "never deleted" stays finite:** at most 500 decisions and 2000 events per project; 20 revisions and 50 state entries per decision; 8 options; the question at most 300 characters, every other text at most 2000. Past a bound the write is refused with the bound named; for events the oldest are dropped, which is the one place this design discards anything, and it says so in the response.                                                                                                                                           |
-| **W60** | **Deleting a project deletes its notices** (admin token, as today). No project token can delete a notice or an entry.                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| **W61** | **Stage 2: an answer is a WebAuthn assertion whose challenge is derived from what is being answered:** `sha256("waves-answer/v1" ‖ project ‖ decision id ‖ revision textSha256 ‖ verdict ‖ sha256(chosen option or own words) ‖ server nonce)`. User verification is required. The stored answer holds the verdict, the words, the nonce, the credential id, `authenticatorData`, `clientDataJSON` and the signature, so anyone holding the public key can re-derive the challenge from the decision's own text and check it without trusting the server. |
-| **W62** | **The owner's public keys are configuration, not data.** The server reads them from the file `WAVES_OWNER_KEYS_FILE` names (a Kubernetes Secret on midnight, created by the owner as he created the admin Secret). No route registers, replaces or removes a key, with any token. With no file, every answer route is `404`, as the write routes are without an admin token.                                                                                                                                                                              |
-| **W63** | **Readers verify for themselves.** `waves decision read` checks a signed answer against the owner keys pinned in the client's own config directory (`owner-keys.json`, mode 600, written by the owner), not against anything the server says about its own keys. A signed answer that does not verify is reported as not answered, with exit 3.                                                                                                                                                                                                           |
-| **W64** | **The private key lives on a device no session reaches:** the owner's phone, or a hardware security key that needs a touch. Not a passkey synced to the laptop's keychain, where the laptop's own password can stand in for the fingerprint.                                                                                                                                                                                                                                                                                                              |
-| **W65** | **The answer route takes no bearer token and sets no cookie.** Each answer is one request carrying one assertion. There is no "signed-in" state for a session to borrow.                                                                                                                                                                                                                                                                                                                                                                                  |
-| **W66** | **A signed answer is announced where he will see it without the page:** the session that acts on it prints the question, the verdict and the signing time in its terminal before it acts. This is detection for the two open cases of section 6.3, not a second approval.                                                                                                                                                                                                                                                                                 |
-| **W67** | **No new dependency.** Assertion checking is `node:crypto` (ES256 over `authenticatorData ‖ sha256(clientDataJSON)`), in `infrastructure/`. Keys are stored as SPKI, which the browser's `getPublicKey()` returns, so nothing parses CBOR.                                                                                                                                                                                                                                                                                                                |
+| #       | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **W52** | **A third document, `waves-notice/v1`,** beside `waves/v1` and `waves-status/v1`, in the contract package. A notice belongs to one project, has an id the project chooses (the lane id shape), and a `kind`: `decision` or `event`. It is not carried in a wave envelope and is not subject to wave retention or staleness.                                                                                                                                                                                                                                       |
+| **W53** | **A decision is revisions plus state entries, both append-only.** A write that differs in any field from the current revision makes revision `n + 1`; a write equal in every field is a no-op (`created: false`). The server never rewrites a stored revision. Each revision carries `textSha256`, computed by the server over the binding fields in the form section 4.3 defines, and returned to the writer.                                                                                                                                                    |
+| **W54** | **The binding fields** are the question, the shape, the options with their costs, the recommendation and reason, the hard-to-undo flag and reason, the commitments, who may decide, `appliesTo` and `actElsewhere`. Evidence links, references, the raiser and the change note are not binding: a revision that corrects a link has the same `textSha256` as the one before it, so an answer still stands. Every state entry names a `textSha256` and applies to revisions with that hash only (R9).                                                              |
+| **W55** | **Three shapes:** `choice` (two or more options), `action` (something only he performs: no options, an act-elsewhere pointer is required), and `instruction` (a standing instruction in his words covering many items; `appliesTo` lists the projects).                                                                                                                                                                                                                                                                                                           |
+| **W56** | **States** (section 4.2): `open`, `delegated`, `approved`, `declined`, `answered`, `withdrawn`, `superseded`. The current state is the last state entry whose `textSha256` is the current revision's; with none, the decision is `open`. A revision with new binding text therefore returns the decision to `open`, and the page shows the earlier answer as "answered an earlier text".                                                                                                                                                                          |
+| **W57** | **An answer has a source: `reported` or `signed`, and no other.** `approved`, `declined` and `answered` are refused with `source: session`. `reported` is written by a project session with the project token and must quote the owner's words from the terminal. `signed` is written by nobody's token: it is accepted only with a valid passkey assertion over that revision (W61). Stage 1 has only `reported`, and **a reported answer never takes a decision off the inbox by itself** (5.2): it is a session's claim, and the page keeps showing it as one. |
+| **W58** | **An event is one immutable entry:** a `topic` (the stage shape, the project's own word: `relay`, `policy`, `alert`), one sentence, optional detail text, optional references, and a time. No states, no revisions, no answer. Events are listed newest first and capped per project (W59).                                                                                                                                                                                                                                                                       |
+| **W59** | **Bounds, so "never deleted" stays finite:** at most 500 decisions and 2000 events per project; 20 revisions and 50 state entries per decision; 8 options; the question at most 300 characters, every other text at most 2000. Past a bound the write is refused with the bound named; for events the oldest are dropped, which is the one place this design discards anything, and it says so in the response.                                                                                                                                                   |
+| **W60** | **Deleting a project deletes its notices** (admin token, as today). No project token can delete a notice or an entry.                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| **W61** | **Stage 2: an answer is a WebAuthn assertion whose challenge is derived from what is being answered:** `sha256("waves-answer/v1" ‖ project ‖ decision id ‖ revision textSha256 ‖ verdict ‖ sha256(chosen option or own words) ‖ server nonce)`. User verification is required. The stored answer holds the verdict, the words, the nonce, the credential id, `authenticatorData`, `clientDataJSON` and the signature, so anyone holding the public key can re-derive the challenge from the decision's own text and check it without trusting the server.         |
+| **W62** | **The owner's public keys are configuration, not data.** The server reads them from the file `WAVES_OWNER_KEYS_FILE` names (a Kubernetes Secret on midnight, created by the owner as he created the admin Secret). No route registers, replaces or removes a key, with any token. With no file, every answer route is `404`, as the write routes are without an admin token.                                                                                                                                                                                      |
+| **W63** | **Readers verify for themselves.** `waves decision read` checks a signed answer against the owner keys pinned in the client's own config directory (`owner-keys.json`, mode 600, written by the owner), not against anything the server says about its own keys. A signed answer that does not verify is reported as not answered, with exit 3.                                                                                                                                                                                                                   |
+| **W64** | **The private key lives on a device no session reaches:** the owner's phone, or a hardware security key that needs a touch. Not a passkey synced to the laptop's keychain, where the laptop's own password can stand in for the fingerprint.                                                                                                                                                                                                                                                                                                                      |
+| **W65** | **The answer route takes no bearer token and sets no cookie.** Each answer is one request carrying one assertion. There is no "signed-in" state for a session to borrow.                                                                                                                                                                                                                                                                                                                                                                                          |
+| **W66** | **A signed answer is announced where he will see it without the page:** the session that acts on it prints the question, the verdict and the signing time in its terminal before it acts. This is detection for the two open cases of section 6.3, not a second approval.                                                                                                                                                                                                                                                                                         |
+| **W67** | **No new dependency.** Assertion checking is `node:crypto` (ES256 over `authenticatorData ‖ sha256(clientDataJSON)`), in `infrastructure/`. Keys are stored as SPKI, which the browser's `getPublicKey()` returns, so nothing parses CBOR.                                                                                                                                                                                                                                                                                                                        |
 
 ## 4. The record
 
@@ -122,8 +126,13 @@ model other than its author, with R5 first; step 3 is the owner's own approval.
 
 - `decider` is `owner` or `delegated` (R2: who may decide).
 - `hardToUndo.value` is `true`, `false` or `"partly"`, and `reason` is required
-  whenever it is not `false` (test decision 11: the deletion cannot be undone,
-  nothing of value is lost).
+  whenever it is not `false`. The reason is the session's own sentence and is
+  what the page shows; the page adds no wording of its own to it (test decision
+  11's reason is "the deletion cannot be undone; the work is merged or
+  obsolete", decision 7's is "a design change").
+- `changeNote` is optional on revision 2 and later: one sentence saying what
+  changed and why (test decision 6: "narrowed after the session reported a
+  window"). It is not binding text.
 - `commits` is the list of consequences an approval binds him to (test decision
   1 has three). It is binding text.
 - `actElsewhere` is `{ "where": "session campaign-foundry-74", "what": "allow the
@@ -134,95 +143,184 @@ ruleset edit at its prompt" }` or a command only he runs. When it is set the
 
 ### 4.2 States and who writes them
 
-| State        | Meaning                                                  | Written by                                  | Stage |
-| ------------ | -------------------------------------------------------- | ------------------------------------------- | ----- |
-| `open`       | waiting on him                                           | implied by a new revision                   | 1     |
-| `delegated`  | decided under delegation; names who and what; awaits him | project token                               | 1     |
-| `approved`   | he chose the recommended option, or said yes             | project token (`reported`) or his signature | 1 / 2 |
-| `declined`   | he said no                                               | the same                                    | 1 / 2 |
-| `answered`   | he chose another option, or answered in his own words    | the same                                    | 1 / 2 |
-| `withdrawn`  | the question went away; a reason is required             | project token                               | 1     |
-| `superseded` | replaced by a later decision in the same project, named  | project token                               | 1     |
+| State        | Meaning                                                  | Source allowed         | Written by                          | Stage |
+| ------------ | -------------------------------------------------------- | ---------------------- | ----------------------------------- | ----- |
+| `open`       | waiting on him                                           | (no entry)             | implied by a revision with new text | 1     |
+| `delegated`  | decided under delegation; names who and what; awaits him | `session`              | project token                       | 1     |
+| `approved`   | he chose the recommended option, or said yes             | `reported` or `signed` | project token, or his signature     | 1 / 2 |
+| `declined`   | he said no                                               | `reported` or `signed` | the same                            | 1 / 2 |
+| `answered`   | he chose another option, or answered in his own words    | `reported` or `signed` | the same                            | 1 / 2 |
+| `withdrawn`  | the question went away; a reason is required             | `session`              | project token                       | 1     |
+| `superseded` | replaced by a later decision in the same project, named  | `session`              | project token                       | 1     |
 
-A state entry is `{ state, revision, at, source, by, words?, option?, reason?,
-supersededBy?, signature? }`. `source` is `session`, `reported` or `signed`.
-Rules the server enforces:
+A state entry is `{ state, revision, textSha256, expectedEntries, at, source, by,
+words?, option?, reason?, supersededBy?, signature? }`. Rules the server
+enforces, each a refusal that names the rule:
 
-- An entry names a revision that exists, and `supersededBy` an existing decision
-  of the same project.
-- `approved`, `declined` and `answered` with `source: reported` require `words`:
-  the owner's own sentence, quoted.
-- After a `signed` entry on a revision, no `reported` entry on that revision is
-  accepted, and a second `signed` entry is accepted (he may change his mind);
-  the last one stands and both are kept.
+- **The entry pins what it is about.** `revision` and `textSha256` must be the
+  current revision's, or the write is `409` with the current pair in the body.
+  A session that reports his words therefore reports them against the text it
+  read, and a text that changed in between is not answered by them.
+- **One writer at a time.** `expectedEntries` is the number of state entries the
+  writer read. If the stored count differs the write is `409`. Two sessions
+  posting together cannot both succeed.
+- **Source by state**, as the table says. `approved`, `declined` and `answered`
+  with `source: session` are refused.
+- `source: reported` requires `words`: the owner's own sentence, quoted.
+  `delegated` requires `by` and `option` or `words`. `withdrawn` requires
+  `reason`. `supersededBy` names an existing decision of the same project.
+- A second `reported` entry on the same text is accepted: he does change his
+  mind in the terminal (test decision 8). Both are kept and both are shown; the
+  later one is current.
+- After a `signed` entry on a text, no `reported` entry on that text is
+  accepted. A second `signed` entry is; the last stands and both are kept.
 - `withdrawn` and `superseded` are accepted over any state, including a signed
-  answer: the page then shows both, the answer struck through with the reason.
-  A session cannot remove his answer, only say the question no longer stands.
+  answer. They never hide it: the card shows the answer, and beside it "the
+  <project> session withdrew this question on <date>: <reason>". A session
+  cannot remove his answer; it can only say the question no longer stands, and
+  that statement is shown as the session's.
+
+What these rules do not do: stop a session writing a false report. A session
+with the project token can still claim "he said yes" with words he did not say.
+That is true today of any session's terminal message. The page's part is to
+keep such a claim in front of him, labelled, until he has had the chance to see
+it (5.2).
+
+### 4.3 The bytes behind `textSha256`
+
+`textSha256` is the lower-case hex SHA-256 of the UTF-8 bytes of one JSON text
+built from the revision, by a pure function in the contract package that server
+and client both call:
+
+- an object with exactly these keys in exactly this order: `question`, `shape`,
+  `options`, `recommended`, `hardToUndo`, `commits`, `decider`, `appliesTo`,
+  `actElsewhere`;
+- `options` is the array as given, each element `{ key, text, cost }` in that
+  key order; `recommended` is `{ option, reason }` or `null`; `hardToUndo` is
+  `{ value, reason }` with `reason` `null` when absent; `actElsewhere` is
+  `{ where, what }` or `null`; `commits` and `appliesTo` are arrays of strings
+  in the given order;
+- every string is Unicode NFC, with no leading or trailing white space (the
+  validator refuses a string that is not already so, rather than repairing it);
+- serialised with no white space between tokens, strings escaped as
+  `JSON.stringify` escapes them.
+
+Reordering the options is a change of text. So is moving, adding or removing the
+`actElsewhere` pointer, because it decides whether the card can be answered at
+all.
 
 ## 5. Stage 1
 
 ### 5.1 Routes
 
-| Route                                                    | Token   | Body                | Success                                    |
-| -------------------------------------------------------- | ------- | ------------------- | ------------------------------------------ |
-| `PUT /api/v1/projects/<id>/decisions/<decision>`         | project | a decision revision | `200` `{ revision, textSha256, created }`  |
-| `POST /api/v1/projects/<id>/decisions/<decision>/states` | project | one state entry     | `201` `{ index }`                          |
-| `POST /api/v1/projects/<id>/events`                      | project | one event           | `201` `{ id }`                             |
-| `GET /api/v1/projects/<id>/decisions`                    | none    |                     | heads: id, question, state, door, revision |
-| `GET /api/v1/projects/<id>/decisions/<decision>`         | none    |                     | every revision and state entry             |
-| `GET /api/v1/projects/<id>/events`                       | none    |                     | newest first, at most 200                  |
-| `GET /api/v1/inbox`                                      | none    |                     | per project: counts, and its open heads    |
+| Route                                                    | Token   | Body                | Success                                                |
+| -------------------------------------------------------- | ------- | ------------------- | ------------------------------------------------------ |
+| `PUT /api/v1/projects/<id>/decisions/<decision>`         | project | a decision revision | `200` `{ revision, textSha256, created }`              |
+| `POST /api/v1/projects/<id>/decisions/<decision>/states` | project | one state entry     | `201` `{ index }`, or `409` with the current pair      |
+| `POST /api/v1/projects/<id>/events`                      | project | one event           | `201` `{ id }`                                         |
+| `GET /api/v1/projects/<id>/decisions`                    | none    |                     | heads, see below                                       |
+| `GET /api/v1/projects/<id>/decisions/<decision>`         | none    |                     | every revision and state entry                         |
+| `GET /api/v1/projects/<id>/events`                       | none    |                     | newest first, at most 200                              |
+| `GET /api/v1/inbox`                                      | none    |                     | per project: the counts of 5.2 and its heads, by group |
 
-A `PUT` whose binding text equals the current revision's makes no new revision
-(`created: false`), so re-sending is safe. The existing per-project write limiter
-applies. The viewer token of 5.2, when configured, guards these reads like every
-other.
+A head is `{ project, id, question, shape, door, decider, revision, textSha256,
+entries, state, source, at, actElsewhere }`: `source` is the current entry's, and
+`entries` is the count a writer sends back as `expectedEntries`.
+
+`GET …/projects/<id>/decisions` answers the project's own decisions and, marked
+`from: "<other project>"`, every `instruction` of another project whose
+`appliesTo` names this one (test decision 14). Any project can therefore put a
+card on another project's tab; it is drawn with the raising project's name, and
+it can be withdrawn only by the project that raised it.
+
+The per-project write limiter is the existing one (one write a second per
+project: `PROJECT_INTERVAL_MS`, `packages/server/src/application/limiters.ts`).
+The optional viewer token of `docs/waves-v1.md` section 5.2, when the operator
+has configured one, guards these reads as it guards every other read.
 
 ### 5.2 The page
 
-- **`/inbox`**: one block per project that has anything open, ordered by one-way
-  doors first, then by age. Each block's heading carries the count ("3 open, 1
-  one-way door"). A project with nothing open is one line at the bottom.
-- **A decision card** shows, in this order: the question; a door mark; who may
-  decide; the options with costs, the recommended one marked with its reason;
-  the commitments, when there are any, under "Approving this commits you to";
-  the evidence links; who raised it and when; and "revision 2 of 2" with the
-  earlier text one click away.
-- **The one-way door mark** is a full-width band above the question, in words
-  ("ONE-WAY DOOR: the key is in every row and route"), not a colour alone, and
-  it is never abbreviated or moved into a tooltip. `partly` reads "CANNOT BE
-  UNDONE, nothing of value lost: …".
-- **`delegated`** cards read "Decided by <who> under delegation: <what>. Awaiting
-  your confirmation", and sort with the open ones.
+**Four groups, and only he empties the first two.** Every project block on
+`/inbox`, and the project page's tab, lists its decisions in this order:
+
+1. **Waiting on you**: `open` and `delegated`.
+2. **Reported as answered**: the current entry is a `reported` answer. The card
+   reads "The <project> session reports you said: '…' on <date>" with the
+   verdict beside it, and never "Approved" alone. It stays in this group for 14
+   days from the entry, then moves to the project's history. Stage 1 has no way
+   for him to confirm a report in the page; the 14 days are the time he has to
+   see it and object in the terminal.
+3. **Closed by a session**: `withdrawn` or `superseded` in the last 14 days,
+   with the session's reason, and with any answer the entry covers shown beside
+   it, not struck out of sight.
+4. **Signed** (stage 2 only).
+
+The glance count names its sources and never sums them: "3 waiting (1 one-way
+door) · 2 reported · 1 closed by a session". `/api/v1/projects` gains
+`decisions: { waiting, oneWay, reported, closed }` per project. A session that
+writes a false report moves a card from group 1 to group 2 and changes "3
+waiting" to "2 waiting · 1 reported"; it cannot make the card or the count
+disappear.
+
+- **A decision card** shows, in this order: the question; the door band; who may
+  decide; the options with costs, the recommended one marked with its reason,
+  or "No recommendation given"; the commitments, when there are any, under
+  "Approving this commits you to"; the evidence links; who raised it and when;
+  and "revision 2 of 2" with the change note and the earlier text one click
+  away. An answer given to an earlier text stays on the card as "Answered an
+  earlier text (revision 1): …".
+- **The door band** is full width above the question, in words and not a colour
+  alone, never abbreviated and never in a tooltip. `true` reads "ONE-WAY DOOR:
+  <the stored reason>". `partly` reads "PARTLY UNDOABLE: <the stored reason>".
+  `false` has no band. The page adds nothing to the reason.
+- **`decider: delegated`, still `open`**: "May be decided under delegation; not
+  decided yet." **`delegated`**: "Decided by <who> under delegation: <what>.
+  Awaiting your confirmation." Both sort in group 1.
 - **`actElsewhere`** cards read "Cannot be answered here. Act in: <where>:
   <what>", and a fixed line at the foot of `/inbox` says a session's own
   permission prompt can only be cleared in that session (R8).
-- **Reported answers** read "Reported by the <project> session: he said '…'",
-  and never "Approved" alone.
-- The fleet header's project rows and the project page gain an "Inbox n" count
-  and a tab; `/api/v1/projects` gains `decisions: { open, oneWay }` per project.
-- Events are a plain list on the project page's new tab, under the decisions.
+- The fleet page's project rows and the project page gain the count and an
+  Inbox tab. Events are a plain list on that tab, under the decisions.
 
 ### 5.3 The client
 
 ```sh
-waves decision raise --file decision.json        # prints revision and textSha256
-waves decision state erase-user-prints-id --state withdrawn --reason "superseded by the fix"
-waves decision report erase-user-prints-id --state approved --words "Go with B"
-waves decision read erase-user-prints-id         # prints state as JSON
+waves decision raise --file decision.json   # prints revision, textSha256, entries
+waves decision read erase-user-prints-id    # prints the whole record as JSON
+waves decision report erase-user-prints-id --revision 2 --text-sha256 <hex> \
+  --entries 1 --state approved --words "Go with B"
+waves decision state erase-user-prints-id --revision 2 --text-sha256 <hex> \
+  --entries 2 --state withdrawn --reason "fixed another way"
 waves event --topic relay --text "Round 4 sent to five sessions"
-waves decisions export --since 2026-10-07        # Markdown for policy.md
+waves decisions export --since 2026-10-07   # Markdown for policy.md
 ```
 
 `raise` is one call with one small file and the project's existing token (R11).
-`export` prints, per answered decision, the question, the answered revision's
-full binding text, the verdict, the words, the time and the source (and in stage
-2 the credential id), in the table shape `policy.md` uses; the fleet session
-appends it (R6, F28).
+`report` and `state` take the pair and the count that `raise` or `read` printed;
+a `409` prints the current ones and exits 5, and the session reads again before
+it writes again.
 
-`read` exit codes (R12): `0` a state was read and printed; `1` the service could
-not be reached or answered an error, and stdout is empty; `3` a signed answer was
-present and did not verify. A caller treats anything but `0` as "no answer".
+Exit codes (R12):
+
+| Command                             | `0`                                                                                   | Other                                                                                  |
+| ----------------------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `read`                              | the record was read and printed. **It says nothing about an answer.**                 | `1` the service could not be reached or answered an error; stdout is empty             |
+| `read --signed`                     | the current text carries a signed answer that verified (stage 2); it alone is printed | `4` no signed answer on the current text; `3` a signature did not verify; `1` as above |
+| `raise`, `report`, `state`, `event` | the write was stored                                                                  | `1` not stored; one stderr line ending "ask in the terminal"; `5` a `409`              |
+
+A session may act on the inbox only after `read --signed` exits 0. In stage 1
+that never happens, so in stage 1 the inbox authorises nothing: it shows, and
+the terminal answers. A session whose `raise` fails asks in the terminal as it
+does today, and may raise again later; a failed `raise` is never a reason to
+wait, and a failed `read` is never an answer.
+
+`export` prints, per answered decision, the question, the answered revision's
+full binding text, the verdict, the words, the time and the source. Reported
+answers are printed under their own heading, every row beginning "reported, not
+signed", in a table of their own; signed ones (stage 2) are printed with the
+credential id in the shape `policy.md` uses for an owner decision. The fleet
+session appends them (R6, F28) and does not copy a reported row into the owner's
+decisions.
 
 ## 6. Stage 2: answering in the page
 
@@ -310,28 +408,34 @@ his to decide).
 
 ## 7. The fourteen test decisions
 
-| #   | Project          | Id (example)              | Shape       | Door                          | Decider   | Stored state                                                              | Shown as                                                                           |
-| --- | ---------------- | ------------------------- | ----------- | ----------------------------- | --------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| 1   | hexagen-monaco   | `d12-document-owner`      | choice (3)  | true                          | owner     | `approved`, reported, words "Go with option 3 for D-12"                   | answered list; door band; three commitments under "commits you to"                 |
-| 2   | hexagen-monaco   | `prod-postgres-home`      | choice (2)  | true                          | owner     | `open`, no recommendation                                                 | top of its project; "No recommendation given"                                      |
-| 3   | campaign-foundry | `erase-user-prints-id`    | choice (3)  | false                         | delegated | `delegated`, by "fleet session", option b                                 | "Decided under delegation: B. Awaiting your confirmation"                          |
-| 4   | campaign-foundry | `first-purge-org-apply`   | action      | true                          | owner     | `open`, `actElsewhere` the command                                        | door band; "Cannot be answered here. You run: `yarn purge:org --apply`"            |
-| 5   | campaign-foundry | `required-check-on-main`  | choice (2)  | false                         | owner     | `open`, `actElsewhere` the session's prompt                               | "Blocked in session campaign-foundry: allow the ruleset edit there"                |
-| 6   | gate-lock        | `give-up-bound`           | choice (3)  | false                         | delegated | revision 1 `delegated` (A); revision 2 (narrowed) `delegated`             | "revision 2 of 2"; revision 1 and its decision one click away                      |
-| 7   | gate-lock        | `heartbeat-lock`          | choice (2)  | partly ("a design change")    | owner     | `open`, evidence issue 15                                                 | open, no recommendation                                                            |
-| 8   | fleet            | `test-db-switch-hold`     | choice (2)  | false                         | owner     | `approved` (hold), then `superseded` by `test-db-switch-lift`, `approved` | the later card answered; the earlier one struck through, naming its successor      |
-| 9   | fleet            | `offsite-backup-cost`     | choice (2)  | false, reason "costs monthly" | owner     | `open`                                                                    | open; the cost shown under the yes option                                          |
-| 10  | client-portal    | `rls-before-first-client` | choice (2)  | false                         | owner     | `open`, evidence issue 71                                                 | open                                                                               |
-| 11  | client-portal    | `delete-three-branches`   | choice (2)  | partly                        | owner     | `open`                                                                    | "CANNOT BE UNDONE, nothing of value lost: merged or obsolete"                      |
-| 12  | waves            | `install-sync-agent`      | choice (2)  | false                         | owner     | `open`, no recommendation                                                 | open; "a change to your machine" as the yes option's cost                          |
-| 13  | fleet            | `backup-job-in-freeze`    | choice (2)  | true ("a production deploy")  | owner     | `declined`, reported, words quoted                                        | answered list                                                                      |
-| 14  | fleet            | `clean-merged-worktrees`  | instruction | partly                        | owner     | `approved`, reported, words quoted, `appliesTo` every project             | on `/inbox` under fleet, and on each named project's tab as "standing instruction" |
+| #   | Project          | Id (example)              | Shape       | Door: stored reason                                                     | Decider   | Stored                                                                                                    | Shown                                                                                       |
+| --- | ---------------- | ------------------------- | ----------- | ----------------------------------------------------------------------- | --------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| 1   | hexagen-monaco   | `d12-document-owner`      | choice (3)  | true: "the key is in every row and route"                               | owner     | `approved`, reported, words "Go with option 3 for D-12"; three `commits`                                  | group 2 for 14 days: "reports you said …"; the band; the three commitments                  |
+| 2   | hexagen-monaco   | `prod-postgres-home`      | choice (2)  | true                                                                    | owner     | `open`, `recommended: null`, `actElsewhere` "you set it up yourself"                                      | group 1; "No recommendation given"; "Cannot be answered here"                               |
+| 3   | campaign-foundry | `erase-user-prints-id`    | choice (3)  | false                                                                   | delegated | `delegated`, by "fleet session", option b                                                                 | group 1: "Decided by fleet session under delegation: B. Awaiting your confirmation"         |
+| 4   | campaign-foundry | `first-purge-org-apply`   | action      | true: "deletes an org's data"                                           | owner     | `open`, `actElsewhere` the command                                                                        | group 1; the band; "Cannot be answered here. You run: `yarn purge:org --apply`"             |
+| 5   | campaign-foundry | `required-check-on-main`  | choice (2)  | false                                                                   | owner     | `open`, `actElsewhere` the session's prompt                                                               | group 1: "Act in: session campaign-foundry: allow the ruleset edit there"                   |
+| 6   | gate-lock        | `give-up-bound`           | choice (3)  | false                                                                   | delegated | revision 1 `delegated` (A); revision 2 with a `changeNote`, new text, `delegated` again                   | group 1; "revision 2 of 2" and the note; "Decided an earlier text (revision 1): A"          |
+| 7   | gate-lock        | `heartbeat-lock`          | choice (2)  | partly: "a design change"                                               | owner     | `open`, `recommended: null`, evidence issue 15                                                            | group 1; "PARTLY UNDOABLE: a design change"                                                 |
+| 8   | fleet            | `test-db-switch-hold`     | choice (2)  | false                                                                   | owner     | one decision, recommended lift: `answered` option hold (reported), then `approved` option lift (reported) | group 2: the lift report current, the hold report under it as the earlier one               |
+| 9   | fleet            | `offsite-backup-cost`     | choice (2)  | false                                                                   | owner     | `open`; the monthly cost is the yes option's `cost`                                                       | group 1                                                                                     |
+| 10  | client-portal    | `rls-before-first-client` | choice (2)  | false                                                                   | owner     | `open`, evidence issue 71                                                                                 | group 1                                                                                     |
+| 11  | client-portal    | `delete-three-branches`   | choice (2)  | partly: "the deletion cannot be undone; the work is merged or obsolete" | owner     | `open`                                                                                                    | group 1; "PARTLY UNDOABLE:" and that reason                                                 |
+| 12  | waves            | `install-sync-agent`      | choice (2)  | false                                                                   | owner     | `open`, `recommended: null`; "a change to your machine" is the yes option's `cost`                        | group 1                                                                                     |
+| 13  | fleet            | `backup-job-in-freeze`    | choice (2)  | true: "a production deployment"                                         | owner     | `open`, recommended no, reason "the standing freeze covers it"                                            | group 1, with its band. He has not answered it.                                             |
+| 14  | fleet            | `clean-merged-worktrees`  | instruction | partly: "deleting; branches kept"                                       | owner     | `approved`, reported, his words quoted, `appliesTo` the five projects                                     | group 2 under fleet; on each named project's tab, marked "from fleet: standing instruction" |
 
-What the table needed that the first draft of the record did not have: `partly`
-for the door (7, 11, 14), `appliesTo` (14), `actElsewhere` on a `choice` as well
-as an `action` (5), and an empty `recommended` (2, 7, 12). gate-lock and fleet
-are not registered projects today; the owner registers them as he does any
-project.
+Notes on the fixtures:
+
+- **13 was wrong in revision 1**, and it was my reading, not the test data: the
+  requirements say "recommended no; instructed inside the standing freeze", and
+  I stored the recommendation as his answer. He gave none.
+- **8 is one decision**, answered twice the same night, not two.
+- The third commitment of decision 1 ("destroys a removed member's unpushed
+  edits") is from the requirements' prose, line "An approval has consequences";
+  the fixture needs the other two from the hexagen-monaco session.
+- gate-lock and fleet are not registered projects today; the owner registers
+  them as he does any project.
 
 ## 8. What changes where
 
@@ -348,26 +452,28 @@ project.
   Stage 2 adds the key file reader, the challenge and answer routes and the
   assertion check.
 - **Client** (minor version): the `decision`, `decisions` and `event` commands;
-  stage 2 adds verification to `decision read`.
-- **Fleet rulebook**: the T9 sentence, and that R10 is the raising session's
-  duty.
+  stage 2 adds `decision read --signed` and its verification.
+- **Fleet rulebook**: a session acts on the inbox only after `waves decision
+read --signed` exits 0 (T9); a `raise` that fails is asked in the terminal
+  instead; a reported answer is never copied into `policy.md` as the owner's
+  decision; and R10 is the raising session's duty.
 
 ## 9. Each requirement
 
-| Req | Answer                                                                                                                                            |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| R1  | Met: W52, W58. One record kind, two shapes.                                                                                                       |
-| R2  | Met: 4.1. "History of its states" is the state entries.                                                                                           |
-| R3  | Met: W56, 4.2. "Never deleted" holds for decisions; events are capped (W59) and a deleted project takes its notices (W60).                        |
-| R4  | Met: section 5.                                                                                                                                   |
-| R5  | Met for the credential (T1, T2, T7, T8, T13). **Not met in full**: T10 and T11 are open, T9 is outside the service. W68 is the recommended limit. |
-| R6  | Met: a signed entry holds the verdict, the revision's hash (the text is the stored revision), the time and the credential id; `decisions export`. |
-| R7  | Met for signed answers (W63). Declined for reported ones: section 2, point 3.                                                                     |
-| R8  | Met: `actElsewhere`, and the fixed line on `/inbox`.                                                                                              |
-| R9  | Met: W53, W54, W61, and step 4 of 6.2.                                                                                                            |
-| R10 | Declined as a server guarantee: section 2, point 4. Size and character caps only.                                                                 |
-| R11 | Met: `waves decision raise --file`.                                                                                                               |
-| R12 | Met: the exit codes of 5.3.                                                                                                                       |
+| Req | Answer                                                                                                                                                                                                                                     |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| R1  | Met: W52, W58. One record kind, two shapes.                                                                                                                                                                                                |
+| R2  | Met, with one field weaker than it reads: "who decided under delegation" is free text written with the project token (section 2, point 2).                                                                                                 |
+| R3  | Met for the states. "Nothing is ever deleted" holds for decisions and their entries; events are capped (W59) and a deleted project takes its notices (W60, W70).                                                                           |
+| R4  | Met as revised: 5.2's four groups, counts by source. **Limit:** a session can still write a false report; it moves a card to "Reported as answered", it cannot remove it.                                                                  |
+| R5  | Met for the credential (T1, T2, T7, T8, T13). **Not met in full**: T10 and T11 are open, T9 is outside the service. W68 is the recommended limit. Section 6 is not reviewed yet.                                                           |
+| R6  | **Stage 2 only.** A signed entry holds the verdict, the text's hash (the text is the stored revision), the time and the credential id. A stage-1 report has no credential: it is attributable to a project token and exported as a report. |
+| R7  | Met for signed answers (W63, `read --signed`). Declined for reported ones: section 2, point 3.                                                                                                                                             |
+| R8  | Met: `actElsewhere`, and the fixed line on `/inbox`.                                                                                                                                                                                       |
+| R9  | Met for signed answers: W53, W54, W61, 4.3. For reported ones the pin (4.2) stops his words landing on changed text, but that the words are his is still the session's claim.                                                              |
+| R10 | Declined as a server guarantee: section 2, point 4. Size and character caps only.                                                                                                                                                          |
+| R11 | Met: `waves decision raise --file`.                                                                                                                                                                                                        |
+| R12 | Met as revised: the table in 5.3. Exit 0 from `read` is never an answer; a failed `raise` falls back to the terminal.                                                                                                                      |
 
 ## 10. Lanes, once approved
 
@@ -378,5 +484,32 @@ answers and the trial week of the requirements' step 5 is over.
 
 ## 11. Review
 
-None yet. Step 2 of the requirements: one read-only pass by a model other than
-this document's author (Claude Opus 5.5), with R5 and section 6.3 first.
+### 11.1 The record and stage 1 (answered in revision 2)
+
+Grok (`grok-4.7`, read-only), run by the fleet session on commit `1112449`,
+sections 3, 4, 5, 7, 8, 9 and 10. In full:
+`~/Projects/fleet/docs/planning/2026-10-08_decisions-inbox-review-stage1.md`.
+
+| Finding                                                                                            | Answer                                                                                                                                                                                                       |
+| -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| BLOCKER: a session can make a decision leave the open list (`source: session`, no source on heads) | Changed: W57, 4.2 (source by state), 5.1 (source on heads), 5.2 (four groups, counts by source).                                                                                                             |
+| The same finding: "does not reject a second reported entry"                                        | **Declined**, with the reason in 4.2: he does answer twice (test decision 8). Both entries are kept and shown; what the finding feared, a silent replacement, is closed by the groups and `expectedEntries`. |
+| BLOCKER: `report` carries no revision or hash; concurrent writers both succeed; a withdrawal hides | Changed: 4.2 (the pin, `expectedEntries`, `409`), 5.2 group 3, 5.3.                                                                                                                                          |
+| BLOCKER: the fixed gloss for `partly`                                                              | Changed: 4.1, 5.2. The band is the stored reason and nothing else.                                                                                                                                           |
+| BLOCKER: test decision 13 stored as declined                                                       | Changed: section 7. My misreading.                                                                                                                                                                           |
+| BLOCKER: exit 0 on `open` counts as an answer; `raise` has no behaviour when the service is down   | Changed: 5.3.                                                                                                                                                                                                |
+| SHOULD: 8 is one decision; 2 lacks its pointer; 14's read path                                     | Changed: section 7, 5.1.                                                                                                                                                                                     |
+| SHOULD: the canonical serialisation is not defined; which edits make a revision                    | Changed: 4.3, W53, W54. `actElsewhere` and `appliesTo` became binding text, which the finding did not ask for and its "can a pointer move under an answer" made necessary.                                   |
+| SHOULD: stage-1 exports labelled as reports                                                        | Changed: 5.3.                                                                                                                                                                                                |
+| NIT: no card copy for `decider: delegated` while `open`                                            | Changed: 5.2.                                                                                                                                                                                                |
+| No change-note for decision 6                                                                      | Changed: `changeNote`, 4.1.                                                                                                                                                                                  |
+| Section 9 says "Met" where it is partly met (R4, R6, R9, R12, and delegated under R2 and R3)       | Changed: section 9.                                                                                                                                                                                          |
+| UNVERIFIED: the write limiter and the viewer token                                                 | Cited in 5.1.                                                                                                                                                                                                |
+
+### 11.2 Stage 2 (section 6)
+
+Not reviewed yet. The fleet session arranges one read-only pass by a model other
+than this document's author (Claude Opus 5.5), with R5 and section 6.3 first.
+Revision 2 changes two things section 6 leans on, which that pass should read
+with it: a state entry now names a `textSha256` (W56), and `actElsewhere` is
+binding text (W54).
