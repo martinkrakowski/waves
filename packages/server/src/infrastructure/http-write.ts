@@ -7,6 +7,8 @@ import {
   type Project,
   type StoredSnapshot,
   type ValidationIssue,
+  MAX_DECISIONS_PER_PROJECT,
+  MAX_REVISIONS_PER_DECISION,
 } from "@hexagen-monaco/waves-contract";
 
 import {
@@ -24,7 +26,12 @@ import {
 } from "../application/enrollment.js";
 import type { FailureLimiter, RateLimiter } from "../application/limiters.js";
 import type { StorePort } from "../application/ports/store.js";
+import type { NoticeStorePort } from "../application/ports/notice-store.js";
 import type { Now } from "../application/read-model.js";
+import {
+  createNoticeWriteModel,
+  type NoticeWriteModel,
+} from "../application/notice-write-model.js";
 import {
   createWriteModel,
   type Registration,
@@ -95,7 +102,10 @@ const STATUS_PATH_MISMATCH: readonly ValidationIssue[] = [
 
 export interface WriteDeps {
   readonly store: StorePort<Project, StoredSnapshot>;
+  readonly noticeStore: NoticeStorePort;
   readonly now: Now;
+  /** The lower-case hex sha256 of a string; the notice model's hashText. */
+  readonly hashText: (text: string) => string;
   /** undefined leaves the admin routes disabled, so they answer 404. */
   readonly adminToken: string | undefined;
   /** undefined leaves registration by enrollment token disabled, so it answers 404. */
@@ -276,13 +286,28 @@ function continueIfExpected(req: IncomingMessage, res: ServerResponse): void {
 }
 
 export function createWriteHandler(deps: WriteDeps): WriteHandler {
-  const { store, now, adminToken, enrollToken, trustProxy, failures, rate } =
-    deps;
+  const {
+    store,
+    noticeStore,
+    now,
+    hashText,
+    adminToken,
+    enrollToken,
+    trustProxy,
+    failures,
+    rate,
+  } = deps;
   const model = createWriteModel({
     store,
+    noticeStore,
     now,
     mintToken: deps.mintToken,
     digestHex: deps.digestHex,
+  });
+  const noticeModel: NoticeWriteModel = createNoticeWriteModel({
+    noticeStore,
+    now,
+    hashText,
   });
   const adminDigest = adminToken === undefined ? undefined : sha256(adminToken);
   const enrollDigest =
@@ -560,10 +585,189 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
   }
 
   /**
+   * `PUT …/decisions/<id>`: the contract's refusal, or the body's project and id
+   * not matching the route, is a 400; a bound or a lost race is a 409 naming it;
+   * a stored revision is a 200 with the revision, its hash, `created` and the
+   * entry count the next state entry must pin on.
+   */
+  async function raiseDecision(
+    res: ServerResponse,
+    method: string,
+    socket: Socket,
+    req: IncomingMessage,
+    project: string,
+    id: string,
+  ): Promise<number> {
+    const body = await readBody(req, res, PUT_BODY_CAP);
+    if (isRefusal(body)) {
+      return answer(res, method, socket, body);
+    }
+    const decoded = decode(body.bytes);
+    if ("reply" in decoded) {
+      return answer(res, method, socket, decoded);
+    }
+    const result = await noticeModel.raiseDecision(project, id, decoded.value);
+    switch (result.kind) {
+      case "stored":
+        return answer(
+          res,
+          method,
+          socket,
+          afterRead(
+            jsonReply(200, {
+              revision: result.revision,
+              textSha256: result.textSha256,
+              created: result.created,
+              entries: result.entries,
+            }),
+          ),
+        );
+      case "ceiling":
+        return answer(
+          res,
+          method,
+          socket,
+          afterRead(
+            jsonReply(409, {
+              error: `at most ${MAX_DECISIONS_PER_PROJECT} decisions per project`,
+            }),
+          ),
+        );
+      case "tooManyRevisions":
+        return answer(
+          res,
+          method,
+          socket,
+          afterRead(
+            jsonReply(409, {
+              error: `at most ${MAX_REVISIONS_PER_DECISION} revisions per decision`,
+            }),
+          ),
+        );
+      case "conflict":
+        return answer(
+          res,
+          method,
+          socket,
+          afterRead(
+            jsonReply(409, { error: "the decision changed; re-read it" }),
+          ),
+        );
+      case "invalid":
+        return answer(
+          res,
+          method,
+          socket,
+          afterRead(jsonReply(400, { errors: result.errors })),
+        );
+    }
+  }
+
+  /**
+   * `POST …/decisions/<id>/states`: a 400 for the contract's refusals and the
+   * option/supersededBy checks, a 404 for a missing decision, a 409 carrying the
+   * current trio for a stale pin or a lost race, and a 201 with the entry index.
+   */
+  async function postState(
+    res: ServerResponse,
+    method: string,
+    socket: Socket,
+    req: IncomingMessage,
+    project: string,
+    id: string,
+  ): Promise<number> {
+    const body = await readBody(req, res, POST_BODY_CAP);
+    if (isRefusal(body)) {
+      return answer(res, method, socket, body);
+    }
+    const decoded = decode(body.bytes);
+    if ("reply" in decoded) {
+      return answer(res, method, socket, decoded);
+    }
+    const result = await noticeModel.postState(project, id, decoded.value);
+    switch (result.kind) {
+      case "posted":
+        return answer(
+          res,
+          method,
+          socket,
+          afterRead(jsonReply(201, { index: result.index })),
+        );
+      case "notFound":
+        return answer(
+          res,
+          method,
+          socket,
+          afterRead(jsonReply(404, { error: "not found" })),
+        );
+      case "conflict":
+        return answer(
+          res,
+          method,
+          socket,
+          afterRead(
+            jsonReply(409, {
+              error: result.error,
+              revision: result.revision,
+              textSha256: result.textSha256,
+              entries: result.entries,
+            }),
+          ),
+        );
+      case "invalid":
+        return answer(
+          res,
+          method,
+          socket,
+          afterRead(jsonReply(400, { errors: result.errors })),
+        );
+    }
+  }
+
+  /**
+   * `POST …/events`: a 201 with the server-assigned id and the number of events
+   * dropped past the keep cap.
+   */
+  async function postEvent(
+    res: ServerResponse,
+    method: string,
+    socket: Socket,
+    req: IncomingMessage,
+    project: string,
+  ): Promise<number> {
+    const body = await readBody(req, res, POST_BODY_CAP);
+    if (isRefusal(body)) {
+      return answer(res, method, socket, body);
+    }
+    const decoded = decode(body.bytes);
+    if ("reply" in decoded) {
+      return answer(res, method, socket, decoded);
+    }
+    const result = await noticeModel.postEvent(project, decoded.value);
+    switch (result.kind) {
+      case "posted":
+        return answer(
+          res,
+          method,
+          socket,
+          afterRead(jsonReply(201, { id: result.id, dropped: result.dropped })),
+        );
+      case "invalid":
+        return answer(
+          res,
+          method,
+          socket,
+          afterRead(jsonReply(400, { errors: result.errors })),
+        );
+    }
+  }
+
+  /**
    * The write path, in the order the steps are documented. Everything refused
    * here is refused before the body is read, and therefore closes the
-   * connection; the only reads of a body are in `push`, `putStatus` and
-   * `register`, all of which run after authentication has already answered.
+   * connection; the only reads of a body are in `push`, `putStatus`, `register`
+   * and the three notice writes, all of which run after authentication has
+   * already answered.
    */
   return async (req, res, method, target, matched) => {
     const socket = req.socket;
@@ -628,7 +832,11 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
     const framed = framing(
       route,
       req,
-      route.kind === "register" ? POST_BODY_CAP : PUT_BODY_CAP,
+      route.kind === "register" ||
+        route.kind === "postState" ||
+        route.kind === "postEvent"
+        ? POST_BODY_CAP
+        : PUT_BODY_CAP,
     );
     if (framed !== undefined) {
       return answer(res, method, socket, framed);
@@ -673,7 +881,10 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
       !rate.take(
         route.kind === "push" ||
           route.kind === "drop" ||
-          route.kind === "putStatus"
+          route.kind === "putStatus" ||
+          route.kind === "raiseDecision" ||
+          route.kind === "postState" ||
+          route.kind === "postEvent"
           ? route.project
           : power === "enroll"
             ? ENROLL_LIMITER_KEY
@@ -716,6 +927,12 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
         return push(res, method, socket, req, route.project, route.wave);
       case "putStatus":
         return putStatus(res, method, socket, req, route.project);
+      case "raiseDecision":
+        return raiseDecision(res, method, socket, req, route.project, route.id);
+      case "postState":
+        return postState(res, method, socket, req, route.project, route.id);
+      case "postEvent":
+        return postEvent(res, method, socket, req, route.project);
     }
   };
 }
