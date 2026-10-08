@@ -122,7 +122,6 @@ model other than its author, with R5 first; step 3 is the owner's own approval.
   "decider": "delegated",
   "appliesTo": [],
   "evidence": [{ "label": "PR 731", "href": "https://github.com/…/pull/731" }],
-  "actElsewhere": null,
   "raisedBy": "campaign-foundry session",
   "raisedAt": "2026-10-08T02:10:00Z",
   "refs": { "wave": "platform-and-tenancy-w07", "lane": "PT-9x", "pr": 731 }
