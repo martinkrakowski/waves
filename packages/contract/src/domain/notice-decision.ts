@@ -55,11 +55,9 @@ function readDecision(
   const question =
     readNoticeText(ctx, own(record, "question"), "/question", QUESTION_RULE) ??
     "";
-  const { options, optionKeys } = readOptions(
-    ctx,
-    own(record, "options"),
-    "/options",
-  );
+  const optionsRaw = own(record, "options");
+  const { options, optionKeys } = readOptions(ctx, optionsRaw, "/options");
+  const optionCount = Array.isArray(optionsRaw) ? optionsRaw.length : 0;
   const recommendedRaw = own(record, "recommended");
   const recommended =
     recommendedRaw === undefined
@@ -96,7 +94,7 @@ function readDecision(
   applyShapeRules(
     ctx,
     shape,
-    options,
+    optionCount,
     recommendedRaw !== undefined,
     appliesTo,
     actElsewhereRaw !== undefined,
