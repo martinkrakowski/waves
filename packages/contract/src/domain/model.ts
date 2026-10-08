@@ -132,3 +132,96 @@ export interface ProjectStatus {
   prs?: PrsStatus;
   backlog?: Backlog;
 }
+
+export const NOTICE_SCHEMA = "waves-notice/v1";
+
+export const MAX_OPTIONS = 8;
+export const MAX_COMMITS = 8;
+export const MAX_EVIDENCE = 8;
+export const MAX_APPLIES_TO = 16;
+export const MAX_QUESTION_CHARS = 300;
+export const MAX_TEXT_CHARS = 2000;
+export const MAX_LABEL_CHARS = 80;
+export const MAX_RAISED_BY_CHARS = 80;
+export const OPTION_KEY_PATTERN = /^[a-z0-9]{1,8}$/;
+
+export const MAX_DECISIONS_PER_PROJECT = 500;
+export const MAX_EVENTS_PER_PROJECT = 2000;
+export const MAX_REVISIONS_PER_DECISION = 20;
+export const MAX_SESSION_ENTRIES_PER_DECISION = 50;
+
+export type NoticeRefs = { wave?: WaveId; lane?: LaneId; pr?: number };
+
+export type DecisionShape = "choice" | "action" | "instruction";
+
+export type Decider = "owner" | "delegated";
+
+export type DoorValue = true | false | "partly";
+
+export type DecisionState =
+  | "open"
+  | "delegated"
+  | "approved"
+  | "declined"
+  | "answered"
+  | "withdrawn"
+  | "superseded";
+
+export type StateSource = "session" | "reported";
+
+export interface DecisionOption {
+  readonly key: string;
+  readonly text: string;
+  readonly cost: string;
+}
+
+export interface NoticeEvidence {
+  readonly label: string;
+  readonly href: string;
+}
+
+export interface DecisionRevision {
+  readonly schema: typeof NOTICE_SCHEMA;
+  readonly kind: "decision";
+  readonly project: ProjectId;
+  readonly id: LaneId;
+  readonly shape: DecisionShape;
+  readonly question: string;
+  readonly options: DecisionOption[];
+  readonly recommended?: { readonly option: string; readonly reason: string };
+  readonly hardToUndo: { readonly value: DoorValue; readonly reason?: string };
+  readonly commits: string[];
+  readonly decider: Decider;
+  readonly appliesTo: ProjectId[];
+  readonly evidence: NoticeEvidence[];
+  readonly actElsewhere?: { readonly where: string; readonly what: string };
+  readonly raisedBy: string;
+  readonly raisedAt: string;
+  readonly refs?: NoticeRefs;
+  readonly changeNote?: string;
+}
+
+export interface StateEntryRequest {
+  readonly state: DecisionState;
+  readonly source: StateSource;
+  readonly revision: number;
+  readonly textSha256: string;
+  readonly expectedEntries: number;
+  readonly by: string;
+  readonly at: string;
+  readonly words?: string;
+  readonly option?: string;
+  readonly reason?: string;
+  readonly supersededBy?: LaneId;
+}
+
+export interface NoticeEvent {
+  readonly schema: typeof NOTICE_SCHEMA;
+  readonly kind: "event";
+  readonly project: ProjectId;
+  readonly topic: string;
+  readonly text: string;
+  readonly detail?: string;
+  readonly at: string;
+  readonly refs?: NoticeRefs;
+}
