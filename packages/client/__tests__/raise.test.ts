@@ -7,6 +7,7 @@ import {
   CONFIG_DIR,
   PROJECT,
   PROJECT_TOKEN,
+  bearerOf,
   harness,
   network,
   reply,
@@ -99,7 +100,7 @@ describe("raise", () => {
     const request = built.requests[0];
     expect(request?.method).toBe("PUT");
     expect(request?.url).toBe(DECISION_URL);
-    expect(request?.bearer).toBe(PROJECT_TOKEN);
+    expect(bearerOf(request)).toBe(PROJECT_TOKEN);
     // What went out is the contract's own value, so what the server stores
     // is a document that passed validation and not the draft.
     const body = JSON.parse(request?.body ?? "{}");

@@ -202,6 +202,7 @@ describe("run", () => {
           revision: 1,
           textSha256: "abc",
         },
+        revisions: [],
         entries: [],
       });
       const built = harness({ script: [reply(200, body)] });

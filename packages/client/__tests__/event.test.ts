@@ -6,6 +6,7 @@ import {
   CONFIG_DIR,
   PROJECT,
   PROJECT_TOKEN,
+  bearerOf,
   harness,
   network,
   reply,
@@ -52,7 +53,7 @@ describe("event", () => {
     const request = built.requests[0];
     expect(request?.method).toBe("POST");
     expect(request?.url).toBe(EVENTS_URL);
-    expect(request?.bearer).toBe(PROJECT_TOKEN);
+    expect(bearerOf(request)).toBe(PROJECT_TOKEN);
 
     const body = JSON.parse(request?.body ?? "{}");
     expect(body).toMatchObject({

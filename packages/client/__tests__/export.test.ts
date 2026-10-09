@@ -4,6 +4,7 @@ import type { Command } from "../src/domain/args.js";
 import { exportDecisions } from "../src/application/export.js";
 import {
   PROJECT,
+  bearerOf,
   harness,
   network,
   reply,
@@ -156,7 +157,7 @@ describe("decisions export", () => {
 
     expect(built.requests[0]?.method).toBe("GET");
     expect(built.requests[0]?.url).toBe(DECISIONS_URL);
-    expect(built.requests[0]?.bearer).toBeUndefined();
+    expect(bearerOf(built.requests[0])).toBeUndefined();
   });
 
   it("honours --since, fetching only newer answers", async () => {

@@ -71,13 +71,27 @@ export interface InputStream {
 
 export type Method = "GET" | "POST" | "PUT" | "DELETE";
 
-export interface HttpRequest {
-  readonly method: Method;
+/** A read carries no token: the route is public. */
+export interface HttpGet {
+  readonly method: "GET";
   readonly url: string;
-  /** Absent for reads, which need no token. */
-  readonly bearer?: string;
   readonly body?: string;
 }
+
+/** A write carries the project's token, and every write is one. */
+export interface HttpMutation {
+  readonly method: Exclude<Method, "GET">;
+  readonly url: string;
+  readonly bearer: string;
+  readonly body?: string;
+}
+
+/**
+ * A request is either a read with no token, or a write with one: a PUT, POST or
+ * DELETE that carries the bearer the project earned. The split is structural and
+ * checked at the call site, so a write built without a token no longer compiles.
+ */
+export type HttpRequest = HttpGet | HttpMutation;
 
 export interface HttpReply {
   readonly status: number;
@@ -151,8 +165,12 @@ export interface TransportOptions {
   readonly origin: string;
   /** The PEM of a private certificate authority, when one was configured. */
   readonly ca?: string;
-  /** Called before every request when the host was allowed to be plain http. */
-  warnInsecure?: () => void;
+  /**
+   * Called before every request when the host was allowed to be plain http. The
+   * request is handed in so the wording can tell a read — which carries no token —
+   * from a write, which does.
+   */
+  warnInsecure?: (request: HttpRequest) => void;
 }
 
 export type TransportFactory = (options: TransportOptions) => Transport;

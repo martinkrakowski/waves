@@ -133,8 +133,11 @@ describe("paths", () => {
     expect(statusPath("waves-demo")).toBe("/api/v1/projects/waves-demo/status");
   });
 
-  it("names an insecure origin once, for every request", () => {
-    expect(insecureWarning("http://10.0.0.4:8080")).toBe(
+  it("names an insecure origin for a write and for a read", () => {
+    expect(insecureWarning("http://10.0.0.4:8080", false)).toBe(
+      "waves: http://10.0.0.4:8080 is plain http, so the response is fetched in clear text",
+    );
+    expect(insecureWarning("http://10.0.0.4:8080", true)).toBe(
       "waves: http://10.0.0.4:8080 is plain http, so the token travels in clear text",
     );
   });

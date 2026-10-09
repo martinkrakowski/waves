@@ -14,6 +14,7 @@ import {
   CONFIG_DIR,
   ENROLL_TOKEN,
   PROJECT_TOKEN,
+  bearerOf,
   environmentOf,
   fakeFiles,
   harness,
@@ -161,7 +162,7 @@ describe("register-all", () => {
     ]);
     for (const request of result.requests) {
       expect(request.url).not.toContain("rotate=1");
-      expect(request.bearer).toBe(ENROLL_TOKEN);
+      expect(bearerOf(request)).toBe(ENROLL_TOKEN);
     }
     expect(result.requests[0]?.body).toBe(`{"id":"${ONE}","name":"One"}`);
     expect(result.files.writes).toEqual([

@@ -608,6 +608,20 @@ describe("the transport of a run", () => {
     ).toMatchObject({ kind: "reply" });
   });
 
+  it("sends a GET with no authorization header and no body", async () => {
+    const scripted = peer();
+    scripted.respondWith(new FakeResponse(200, [Buffer.from("{}")], {}));
+    const transport = transportOver(scripted);
+
+    const pending = transport.send({
+      method: "GET",
+      url: "http://127.0.0.1:8080/api/v1/projects/waves-demo/decisions/d1",
+    });
+    expect(scripted.peer.flushed).toHaveLength(0);
+    expect(scripted.peer.bodies).toEqual([undefined]);
+    expect(await pending).toMatchObject({ kind: "reply" });
+  });
+
   it("uses Node's own client, which refuses a closed port on either protocol", async () => {
     for (const origin of [
       `http://127.0.0.1:${CLOSED}`,
@@ -622,5 +636,22 @@ describe("the transport of a run", () => {
         expect(outcome.beforeBody).toBe(true);
       }
     }
+  });
+});
+
+describe("request typing", () => {
+  it("requires a bearer on a PUT, and omits it on a GET", () => {
+    const read: HttpRequest = {
+      method: "GET",
+      url: "https://127.0.0.1:8080/api/v1/projects/waves-demo/decisions/d1",
+    };
+    expect(read.method).toBe("GET");
+
+    // @ts-expect-error a PUT without a bearer does not compile
+    const withoutToken: HttpRequest = {
+      method: "PUT",
+      url: "https://127.0.0.1:8080/api/v1/projects/waves-demo/decisions/d1",
+    };
+    expect(withoutToken.method).toBe("PUT");
   });
 });

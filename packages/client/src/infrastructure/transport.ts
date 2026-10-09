@@ -118,13 +118,13 @@ async function send(
 ): Promise<TransportOutcome> {
   const url = new URL(request.url);
   if (url.protocol === "http:") {
-    options.warnInsecure?.();
+    options.warnInsecure?.(request);
   }
   const signal = deadline();
   const requestOptions = buildOptions(
     url,
     request.method,
-    request.bearer,
+    request.method === "GET" ? undefined : request.bearer,
     request.body,
     options.ca,
     signal,

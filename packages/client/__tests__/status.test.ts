@@ -8,6 +8,7 @@ import {
   GENERATED_AT,
   PROJECT,
   PROJECT_TOKEN,
+  bearerOf,
   harness,
   reply,
   type HarnessInput,
@@ -75,7 +76,7 @@ describe("status", () => {
     const request = built.requests[0];
     expect(request?.method).toBe("PUT");
     expect(request?.url).toBe(STATUS_PATH);
-    expect(request?.bearer).toBe(PROJECT_TOKEN);
+    expect(bearerOf(request)).toBe(PROJECT_TOKEN);
     const body = sentBody(built);
     // What went out is the contract's own value, so what the server will store
     // is a document that passed validation and not a draft of one.

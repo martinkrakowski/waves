@@ -166,7 +166,15 @@ export function projectDecisionsPath(project: string): string {
   return `${API_PREFIX}/${encodeURIComponent(project)}/decisions`;
 }
 
-/** The line printed before every request to an insecurely allowed host. */
-export function insecureWarning(origin: string): string {
-  return `waves: ${origin} is plain http, so the token travels in clear text`;
+/**
+ * The line printed before every request to an insecurely allowed host. A write
+ * carries the project's token, so the warning names it; a read does not, so it
+ * speaks plainly about the response instead — the host is still untrusted, but
+ * no secret is crossing it.
+ */
+export function insecureWarning(origin: string, hasToken: boolean): string {
+  const secret = hasToken
+    ? "the token travels in clear text"
+    : "the response is fetched in clear text";
+  return `waves: ${origin} is plain http, so ${secret}`;
 }

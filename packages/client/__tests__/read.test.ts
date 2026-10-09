@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import type { Command } from "../src/domain/args.js";
 import { readDecision } from "../src/application/read.js";
-import { PROJECT, harness, network, reply } from "./support/harness.js";
+import {
+  PROJECT,
+  bearerOf,
+  harness,
+  network,
+  reply,
+} from "./support/harness.js";
 
 type ReadCommand = Extract<
   Command,
@@ -42,7 +48,7 @@ describe("read", () => {
     const request = built.requests[0];
     expect(request?.method).toBe("GET");
     expect(request?.url).toBe(DECISION_URL);
-    expect(request?.bearer).toBeUndefined();
+    expect(bearerOf(request)).toBeUndefined();
     expect(request?.body).toBeUndefined();
   });
 
