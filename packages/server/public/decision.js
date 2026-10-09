@@ -137,8 +137,24 @@ function decisionRevision(decision, project, id) {
     time(decision.raisedAt) &&
     refsEntry(decision.refs) &&
     (decision.changeNote === undefined ||
-      typeof decision.changeNote === "string")
+      typeof decision.changeNote === "string") &&
+    shapeRules(decision)
   );
+}
+
+/**
+ * The shape-specific bounds the contract enforces: `action` needs actElsewhere
+ * and has no options; `instruction` applies to at least one project and has no
+ * options; `choice` has at least two options.
+ */
+function shapeRules(decision) {
+  if (decision.shape === "action") {
+    return decision.options.length === 0 && decision.actElsewhere !== undefined;
+  }
+  if (decision.shape === "instruction") {
+    return decision.options.length === 0 && decision.appliesTo.length >= 1;
+  }
+  return decision.options.length >= 2;
 }
 
 /**

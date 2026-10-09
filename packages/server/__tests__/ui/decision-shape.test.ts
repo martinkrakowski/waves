@@ -112,6 +112,34 @@ const INVALID: readonly (readonly [string, unknown])[] = [
       ],
     },
   ],
+  [
+    "an action revision without actElsewhere",
+    {
+      ...decisionResponse(),
+      head: inboxHead({ shape: "action" }),
+      revisions: [
+        {
+          ...storedRevision(),
+          decision: { ...decisionRevision(), shape: "action", options: [] },
+        },
+      ],
+    },
+  ],
+  [
+    "a choice revision with only one option",
+    {
+      ...decisionResponse(),
+      revisions: [
+        {
+          ...storedRevision(),
+          decision: {
+            ...decisionRevision(),
+            options: [{ key: "a", text: "Yes", cost: "C1" }],
+          },
+        },
+      ],
+    },
+  ],
   ["entries that are not a list", { ...decisionResponse(), entries: "no" }],
   [
     "revisions whose first number is not 1",
