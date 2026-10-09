@@ -1317,8 +1317,8 @@ describe("the status panel against stored markup", () => {
  * Every text field of one inbox head, each carrying the payload: the project
  * name, the question, the door reason, the act-elsewhere where and what, the
  * earlier answer's words, and the covered answer's words. The `project` and `id`
- * are validated by the shape check, so they cannot carry a payload; `at` is a
- * timestamp, so it goes into `stamp`'s title and renders "unknown" as text.
+ * are validated by the shape check, so they cannot carry a payload; and `at`
+ * is checked as a time, so it cannot carry one either.
  * The `by` field of an answer is held but never rendered.
  */
 function inboxWith(payload: string): unknown {
@@ -1336,7 +1336,7 @@ function inboxWith(payload: string): unknown {
             decider: "owner",
             state: "withdrawn",
             group: "closed",
-            at: payload,
+            at: NOW_ISO,
             entries: 2,
             actElsewhere: { where: payload, what: payload },
             earlierAnswer: {
@@ -1394,9 +1394,8 @@ async function bootInbox(
  * How many times one payload appears in the rendered text of an inbox head:
  * the project name (1), the question (1), the door band reason (1), the
  * act-elsewhere where and what (2), the earlier answer's words (1), the covered
- * answer's words (1). The `at` timestamp is passed through `calendarDate`,
- * which renders "unknown" for a non-date — never the payload as text. It also
- * lives in the meta line's `title` via `stamp`. The `by` field is held but
+ * answer's words (1). The `at` timestamp is checked as a time by the shape
+ * check, so it cannot carry a payload. The `by` field is held but
  * never rendered. Seven places.
  */
 const INBOX_OCCURRENCES = 7;
@@ -1413,9 +1412,9 @@ describe("the inbox against stored markup", () => {
       for (const element of Array.from(root().querySelectorAll("[class]"))) {
         expect(element.getAttribute("class")).not.toContain(payload);
       }
-      // The `at` timestamp lives only in the meta line's title via `stamp`,
-      // never as text or markup: `calendarDate` renders "unknown" for it.
-      expectVerbatim(payload, INBOX_OCCURRENCES, 1);
+      // `at` is checked as a time by the shape check, so it cannot carry a
+      // payload and is not one of the fields counted here.
+      expectVerbatim(payload, INBOX_OCCURRENCES, 0);
       app.stop();
     },
   );

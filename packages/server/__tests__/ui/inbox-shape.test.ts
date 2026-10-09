@@ -17,6 +17,150 @@ import {
  */
 const INVALID: readonly (readonly [string, unknown])[] = [
   [
+    "a covered answer whose state is not an answer",
+    {
+      ...inboxView(),
+      projects: [
+        {
+          ...inboxProject(),
+          decisions: [
+            {
+              ...inboxHead(),
+              group: "closed",
+              state: "withdrawn",
+              coveredAnswer: {
+                ...{
+                  state: "approved",
+                  source: "reported",
+                  at: NOW_ISO,
+                  by: "alpha session",
+                },
+                state: "withdrawn",
+              },
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  [
+    "an earlier answer that a session did not report",
+    {
+      ...inboxView(),
+      projects: [
+        {
+          ...inboxProject(),
+          decisions: [
+            {
+              ...inboxHead(),
+              earlierAnswer: {
+                ...{
+                  state: "approved",
+                  source: "reported",
+                  at: NOW_ISO,
+                  by: "alpha session",
+                },
+                source: "session",
+              },
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  [
+    "an answer with a time that is not one",
+    {
+      ...inboxView(),
+      projects: [
+        {
+          ...inboxProject(),
+          decisions: [
+            {
+              ...inboxHead(),
+              earlierAnswer: {
+                ...{
+                  state: "approved",
+                  source: "reported",
+                  at: NOW_ISO,
+                  by: "alpha session",
+                },
+                at: "not a date",
+              },
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  [
+    "a head at revision zero",
+    {
+      ...inboxView(),
+      projects: [
+        {
+          ...inboxProject(),
+          decisions: [{ ...inboxHead(), revision: 0, revisions: 2 }],
+        },
+      ],
+    },
+  ],
+  [
+    "a head at a revision past its last",
+    {
+      ...inboxView(),
+      projects: [
+        {
+          ...inboxProject(),
+          decisions: [{ ...inboxHead(), revision: 3, revisions: 2 }],
+        },
+      ],
+    },
+  ],
+  [
+    "a head with a time that is not one",
+    {
+      ...inboxView(),
+      projects: [
+        {
+          ...inboxProject(),
+          decisions: [{ ...inboxHead(), at: "not a date" }],
+        },
+      ],
+    },
+  ],
+  [
+    "a reported head that a session did not report",
+    {
+      ...inboxView(),
+      projects: [
+        {
+          ...inboxProject(),
+          decisions: [
+            {
+              ...inboxHead(),
+              group: "reported",
+              state: "approved",
+              source: "session",
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  [
+    "a reported head with no source",
+    {
+      ...inboxView(),
+      projects: [
+        {
+          ...inboxProject(),
+          decisions: [{ ...inboxHead(), group: "reported", state: "approved" }],
+        },
+      ],
+    },
+  ],
+  [
     "a closed head whose state is open",
     {
       ...inboxView(),
@@ -507,7 +651,7 @@ describe("drawableInbox", () => {
                   },
                   coveredAnswer: {
                     state: "declined",
-                    source: "session",
+                    source: "reported",
                     at: "2026-10-08T13:00:00Z",
                     by: "session",
                   },

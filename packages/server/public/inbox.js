@@ -48,23 +48,28 @@ function oneOf(value, options) {
   return typeof value === "string" && options.includes(value);
 }
 
+/** A time the page can print: a string that parses as a date. */
+function time(value) {
+  return typeof value === "string" && Number.isFinite(Date.parse(value));
+}
+
+/** The three states that are an answer; every other state is not one. */
+const ANSWER_STATES = ["approved", "declined", "answered"];
+
 /**
- * An answer on a head: the current answer to a reported decision, the answer a
- * withdrawal covers, or the answer given to an earlier text. Its state is one of
- * the seven, but only an answer state reaches here — the model that built it
- * filters on `isAnswer`, so a state that is not approved, declined or answered
- * would be a response this page has no verdict word for. The check stays open to
- * the full list, the same way `door` stays open to the three values and lets the
- * view pick the label: a closed list is what stops a stored payload that picked a
- * fourth from landing a class of its own.
+ * An answer on a head: the answer a withdrawal covers, or the answer given to an
+ * earlier text. It is one of the three answer states and nothing else, because
+ * the page has a verdict word for those three only; and its source is
+ * `reported`, because that is the only source an answer can have before signing
+ * exists, and the card's sentence says "it had been reported that you …".
  */
 function answer(value) {
   return (
     value !== null &&
     typeof value === "object" &&
-    oneOf(value.state, STATES) &&
-    oneOf(value.source, SOURCES) &&
-    typeof value.at === "string" &&
+    oneOf(value.state, ANSWER_STATES) &&
+    value.source === "reported" &&
+    time(value.at) &&
     typeof value.by === "string" &&
     (value.words === undefined || typeof value.words === "string") &&
     (value.option === undefined || typeof value.option === "string")
@@ -131,12 +136,15 @@ function head(entry) {
     oneOf(entry.decider, ["owner", "delegated"]) &&
     count(entry.revision) &&
     count(entry.revisions) &&
+    entry.revision >= 1 &&
+    entry.revision <= entry.revisions &&
     typeof entry.textSha256 === "string" &&
     count(entry.entries) &&
     oneOf(entry.state, STATES) &&
     (entry.source === undefined || oneOf(entry.source, SOURCES)) &&
-    typeof entry.at === "string" &&
+    time(entry.at) &&
     oneOf(entry.group, GROUPS) &&
+    (entry.group !== "reported" || entry.source === "reported") &&
     GROUP_STATES[entry.group].includes(entry.state) &&
     actElsewhere(entry.actElsewhere) &&
     (entry.earlierAnswer === undefined || answer(entry.earlierAnswer)) &&
