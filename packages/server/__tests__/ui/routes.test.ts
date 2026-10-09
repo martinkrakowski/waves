@@ -97,6 +97,7 @@ describe("routeOf", () => {
     expect(routeOf("/p/ALPHA")).toStrictEqual({ kind: "unknown" });
     expect(routeOf("/p/-alpha")).toStrictEqual({ kind: "unknown" });
     expect(routeOf("/p/alpha.beta")).toStrictEqual({ kind: "unknown" });
+    expect(routeOf("/p/ALPHA/inbox")).toStrictEqual({ kind: "unknown" });
   });
 
   it("refuses anything else", () => {

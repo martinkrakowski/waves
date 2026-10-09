@@ -1951,4 +1951,34 @@ describe("the project-inbox route", () => {
     );
     app.stop();
   });
+
+  it("drops the load when the reader moves to another route mid-pass", async () => {
+    const inboxListing = projectInboxView();
+    const handler = (path: string): Answer =>
+      path === "/api/v1/projects"
+        ? {
+            status: 200,
+            body: [projectCard(), projectCard({ id: "beta", name: "Beta" })],
+          }
+        : path === "/api/v1/attention"
+          ? { status: 200, body: attentionView() }
+          : path === "/api/v1/projects/alpha/decisions"
+            ? { status: 200, body: inboxListing }
+            : { status: 404 };
+    const gate = holding(handler, (path) =>
+      path === "/api/v1/projects/alpha/decisions",
+    );
+    const { app } = harness({ pathname: "/p/alpha/inbox", fetchImpl: gate });
+    app.start();
+    await flush();
+    expect(gate.pending()).toBe(1);
+
+    app.navigate("/");
+    gate.release();
+    await flush();
+
+    expect(app.route).toStrictEqual({ kind: "projects" });
+    expect(textsOf(root(), ".projects a")).toStrictEqual(["Alpha", "Beta"]);
+    app.stop();
+  });
 });
