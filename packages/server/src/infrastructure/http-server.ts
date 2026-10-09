@@ -12,6 +12,10 @@ import {
 import type { NoticeStorePort } from "../application/ports/notice-store.js";
 import type { Now } from "../application/read-model.js";
 import { createReadModel, type ReadModel } from "../application/read-model.js";
+import {
+  createNoticeReadModel,
+  type NoticeReadModel,
+} from "../application/notice-read-model.js";
 import type { StorePort } from "../application/ports/store.js";
 import { digestsEqual, mintToken } from "./digest.js";
 import { sha256Hex } from "./sha256.js";
@@ -31,6 +35,7 @@ import {
   allowOf,
   HEALTH_PATH,
   isApiPath,
+  MAX_NOTICE_EVENTS,
   MAX_URL_BYTES,
   pathOf,
   queryOf,
@@ -113,6 +118,7 @@ async function readyReply(
 async function replyFor(
   matched: Route,
   readModel: ReadModel,
+  noticeReadModel: NoticeReadModel,
   store: StorePort<Project, StoredSnapshot>,
   root: string,
   realRoot: string | undefined,
@@ -138,6 +144,30 @@ async function replyFor(
       const view = await readModel.getStatus(matched.project);
       return view === undefined ? NOT_FOUND : jsonReply(200, view);
     }
+    case "decision": {
+      const view = await noticeReadModel.getDecision(
+        matched.project,
+        matched.id,
+      );
+      return view === undefined ? NOT_FOUND : jsonReply(200, view);
+    }
+    case "decisions": {
+      const project = matched.project;
+      return jsonReply(200, {
+        project,
+        counts: await noticeReadModel.counts(project),
+        decisions: await noticeReadModel.decisions(project),
+      });
+    }
+    case "events":
+      return jsonReply(200, {
+        events: await noticeReadModel.events(
+          matched.project,
+          MAX_NOTICE_EVENTS,
+        ),
+      });
+    case "inbox":
+      return jsonReply(200, { projects: await noticeReadModel.inbox() });
     case "index":
       return staticReply(realRoot, {
         path: resolve(root, INDEX_FILE),
@@ -170,7 +200,8 @@ export function createHttpServer(deps: HttpServerDeps): Server {
   const { store, noticeStore, now, publicDir, log, readToken } = deps;
   const root = resolve(publicDir);
   const expected = readToken === undefined ? undefined : sha256(readToken);
-  const readModel = createReadModel({ store, now });
+  const readModel = createReadModel({ store, noticeStore, now });
+  const noticeReadModel = createNoticeReadModel({ store, noticeStore, now });
   const realRoot = realRootOf(root);
   const compare: DigestComparer = deps.compare ?? digestsEqual;
   const write = createWriteHandler({
@@ -207,7 +238,14 @@ export function createHttpServer(deps: HttpServerDeps): Server {
     if (matched.kind === "ready" && READ_METHODS.has(method)) {
       return send(
         res,
-        await replyFor(matched, readModel, store, root, await realRoot),
+        await replyFor(
+          matched,
+          readModel,
+          noticeReadModel,
+          store,
+          root,
+          await realRoot,
+        ),
         {
           method,
           extra: { ...extra, ...NO_STORE },
@@ -260,6 +298,7 @@ export function createHttpServer(deps: HttpServerDeps): Server {
     const reply = await replyFor(
       matched,
       readModel,
+      noticeReadModel,
       store,
       root,
       await realRoot,
