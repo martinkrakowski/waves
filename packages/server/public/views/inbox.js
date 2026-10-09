@@ -34,7 +34,7 @@ const GROUP_HEAD = {
  * The shape, in a word: "choice", "action only you run", "standing instruction".
  * These are the page's own words for the three shapes, not the shape value itself.
  */
-const SHAPE_WORD = {
+export const SHAPE_WORD = {
   choice: "choice",
   action: "action only you run",
   instruction: "standing instruction",
@@ -44,7 +44,7 @@ const SHAPE_WORD = {
  * Who may decide, in a word: "yours to decide" or "may be decided under
  * delegation". The page says it in the reader's own terms, not the stored value.
  */
-const DECIDER_WORD = {
+export const DECIDER_WORD = {
   owner: "yours to decide",
   delegated: "may be decided under delegation",
 };
@@ -63,9 +63,10 @@ const CLOSED_ACTION = {
  * "partly" is partly undoable; `false` has no band at all. The page adds nothing
  * to the reason: the label is the stored words, and the reason the session wrote
  * is shown verbatim, character for character, as text and never as markup. A band
- * with no reason shows the label alone.
+ * with no reason shows the label alone. Exported for the decision page, which
+ * shows a door band exactly as the inbox card does.
  */
-function doorBand(head) {
+export function doorBand(head) {
   if (head.door.value === false) {
     return undefined;
   }
@@ -91,9 +92,10 @@ function factsLine(head) {
  * more for an open owner decision; "Reported as answered" names the verdict in a
  * full sentence and never as the bare word "Approved"; "Closed by a session"
  * says what the session did and, when an answer was reported first, says so
- * beside it without striking it out.
+ * beside it without striking it out. Exported for the decision page, which
+ * reuses these exact sentences for the same groups.
  */
-function stateNodes(head) {
+export function stateNodes(head) {
   const nodes = [];
   if (head.group === "waiting") {
     if (head.state === "delegated") {
