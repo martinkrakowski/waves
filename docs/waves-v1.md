@@ -569,10 +569,7 @@ These constants are exported so the server and client read the same numbers
 | `MAX_EVENTS_PER_PROJECT`           | 2000  |
 | `MAX_REVISIONS_PER_DECISION`       | 20    |
 | `MAX_SESSION_ENTRIES_PER_DECISION` | 50    |
-
-The routes that serve these documents come with the server in a later change.
-
-## 3. Errors
+| \n## 3. Errors                     |
 
 A failure is a list of issues, each exactly `{ path, message }`
 (`ValidationIssue`, `packages/contract/src/domain/validation.ts:1`). `path` is
@@ -669,14 +666,22 @@ unauthenticated request to the lanes route with a bad query is a `401` and a
 | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GET /healthz`                                    | `{"ok":true}` — the process is up                                                                                                                 |
 | `GET /readyz`                                     | `{"ok":true}` — the store can be read; otherwise `503` `{"ok":false}`                                                                             |
-| `GET /api/v1/projects`                            | array of `{ id, name, repo?, registeredAt, waves, lanes, lastPush?, stale, recentWaves, status? }`, see below                                     |
+| `GET /api/v1/projects`                            | array of `{ id, name, repo?, registeredAt, waves, lanes, lastPush?, stale, recentWaves, status?, decisions? }`, see below                         |
 | `GET /api/v1/projects/<id>/waves`                 | array of `{ wave, receivedAt, intervalSeconds, lanes, stale, retained }`, `lanes` a count, newest receive first                                   |
 | `GET /api/v1/projects/<id>/lanes`                 | `{ project: { id, name, repo? }, waves: [...], wavesOmitted, lanes: [...], truncated }`, see 5.1.1                                                |
 | `GET /api/v1/projects/<id>/waves/<wave>`          | `{ envelope, receivedAt, stale, staleAfterMs }`, where `envelope` is the stored envelope with `lanes[].derived.alive` possibly `"unknown"`        |
 | `GET /api/v1/projects/<id>/status`                | `{ status, receivedAt, stale, staleAfterMs }`, where `status` is the stored document of "The project status document"                             |
 | `GET /api/v1/attention`                           | `{ lanes: [{ project, wave, lane, seat?, reasons, receivedAt, stale, pr? }], projects: [{ id, attention }], truncated, wavesOmitted }`, see below |
+| `GET /api/v1/projects/<id>/decisions`             | `{ project, counts, decisions: [Head] }`, the project's own and every instruction of another project that applies to it, see 5.1.2                |
+| `GET /api/v1/projects/<id>/decisions/<decision>`  | `{ head, revisions: StoredRevision[], entries: StoredEntry[] }`, or `404` if there is no such decision                                            |
+| `GET /api/v1/projects/<id>/events`                | `{ events: StoredEvent[] }`, newest first, at most `MAX_NOTICE_EVENTS` (200)                                                                      |
+| `GET /api/v1/inbox`                               | `{ projects: [{ id, name, counts, decisions: [Head] }] }`, one entry per registered project in registry order                                     |
 | `GET /`, `GET /p/<id>` and `GET /p/<id>/w/<wave>` | the status page (`public/index.html`)                                                                                                             |
 | `GET /<static file>`                              | a file from `public`, allow-listed extensions only                                                                                                |
+
+#### 5.1.2 The notice head, the groups and the counts
+
+A decision head is `{ project, id, question, shape, door: { value, reason? }, decider, revision, revisions, textSha256, entries, state, source?, at, group, actElsewhere?, earlierAnswer?, coveredAnswer?, from? }`. `at` is the current entry's receive time, or the current revision's when the state is `open`. `decisions` on a summary is `{ waiting, oneWay, reported, closed }`: `oneWay` counts the `waiting` decisions whose door value is `true`, and the four are never summed into one number. A head's `group` is `waiting` (state `open` or `delegated`), `reported` (a current answer entry received within the last fourteen days), `closed` (a current `withdrawn` or `superseded` entry within fourteen days), or `history` otherwise; a reported answer stays in `reported` for fourteen days and then moves to `history`, so it can never leave the inbox while it stands (rule 1). `from` carries the project a listed instruction was raised by.
 
 In a project summary `waves` is a count, `lanes` is the number of lanes in the
 project's **retained** waves summed from the wave heads, `lastPush` is the newest
@@ -1117,13 +1122,16 @@ read these routes nor write to them; call them from a server, not from a page.
 
 ### 5.4 Write and registration routes
 
-| route                                       | token                             | body                             | success                                        |
-| ------------------------------------------- | --------------------------------- | -------------------------------- | ---------------------------------------------- |
-| `PUT /api/v1/projects/<id>/waves/<wave>`    | project                           | the envelope of section 2        | `200` `{ receivedAt }`                         |
-| `PUT /api/v1/projects/<id>/status`          | project                           | the status document, below       | `200` `{ receivedAt }`                         |
-| `DELETE /api/v1/projects/<id>/waves/<wave>` | project                           | none                             | `204`, or `404` when there was no such wave    |
-| `POST /api/v1/projects`                     | admin, or enrollment for a new id | `{ id, name, repo? }`, see below | `201` `{ id, token }`                          |
-| `DELETE /api/v1/projects/<id>`              | admin                             | none                             | `204`, or `404` when there was no such project |
+| route                                                    | token                             | body                             | success                                                                                  |
+| -------------------------------------------------------- | --------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------- |
+| `PUT /api/v1/projects/<id>/waves/<wave>`                 | project                           | the envelope of section 2        | `200` `{ receivedAt }`                                                                   |
+| `PUT /api/v1/projects/<id>/status`                       | project                           | the status document, below       | `200` `{ receivedAt }`                                                                   |
+| `DELETE /api/v1/projects/<id>/waves/<wave>`              | project                           | none                             | `204`, or `404` when there was no such wave                                              |
+| `POST /api/v1/projects`                                  | admin, or enrollment for a new id | `{ id, name, repo? }`, see below | `201` `{ id, token }`                                                                    |
+| `DELETE /api/v1/projects/<id>`                           | admin                             | none                             | `204`, or `404` when there was no such project                                           |
+| `PUT /api/v1/projects/<id>/decisions/<decision>`         | project                           | a decision revision              | `200` `{ revision, textSha256, created, entries }`; `400` issues; `409` a bound          |
+| `POST /api/v1/projects/<id>/decisions/<decision>/states` | project                           | a state entry                    | `201` `{ index }`; `400` issues; `404`; `409` `{ error, revision, textSha256, entries }` |
+| `POST /api/v1/projects/<id>/events`                      | project                           | an event                         | `201` `{ id, dropped }`                                                                  |
 
 (`writeRouteOf`, `packages/server/src/infrastructure/http-routes.ts:76-98`;
 `createWriteHandler`, `packages/server/src/infrastructure/http-write.ts:278`)
