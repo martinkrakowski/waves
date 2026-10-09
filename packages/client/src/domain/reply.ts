@@ -13,6 +13,9 @@ export interface ServerIssue {
  */
 export const MAX_SERVER_TEXT = 200;
 
+/** A `textSha256` is exactly 64 lower-case hex characters; anything else is rejected. */
+const TEXT_SHA256_PATTERN = /^[0-9a-f]{64}$/;
+
 const REASON_PHRASES: Readonly<Record<number, string>> = {
   400: "Bad Request",
   401: "Unauthorized",
@@ -202,9 +205,10 @@ export interface RaiseReply {
 
 /**
  * Reads a `raise` reply body the same way `readReceivedAt` does: check the shape
- * the server sent rather than trusting it. A body that is not one, or that carries
- * a field of the wrong type, is refused so the caller can fail rather than print a
- * half-read answer.
+ * the server sent rather than trusting it. A body that is not one, or that
+ * carries a field of the wrong type — including a `textSha256` that is not a
+ * 64-hex string — is refused so the caller can fail rather than print a half-read
+ * answer.
  */
 export function readRaiseReply(body: string): RaiseReply | undefined {
   const parsed = parseObject(body);
@@ -219,6 +223,7 @@ export function readRaiseReply(body: string): RaiseReply | undefined {
     typeof revision !== "number" ||
     !Number.isInteger(revision) ||
     typeof textSha256 !== "string" ||
+    !TEXT_SHA256_PATTERN.test(textSha256) ||
     typeof created !== "boolean" ||
     typeof entries !== "number" ||
     !Number.isInteger(entries)
@@ -286,7 +291,8 @@ export interface StaleReply {
 /**
  * Reads the 409 body a state write gets when its pin moved before the request:
  * the current `revision`, `textSha256` and `entries`, so the writer knows what to
- * read again. `undefined` when the body is not one, which is a failure to read.
+ * read again. `undefined` when the body is not one — including a `textSha256`
+ * that is not a 64-hex string — which is a failure to read.
  */
 export function readStaleReply(body: string): StaleReply | undefined {
   const parsed = parseObject(body);
@@ -300,6 +306,7 @@ export function readStaleReply(body: string): StaleReply | undefined {
     typeof revision !== "number" ||
     !Number.isInteger(revision) ||
     typeof textSha256 !== "string" ||
+    !TEXT_SHA256_PATTERN.test(textSha256) ||
     typeof entries !== "number" ||
     !Number.isInteger(entries)
   ) {

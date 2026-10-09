@@ -19,6 +19,7 @@ import {
 
 const ESCAPE = String.fromCharCode(27);
 const CLEAR = `${ESCAPE}[2J${ESCAPE}[H`;
+const SHA = "a".repeat(64);
 
 describe("readIssues", () => {
   it("reads the pointers of a 422", () => {
@@ -241,30 +242,30 @@ describe("readRaiseReply", () => {
   it("reads a valid raise reply", () => {
     expect(
       readRaiseReply(
-        '{"revision":1,"textSha256":"abc","created":true,"entries":0}',
+        `{"revision":1,"textSha256":"${SHA}","created":true,"entries":0}`,
       ),
-    ).toEqual({ revision: 1, textSha256: "abc", created: true, entries: 0 });
+    ).toEqual({ revision: 1, textSha256: SHA, created: true, entries: 0 });
   });
 
   it("refuses a body with the wrong field types", () => {
     expect(
       readRaiseReply(
-        '{"revision":"x","textSha256":"abc","created":true,"entries":0}',
+        `{"revision":"x","textSha256":"${SHA}","created":true,"entries":0}`,
       ),
     ).toBeUndefined();
     expect(
       readRaiseReply(
-        '{"revision":1,"textSha256":"abc","created":"yes","entries":0}',
+        `{"revision":1,"textSha256":"${SHA}","created":"yes","entries":0}`,
       ),
     ).toBeUndefined();
     expect(
       readRaiseReply(
-        '{"revision":1,"textSha256":"abc","created":true,"entries":"x"}',
+        `{"revision":1,"textSha256":"${SHA}","created":true,"entries":"x"}`,
       ),
     ).toBeUndefined();
     expect(
       readRaiseReply(
-        '{"revision":1.5,"textSha256":"abc","created":true,"entries":0}',
+        `{"revision":1.5,"textSha256":"${SHA}","created":true,"entries":0}`,
       ),
     ).toBeUndefined();
   });
@@ -273,6 +274,20 @@ describe("readRaiseReply", () => {
     expect(readRaiseReply("not json")).toBeUndefined();
     expect(readRaiseReply("[1,2]")).toBeUndefined();
     expect(readRaiseReply('{"revision":1}')).toBeUndefined();
+  });
+
+  it.each([
+    ["not a 64-hex hash", "abc"],
+    ["too short", "a".repeat(63)],
+    ["uppercase", "A".repeat(64)],
+    ["with a non-hex character", `${"a".repeat(63)}g`],
+    ["a number", 7],
+  ])("refuses a raise reply whose textSha256 is %s", (_label, hash) => {
+    expect(
+      readRaiseReply(
+        `{"revision":1,"textSha256":${JSON.stringify(hash)},"created":true,"entries":0}`,
+      ),
+    ).toBeUndefined();
   });
 });
 
@@ -337,19 +352,19 @@ describe("readEventId", () => {
 describe("readStaleReply", () => {
   it("reads the current revision, hash and entry count of a 409", () => {
     expect(
-      readStaleReply('{"revision":2,"textSha256":"abc","entries":3}'),
-    ).toEqual({ revision: 2, textSha256: "abc", entries: 3 });
+      readStaleReply(`{"revision":2,"textSha256":"${SHA}","entries":3}`),
+    ).toEqual({ revision: 2, textSha256: SHA, entries: 3 });
   });
 
   it("refuses a body with the wrong field types", () => {
     expect(
-      readStaleReply('{"revision":"x","textSha256":"abc","entries":3}'),
+      readStaleReply(`{"revision":"x","textSha256":"${SHA}","entries":3}`),
     ).toBeUndefined();
     expect(
-      readStaleReply('{"revision":2,"textSha256":"abc","entries":"x"}'),
+      readStaleReply(`{"revision":2,"textSha256":"${SHA}","entries":"x"}`),
     ).toBeUndefined();
     expect(
-      readStaleReply('{"revision":2.5,"textSha256":"abc","entries":3}'),
+      readStaleReply(`{"revision":2.5,"textSha256":"${SHA}","entries":3}`),
     ).toBeUndefined();
   });
 

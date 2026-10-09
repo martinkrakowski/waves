@@ -34,9 +34,11 @@ const MINIMAL_DECISION = JSON.stringify({
   raisedBy: "session",
 });
 
+const SHA = "a".repeat(64);
+
 const ACCEPTED = JSON.stringify({
   revision: 1,
-  textSha256: "abc123",
+  textSha256: SHA,
   created: true,
   entries: 0,
 });
@@ -61,7 +63,7 @@ describe("raise", () => {
 
     expect(await raise(command(), built.deps)).toBe(0);
     expect(built.out).toEqual([
-      `raised ${PROJECT}/d1: revision 1 (new), textSha256 abc123, entries 0`,
+      `raised ${PROJECT}/d1: revision 1 (new), textSha256 ${SHA}, entries 0`,
     ]);
     expect(built.err).toEqual([]);
     expect(built.sent()).toBe(1);
@@ -74,7 +76,7 @@ describe("raise", () => {
           200,
           JSON.stringify({
             revision: 3,
-            textSha256: "def",
+            textSha256: "b".repeat(64),
             created: false,
             entries: 5,
           }),
@@ -85,7 +87,7 @@ describe("raise", () => {
 
     expect(await raise(command(), built.deps)).toBe(0);
     expect(built.out).toEqual([
-      `raised ${PROJECT}/d1: revision 3 (unchanged), textSha256 def, entries 5`,
+      `raised ${PROJECT}/d1: revision 3 (unchanged), textSha256 ${"b".repeat(64)}, entries 5`,
     ]);
   });
 
@@ -318,7 +320,7 @@ describe("raise", () => {
     });
     expect(await raise(command(), built.deps)).toBe(0);
     expect(built.out).toEqual([
-      `raised ${PROJECT}/d1: revision 1 (new), textSha256 abc123, entries 0`,
+      `raised ${PROJECT}/d1: revision 1 (new), textSha256 ${SHA}, entries 0`,
     ]);
     expect(built.waits).toEqual([1000]);
   });
