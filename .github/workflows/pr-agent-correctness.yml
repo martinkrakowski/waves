@@ -39,32 +39,16 @@ jobs:
         id: started
         run: echo "at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
-      # A two-arm trial, the same in every project that runs this reviewer so their records can
-      # be compared: even-numbered pull requests are reviewed by GPT-6.1 Sol, odd-numbered by Hy4
-      # preview, with the same instructions, caps and fallback, so the model is the only
-      # difference. Actions expressions have no arithmetic, hence a step. The number comes in
-      # through env and is never interpolated into the script.
-      - name: Pick the trial arm
-        id: arm
-        env:
-          PR: ${{ github.event.pull_request.number }}
-        run: |
-          case "$PR" in
-            ''|*[!0-9]*) echo "not a pull request number: '$PR'" >&2; exit 1 ;;
-          esac
-          if [ $((PR % 2)) -eq 0 ]; then model="openrouter/openai/gpt-6.1-sol"; else model="openrouter/tencent/hy4-preview"; fi
-          echo "model=$model" >> "$GITHUB_OUTPUT"
-          echo "PR #$PR -> $model" >> "$GITHUB_STEP_SUMMARY"
-
       - name: PR-Agent
         uses: docker://pragent/pr-agent@sha256:31b9aac6ab067bada9a0c1b001d30ebc500ea4487e00a93c18c59b9ef5fa66db # 0.47.0-github_action
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENROUTER__KEY: ${{ secrets.OPENROUTER_KEY }}
           config.restricted_mode: "true"
-          config.model: ${{ steps.arm.outputs.model }}
-          # Haiku only: a fallback to the other arm's model would turn a failed call into a review
-          # by the wrong model and spoil the comparison. A Haiku review is visibly a third thing.
+          # GPT-6.1 Sol on every pull request (the owner's choice, 2026-10-09, after a two-arm
+          # trial in which the other model's answers could not be parsed here). Never a Gemini or
+          # a Grok model through OpenRouter.
+          config.model: "openrouter/openai/gpt-6.1-sol"
           config.fallback_models: '["openrouter/anthropic/claude-haiku-4.5"]'
           # The ceiling: at most 4 calls, each with at most 70,000 prompt tokens and 8,000
           # completion tokens, and 10 minutes per call inside the job's 20.
