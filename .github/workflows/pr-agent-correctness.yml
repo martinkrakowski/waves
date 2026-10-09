@@ -87,6 +87,21 @@ jobs:
             document or state, and the wrong result. "This could be fragile" is not a finding. You
             see the diff and a little context around it; you cannot open other files.
 
+            Rules of this codebase. A diff that breaks one of them is a finding even when the
+            pull request text, a type, a comment or an optional parameter presents the behaviour
+            as intended; and when you score a suggestion, a suggestion that restores one of these
+            rules is not "a policy change the diff does not establish":
+            - A write is answered by exactly one kind of token, a project's token writes only
+              that project's documents, and a request with no token is refused.
+            - A write to the store is a temporary file renamed into place, or it did not happen.
+            - A limit, cap or bound that is unset, zero, negative or not a number REFUSES. It
+              never means "no limit".
+            - Input that fails validation is refused, never repaired or defaulted.
+            - An answer to a decision binds only the exact text it was given for.
+            - Nothing is removed from a decision's history: revisions and entries are appended.
+            - No secret in a log line, an error, a URL, a response, a fixture or an example, and
+              TLS verification is never weakened.
+
             Hunt these classes first, in this order.
 
             1. Which token may do what. Every write route is answered by exactly one kind of
