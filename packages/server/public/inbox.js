@@ -15,10 +15,10 @@
 import { isProjectId, isWaveId } from "./patterns.js";
 
 /** The three shapes a decision can have, as the server derives them. */
-const SHAPES = ["choice", "action", "instruction"];
+export const SHAPES = ["choice", "action", "instruction"];
 
 /** The seven states a decision can be in, as the server derives them. */
-const STATES = [
+export const STATES = [
   "open",
   "delegated",
   "approved",
@@ -33,27 +33,27 @@ const STATES = [
  * leaves a decision older than fourteen days out of the inbox entirely, so a
  * head that calls itself one is a response the page has no heading for.
  */
-const GROUPS = ["waiting", "reported", "closed"];
+export const GROUPS = ["waiting", "reported", "closed"];
 
 /** The two sources an answer can carry, as the contract allows. */
-const SOURCES = ["session", "reported"];
+export const SOURCES = ["session", "reported"];
 
 /** A whole number of at least zero: a count, a revision or an entry count. */
-function count(value) {
+export function count(value) {
   return Number.isSafeInteger(value) && value >= 0;
 }
 
 /** One of a closed list of strings, and nothing else. */
-function oneOf(value, options) {
+export function oneOf(value, options) {
   return typeof value === "string" && options.includes(value);
 }
 
 /** A time the page can print: a string that parses as a date. */
-function time(value) {
+export function time(value) {
   return typeof value === "string" && Number.isFinite(Date.parse(value));
 }
 
-/** The three states that are an answer; every other state is not one. */
+/** Three states that are an answer; every other state is not one. */
 const ANSWER_STATES = ["approved", "declined", "answered"];
 
 /**
@@ -63,7 +63,7 @@ const ANSWER_STATES = ["approved", "declined", "answered"];
  * `reported`, because that is the only source an answer can have before signing
  * exists, and the card's sentence says "it had been reported that you …".
  */
-function answer(value) {
+export function answer(value) {
   return (
     value !== null &&
     typeof value === "object" &&
@@ -80,7 +80,7 @@ function answer(value) {
  * A door: a value of `true`, `false` or `"partly"`, and when it is not `false`
  * an optional reason that is the session's own sentence, shown verbatim.
  */
-function door(value) {
+export function door(value) {
   return (
     value !== null &&
     typeof value === "object" &&
@@ -92,7 +92,7 @@ function door(value) {
 }
 
 /** The optional place a card tells the reader to act: a where and a what. */
-function actElsewhere(value) {
+export function actElsewhere(value) {
   if (value === undefined) {
     return true;
   }
@@ -118,7 +118,7 @@ function actElsewhere(value) {
  * state, so the two can only disagree in a response the page should not draw: a
  * `closed` card whose state is `open` has no sentence to say what closed it.
  */
-const GROUP_STATES = {
+export const GROUP_STATES = {
   waiting: ["open", "delegated"],
   reported: ["approved", "declined", "answered"],
   closed: ["withdrawn", "superseded"],

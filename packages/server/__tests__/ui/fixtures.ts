@@ -15,11 +15,20 @@ import type {
   InboxProject,
   InboxView,
   NoticeCounts,
+  DecisionView,
 } from "../../src/application/notice-read-model.js";
+import type {
+  StoredRevision,
+  StoredEntry,
+} from "../../src/application/ports/notice-store.js";
 import type { ProjectCard } from "../../public/api.js";
+import type { DecisionRevision } from "../../../contract/src/domain/model.js";
 
 export const NOW_MS = Date.parse("2026-04-01T12:00:00.000Z");
 export const NOW_ISO = new Date(NOW_MS).toISOString();
+
+/** The placeholder text hash every fixture carries, as the server would. */
+export const HASH = "0".repeat(64);
 
 /**
  * The two facts a project summary carries about its own status. `prsSkipped` is
@@ -285,6 +294,81 @@ export function inboxView(overrides: Partial<InboxView> = {}): InboxView {
     projects: [],
     ...overrides,
   };
+}
+
+/**
+ * One decision revision, as `decisionBindingText` would see it. The `project`
+ * and `id` match the head a test puts the revision under.
+ */
+export function decisionRevision(
+  overrides: Partial<DecisionRevision> = {},
+): DecisionRevision {
+  return {
+    schema: "waves-notice/v1",
+    kind: "decision",
+    project: "alpha",
+    id: "d1",
+    shape: "choice",
+    question: "Go?",
+    options: [
+      { key: "a", text: "Yes", cost: "C1" },
+      { key: "b", text: "No", cost: "C2" },
+    ],
+    hardToUndo: { value: false },
+    commits: [],
+    decider: "owner",
+    appliesTo: [],
+    evidence: [],
+    raisedBy: "session",
+    raisedAt: "2026-10-08T12:00:00Z",
+    ...overrides,
+  } as DecisionRevision;
+}
+
+/** One revision as the store holds it, wrapping a decision revision. */
+export function storedRevision(
+  overrides: Partial<StoredRevision> = {},
+): StoredRevision {
+  return {
+    revision: 1,
+    textSha256: HASH,
+    receivedAt: NOW_ISO,
+    decision: decisionRevision(),
+    ...overrides,
+  } as StoredRevision;
+}
+
+/** One state entry as the store holds it. */
+export function decisionEntry(
+  overrides: Partial<StoredEntry> = {},
+): StoredEntry {
+  return {
+    index: 0,
+    receivedAt: NOW_ISO,
+    state: "approved",
+    source: "reported",
+    revision: 1,
+    textSha256: HASH,
+    by: "owner",
+    at: "2026-10-08T13:00:00Z",
+    ...overrides,
+  } as StoredEntry;
+}
+
+/**
+ * The whole response `GET /api/v1/projects/<project>/decisions/<id>` gives, built
+ * from the helpers above so every baseline is consistent: the head's revision,
+ * revision count, hash and entry count all agree with the arrays.
+ */
+export function decisionResponse(
+  overrides: Partial<DecisionView> = {},
+): DecisionView {
+  return {
+    head: inboxHead(),
+    revisions: [storedRevision()],
+    entries: [],
+    ...overrides,
+  } as DecisionView;
 }
 
 import { NOTICE_DECISIONS } from "../../../contract/__tests__/fixtures/notice-decisions.js";
