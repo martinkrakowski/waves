@@ -893,15 +893,9 @@ describe("decision", () => {
 
   it("wants every required flag for state", () => {
     expect(errorOf(["decision", "state", "d1"])).toBe("give --state");
-    expect(
-      errorOf([
-        "decision",
-        "state",
-        "d1",
-        "--state",
-        "withdrawn",
-      ]),
-    ).toBe("give --revision");
+    expect(errorOf(["decision", "state", "d1", "--state", "withdrawn"])).toBe(
+      "give --revision",
+    );
     expect(
       errorOf([
         "decision",
@@ -985,9 +979,9 @@ describe("decision", () => {
   });
 
   it("refuses flags raise and state do not take", () => {
-    expect(
-      errorOf(["decision", "raise", "--file", "-", "--wave", "wv5"]),
-    ).toBe("--wave is not a decision option");
+    expect(errorOf(["decision", "raise", "--file", "-", "--wave", "wv5"])).toBe(
+      "--wave is not a decision option",
+    );
     expect(
       errorOf([
         "decision",
