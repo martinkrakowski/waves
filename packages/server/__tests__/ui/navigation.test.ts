@@ -1801,4 +1801,34 @@ describe("the decision route", () => {
     );
     app.stop();
   });
+
+  it("navigates to another route while a decision load is in flight", async () => {
+    const decisionFetch = (path: string): Answer =>
+      path === "/api/v1/projects"
+        ? { status: 200, body: [projectCard()] }
+        : path === "/api/v1/attention"
+          ? { status: 200, body: attentionView() }
+          : path === "/api/v1/projects/alpha/decisions/d1"
+            ? { status: 200, body: decisionResponse() }
+            : { status: 404 };
+    const gate = holding(
+      decisionFetch,
+      (path) => path === "/api/v1/projects/alpha/decisions/d1",
+    );
+    const { app } = harness({
+      pathname: "/p/alpha/d/d1",
+      fetchImpl: gate,
+    });
+    app.start();
+    await flush();
+    expect(gate.pending()).toBe(1);
+
+    app.navigate("/");
+    gate.release();
+    await flush();
+
+    expect(app.route).toStrictEqual({ kind: "projects" });
+    expect(textsOf(root(), ".projects a")).toStrictEqual(["Alpha"]);
+    app.stop();
+  });
 });

@@ -19,6 +19,7 @@ const ID = "d1";
  * field override before the test ever runs.
  */
 const INVALID: readonly (readonly [string, unknown])[] = [
+  ["a head that is null", { ...decisionResponse(), head: null }],
   [
     "a head whose project does not match",
     { ...decisionResponse(), head: { ...inboxHead(), project: "beta" } },
@@ -93,6 +94,7 @@ const INVALID: readonly (readonly [string, unknown])[] = [
     },
   ],
   ["an empty revisions array", { ...decisionResponse(), revisions: [] }],
+  ["entries that are not a list", { ...decisionResponse(), entries: "no" }],
   [
     "revisions whose first number is not 1",
     {
@@ -388,10 +390,29 @@ const INVALID: readonly (readonly [string, unknown])[] = [
     },
   ],
   [
-    "an entry whose words is not a string",
+    "a decision with options that are not a list",
     {
       ...decisionResponse(),
-      entries: [{ ...decisionEntry(), words: 42 }],
+      revisions: [
+        {
+          ...storedRevision(),
+          decision: { ...decisionRevision(), options: "no" },
+        },
+      ],
+    },
+  ],
+  [
+    "an entry whose option is not a string",
+    {
+      ...decisionResponse(),
+      entries: [{ ...decisionEntry(), option: 42 }],
+    },
+  ],
+  [
+    "an entry whose reason is not a string",
+    {
+      ...decisionResponse(),
+      entries: [{ ...decisionEntry(), reason: 42 }],
     },
   ],
   [
@@ -486,6 +507,76 @@ describe("drawableDecision", () => {
                 refs: { wave: "w-1", lane: "l-1", pr: 42 },
                 changeNote: "narrowed the options",
               }),
+            }),
+          ],
+        }),
+        PROJECT,
+        ID,
+      ),
+    ).toBe(true);
+  });
+
+  it("takes a head with every optional field set", () => {
+    expect(
+      drawableDecision(
+        decisionResponse({
+          head: inboxHead({
+            group: "reported",
+            state: "approved",
+            source: "reported",
+            entries: 1,
+            from: "fleet",
+            earlierAnswer: {
+              state: "declined",
+              source: "reported",
+              at: "2026-10-08T13:00:00Z",
+              by: "owner",
+              words: "no",
+            },
+            coveredAnswer: {
+              state: "declined",
+              source: "reported",
+              at: "2026-10-08T13:00:00Z",
+              by: "owner",
+              option: "b",
+            },
+          }),
+          entries: [decisionEntry({ revision: 1 })],
+        }),
+        PROJECT,
+        ID,
+      ),
+    ).toBe(true);
+  });
+
+  it("takes a closed head with a covered answer", () => {
+    expect(
+      drawableDecision(
+        decisionResponse({
+          head: inboxHead({
+            group: "closed",
+            state: "withdrawn",
+            entries: 2,
+            coveredAnswer: {
+              state: "approved",
+              source: "reported",
+              at: "2026-10-08T13:00:00Z",
+              by: "owner",
+              words: "yes",
+            },
+          }),
+          entries: [
+            decisionEntry({
+              state: "approved",
+              source: "reported",
+              revision: 1,
+              words: "yes",
+            }),
+            decisionEntry({
+              state: "withdrawn",
+              source: "session",
+              revision: 1,
+              reason: "gone",
             }),
           ],
         }),

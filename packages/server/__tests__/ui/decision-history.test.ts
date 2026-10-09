@@ -196,7 +196,24 @@ describe("historyBlock", () => {
     );
   });
 
-  it("renders a delegated entry", () => {
+  it("says no text changed for a revision with the same text", () => {
+    const host = drawHistory(
+      decisionModel(
+        decisionResponse({
+          head: inboxHead({ revision: 2, revisions: 2, entries: 0 }),
+          revisions: [
+            storedRevision({ revision: 1, receivedAt: "2026-10-08T12:00:00Z" }),
+            storedRevision({ revision: 2, receivedAt: "2026-10-09T12:00:00Z" }),
+          ],
+        }),
+      ),
+    );
+    expect(textsOf(host, ".history-event")).toContain(
+      "Revision 2 on 2026-10-09 at 12:00 UTC: no text changed.",
+    );
+  });
+
+  it("renders a delegated entry with an option", () => {
     const host = drawHistory(
       decisionModel(
         decisionResponse({
@@ -214,6 +231,49 @@ describe("historyBlock", () => {
     expect(textsOf(host, ".history-event")).toContain(
       "owner decided under delegation: a",
     );
+  });
+
+  it("shows a delegated entry with words instead of option", () => {
+    const host = drawHistory(
+      decisionModel(
+        decisionResponse({
+          head: inboxHead({ revision: 1, revisions: 1, entries: 1 }),
+          entries: [
+            decisionEntry({
+              state: "delegated",
+              source: "session",
+              words: "do this",
+            }),
+          ],
+        }),
+      ),
+    );
+    expect(textsOf(host, ".history-event")).toContain(
+      "owner decided under delegation: do this",
+    );
+  });
+
+  it("does not mark a session answer as reported, not signed", () => {
+    const host = drawHistory(
+      decisionModel(
+        decisionResponse({
+          head: inboxHead({ revision: 1, revisions: 1, entries: 1 }),
+          entries: [
+            decisionEntry({
+              state: "approved",
+              source: "session",
+              words: "yes",
+            }),
+          ],
+        }),
+      ),
+    );
+    const lines = textsOf(host, ".history-event");
+    const reportedLine = lines.find((l) =>
+      l.includes("recorded that you approved"),
+    );
+    expect(reportedLine).toBeDefined();
+    expect(reportedLine).not.toContain("reported, not signed");
   });
 
   it("marks a reported answer as reported, not signed", () => {
@@ -324,5 +384,35 @@ describe("earlierTextsBlock", () => {
   it("returns undefined when there is only one revision", () => {
     const host = drawEarlier(decisionModel(decisionResponse()));
     expect(host.querySelector(".decision-earlier-texts")).toBeNull();
+  });
+
+  it("shows an earlier text with no options as a choice without options", () => {
+    const host = drawEarlier(
+      decisionModel(
+        decisionResponse({
+          revisions: [
+            storedRevision({
+              revision: 1,
+              decision: decisionRevision({
+                question: "Old?",
+                options: [],
+                hardToUndo: { value: false },
+              }),
+              receivedAt: "2026-10-08T12:00:00Z",
+            }),
+            storedRevision({
+              revision: 2,
+              decision: decisionRevision({
+                question: "New?",
+                changeNote: "changed",
+              }),
+              receivedAt: "2026-10-09T12:00:00Z",
+            }),
+          ],
+          head: inboxHead({ revision: 2, revisions: 2 }),
+        }),
+      ),
+    );
+    expect(textsOf(host, ".earlier-question")).toStrictEqual(["Old?"]);
   });
 });

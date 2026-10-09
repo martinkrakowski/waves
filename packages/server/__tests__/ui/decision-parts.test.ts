@@ -212,9 +212,36 @@ describe("evidenceBlock", () => {
     ]);
   });
 
+  it("shows refs without a PR when one is absent", () => {
+    const host = drawEvidence({
+      revisions: [
+        storedRevision({
+          decision: decisionRevision({ refs: { wave: "w-1", lane: "l-1" } }),
+        }),
+      ],
+    });
+    expect(textsOf(host, ".decision-refs")).toStrictEqual([
+      "wave w-1 · lane l-1",
+    ]);
+  });
+
   it("returns undefined when there is no evidence and no refs", () => {
     const host = drawEvidence({});
     expect(host.querySelector(".decision-evidence")).toBeNull();
+  });
+
+  it("falls back to text when an evidence href is https but not a valid URL", () => {
+    const host = drawEvidence({
+      revisions: [
+        storedRevision({
+          decision: decisionRevision({
+            evidence: [{ label: "link", href: "https://" }],
+          }),
+        }),
+      ],
+    });
+    expect(host.querySelectorAll(".evidence a")).toHaveLength(0);
+    expect(textsOf(host, ".evidence li")).toStrictEqual(["link"]);
   });
 
   it("shows only refs when evidence is empty but refs are present", () => {

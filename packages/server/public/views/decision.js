@@ -113,10 +113,7 @@ export function renderDecision(model) {
 
   children.push(...stateSection(model));
 
-  const opts = optionsBlock(model);
-  if (opts !== undefined) {
-    children.push(opts);
-  }
+  children.push(optionsBlock(model));
 
   const commits = commitmentsBlock(model);
   if (commits !== undefined) {

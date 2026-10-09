@@ -108,17 +108,18 @@ function decisionRevision(decision, project, id) {
   ) {
     return false;
   }
-  const opts = Array.isArray(decision.options) ? decision.options : [];
-  const keys = opts.map((o) => o.key);
   return (
     oneOf(decision.shape, SHAPES) &&
     typeof decision.question === "string" &&
-    opts.every(optionEntry) &&
+    Array.isArray(decision.options) &&
+    decision.options.every(optionEntry) &&
     (decision.recommended === undefined ||
       (decision.recommended !== null &&
         typeof decision.recommended === "object" &&
         optionKey(decision.recommended.option) &&
-        keys.includes(decision.recommended.option) &&
+        decision.options
+          .map((o) => o.key)
+          .includes(decision.recommended.option) &&
         typeof decision.recommended.reason === "string")) &&
     door(decision.hardToUndo) &&
     Array.isArray(decision.commits) &&
