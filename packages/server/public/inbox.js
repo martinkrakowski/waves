@@ -108,6 +108,17 @@ function actElsewhere(value) {
  * group the page has no section for, would leave a card the reader could not
  * finish reading.
  */
+/**
+ * The states each group may hold. The server derives a head's group from its
+ * state, so the two can only disagree in a response the page should not draw: a
+ * `closed` card whose state is `open` has no sentence to say what closed it.
+ */
+const GROUP_STATES = {
+  waiting: ["open", "delegated"],
+  reported: ["approved", "declined", "answered"],
+  closed: ["withdrawn", "superseded"],
+};
+
 function head(entry) {
   return (
     entry !== null &&
@@ -126,6 +137,7 @@ function head(entry) {
     (entry.source === undefined || oneOf(entry.source, SOURCES)) &&
     typeof entry.at === "string" &&
     oneOf(entry.group, GROUPS) &&
+    GROUP_STATES[entry.group].includes(entry.state) &&
     actElsewhere(entry.actElsewhere) &&
     (entry.earlierAnswer === undefined || answer(entry.earlierAnswer)) &&
     (entry.coveredAnswer === undefined || answer(entry.coveredAnswer)) &&

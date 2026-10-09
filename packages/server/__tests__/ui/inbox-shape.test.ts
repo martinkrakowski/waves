@@ -16,6 +16,44 @@ import {
  * field override before the test ever runs.
  */
 const INVALID: readonly (readonly [string, unknown])[] = [
+  [
+    "a closed head whose state is open",
+    {
+      ...inboxView(),
+      projects: [
+        {
+          ...inboxProject(),
+          decisions: [{ ...inboxHead(), group: "closed", state: "open" }],
+        },
+      ],
+    },
+  ],
+  [
+    "a reported head whose state is withdrawn",
+    {
+      ...inboxView(),
+      projects: [
+        {
+          ...inboxProject(),
+          decisions: [
+            { ...inboxHead(), group: "reported", state: "withdrawn" },
+          ],
+        },
+      ],
+    },
+  ],
+  [
+    "a waiting head whose state is approved",
+    {
+      ...inboxView(),
+      projects: [
+        {
+          ...inboxProject(),
+          decisions: [{ ...inboxHead(), group: "waiting", state: "approved" }],
+        },
+      ],
+    },
+  ],
   ["null", null],
   ["a string", "inbox"],
   ["no projects", {}],
