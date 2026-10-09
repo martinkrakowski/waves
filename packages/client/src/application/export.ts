@@ -82,7 +82,13 @@ export async function exportDecisions(
     if (!isReportedAnswer(record.head)) {
       continue;
     }
-    if (!matchesSince(record.entry?.receivedAt, command.since)) {
+    // An answer with no entry on the head's textSha256/state/source is two
+    // things the server said that disagree: print neither, the response is
+    // unusable.
+    if (record.entry === undefined) {
+      throw new Failure("the server sent an unusable body");
+    }
+    if (!matchesSince(record.entry.receivedAt, command.since)) {
       continue;
     }
     records.push(record);

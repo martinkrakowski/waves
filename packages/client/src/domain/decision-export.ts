@@ -101,8 +101,11 @@ function readHead(value: unknown): HeadInfo | undefined {
 
 /**
  * Reads one decision's full record: the head and the current entry, which is the
- * last state entry whose `textSha256` matches the current revision's. `undefined`
- * when the body is not the shape the route should answer.
+ * last state entry on the head's `textSha256` whose `state` is the head's and
+ * whose `source` is `reported` — the verdict that backs that head. The entry is
+ * required: a head that claims an answer but has no matching entry is not one
+ * this service printed, so `undefined` only means the body is not the shape the
+ * route should answer.
  */
 export function readRecord(body: string): DecisionRecord | undefined {
   const parsed = parseObject(body);
@@ -115,7 +118,7 @@ export function readRecord(body: string): DecisionRecord | undefined {
   }
   const entries = own(parsed, "entries");
   const entry = Array.isArray(entries)
-    ? findCurrentEntry(entries, head.textSha256)
+    ? findCurrentEntry(entries, head.textSha256, head.state)
     : undefined;
   return { head, entry };
 }
@@ -123,9 +126,10 @@ export function readRecord(body: string): DecisionRecord | undefined {
 function findCurrentEntry(
   entries: readonly unknown[],
   textSha256: string,
+  state: string,
 ): EntryInfo | undefined {
   for (let i = entries.length - 1; i >= 0; i -= 1) {
-    const entry = readEntry(entries[i], textSha256);
+    const entry = readEntry(entries[i], textSha256, state);
     if (entry !== undefined) {
       return entry;
     }
@@ -136,11 +140,16 @@ function findCurrentEntry(
 function readEntry(
   value: unknown,
   expectedHash: string,
+  expectedState: string,
 ): EntryInfo | undefined {
   if (!isRecord(value)) {
     return undefined;
   }
-  if (own(value, "textSha256") !== expectedHash) {
+  if (
+    own(value, "textSha256") !== expectedHash ||
+    own(value, "state") !== expectedState ||
+    own(value, "source") !== REPORTED_SOURCE
+  ) {
     return undefined;
   }
   const option = own(value, "option");

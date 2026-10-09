@@ -260,7 +260,7 @@ describe("decisions export", () => {
     expect(built.sent()).toBe(2);
   });
 
-  it("leaves out an answer whose entry no longer matches its head", async () => {
+  it("fails when a reported answer has no matching entry", async () => {
     const heads = JSON.stringify({
       project: PROJECT,
       counts: { approved: 1 },
@@ -276,6 +276,9 @@ describe("decisions export", () => {
         },
       ],
     });
+    // The entry's textSha256 does not match the head's, so it is not a bound
+    // entry for this head: the server said two things that disagree, and the
+    // answer is not printed.
     const mismatch = JSON.stringify({
       head: {
         id: "d1",
@@ -302,13 +305,47 @@ describe("decisions export", () => {
     const built = harnessFor({
       script: [reply(200, heads), reply(200, mismatch)],
     });
-    expect(
-      await exportDecisions(command({ since: "2026-10-07" }), built.deps),
-    ).toBe(0);
-    expect(built.out[0]).toBe(
-      "## Reported answers (reported, not signed)\n\nNone.",
-    );
+    await expect(
+      exportDecisions(command({ since: "2026-10-07" }), built.deps),
+    ).rejects.toThrow("the server sent an unusable body");
+    expect(built.out).toEqual([]);
     expect(built.sent()).toBe(2);
+  });
+
+  it("fails when a reported answer has no entry on the head's textSha256", async () => {
+    const heads = JSON.stringify({
+      project: PROJECT,
+      counts: { approved: 1 },
+      decisions: [
+        {
+          id: "d1",
+          question: "q",
+          state: "approved",
+          source: "reported",
+          revision: 1,
+          textSha256: SHA,
+          entries: 1,
+        },
+      ],
+    });
+    // An answer with an empty entries list has no bound entry: unusable.
+    const empty = JSON.stringify({
+      head: {
+        id: "d1",
+        question: "q",
+        state: "approved",
+        source: "reported",
+        at: "2026-10-08T10:00:00Z",
+        revision: 1,
+        textSha256: SHA,
+      },
+      entries: [],
+    });
+    const built = harnessFor({ script: [reply(200, heads), reply(200, empty)] });
+    await expect(exportDecisions(command(), built.deps)).rejects.toThrow(
+      "the server sent an unusable body",
+    );
+    expect(built.out).toEqual([]);
   });
 
   it("prints None. when no decision is a reported answer", async () => {
