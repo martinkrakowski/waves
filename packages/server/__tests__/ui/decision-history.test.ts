@@ -466,6 +466,37 @@ describe("earlierTextsBlock", () => {
     ]);
   });
 
+  it("shows an earlier action's act-elsewhere line", () => {
+    const host = drawEarlier(
+      decisionModel(
+        decisionResponse({
+          head: inboxHead({ revision: 2, revisions: 2, entries: 0 }),
+          revisions: [
+            storedRevision({
+              revision: 1,
+              decision: decisionRevision({
+                shape: "action",
+                question: "Old?",
+                options: [],
+                actElsewhere: { where: "your terminal", what: "run it" },
+              }),
+              receivedAt: "2026-10-08T12:00:00Z",
+            }),
+            storedRevision({
+              revision: 2,
+              textSha256: "b".repeat(64),
+              decision: decisionRevision({ question: "New?" }),
+              receivedAt: "2026-10-09T12:00:00Z",
+            }),
+          ],
+        }),
+      ),
+    );
+    expect(textsOf(host, ".earlier-text .card-elsewhere")).toStrictEqual([
+      "Cannot be answered here. Act in: your terminal: run it.",
+    ]);
+  });
+
   it("returns undefined when there is only one revision", () => {
     const host = drawEarlier(decisionModel(decisionResponse()));
     expect(host.querySelector(".decision-earlier-texts")).toBeNull();

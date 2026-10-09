@@ -1791,7 +1791,10 @@ describe("the decision route", () => {
   });
 
   it("shows offline for a 200 with an unusable body", async () => {
-    const bad = { ...decisionResponse(), head: { ...inboxHead(), project: "beta" } };
+    const bad = {
+      ...decisionResponse(),
+      head: { ...inboxHead(), project: "beta" },
+    };
     const fetchImpl = decisionFetch(bad);
     const { app } = harness({ pathname: "/p/alpha/d/d1", fetchImpl });
     app.start();
