@@ -153,6 +153,9 @@ async function replyFor(
     }
     case "decisions": {
       const project = matched.project;
+      if ((await store.getProject(project)) === undefined) {
+        return NOT_FOUND;
+      }
       const view = await noticeReadModel.decisionsView(project);
       return jsonReply(200, {
         project,
@@ -160,13 +163,17 @@ async function replyFor(
         decisions: view.decisions,
       });
     }
-    case "events":
+    case "events": {
+      if ((await store.getProject(matched.project)) === undefined) {
+        return NOT_FOUND;
+      }
       return jsonReply(200, {
         events: await noticeReadModel.events(
           matched.project,
           MAX_NOTICE_EVENTS,
         ),
       });
+    }
     case "inbox":
       return jsonReply(200, { projects: await noticeReadModel.inbox() });
     case "index":

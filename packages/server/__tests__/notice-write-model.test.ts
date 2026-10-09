@@ -399,7 +399,7 @@ describe("postState", () => {
       listDecisions: () => Promise.resolve([]),
       appendRevision: () => Promise.resolve("stored"),
       appendEntry: () => Promise.resolve("missing"),
-      appendEvent: () => Promise.resolve({ dropped: 0 }),
+      appendEvent: () => Promise.resolve({ id: "e0", dropped: 0 }),
       listEvents: () => Promise.resolve([]),
       deleteNotices: () => Promise.resolve(),
     };

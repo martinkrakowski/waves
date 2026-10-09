@@ -219,6 +219,7 @@ describe("FileNoticeStore", () => {
   it("drops the oldest events past the keep count", async () => {
     const { store, dispose } = harness();
     try {
+      const ids: string[] = [];
       for (let at = 0; at < 3; at += 1) {
         const outcome = await store.appendEvent(
           "alpha",
@@ -229,12 +230,25 @@ describe("FileNoticeStore", () => {
           },
           2,
         );
+        ids.push(outcome.id);
         expect(outcome.dropped).toBe(at > 1 ? 1 : 0);
       }
 
+      // The store assigns ids from a per-project sequence, so three same-millisecond
+      // writes get three distinct ids and no dropped id is reused.
+      expect(ids).toEqual([
+        "2026-10-08T13:00:00Z-1",
+        "2026-10-08T13:00:01Z-2",
+        "2026-10-08T13:00:02Z-3",
+      ]);
+      expect(new Set(ids).size).toBe(ids.length);
+
       const listed = await store.listEvents("alpha", 2000);
       expect(listed).toHaveLength(2);
-      expect(listed.map((e) => e.id)).toEqual(["e2", "e1"]);
+      expect(listed.map((e) => e.id)).toEqual([
+        "2026-10-08T13:00:02Z-3",
+        "2026-10-08T13:00:01Z-2",
+      ]);
     } finally {
       await dispose();
     }
@@ -269,8 +283,8 @@ describe("FileNoticeStore", () => {
       }
 
       expect((await store.listEvents("alpha", 2)).map((e) => e.id)).toEqual([
-        "e2",
-        "e1",
+        "2026-10-08T13:00:02Z-3",
+        "2026-10-08T13:00:01Z-2",
       ]);
     } finally {
       await dispose();
@@ -714,7 +728,7 @@ describe("corrupted notice files", () => {
           { id: "e0", receivedAt: "2026-10-08T13:00:00Z", event: event() },
           2000,
         ),
-      ).toEqual({ dropped: 0 });
+      ).toEqual({ id: "2026-10-08T13:00:00Z-1", dropped: 0 });
       const listed = await store.listEvents("alpha", 10);
       expect(listed).toHaveLength(1);
       expect(listed[0]?.event).toEqual(event());
