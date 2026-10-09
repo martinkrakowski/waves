@@ -645,9 +645,10 @@ describe("corrupted notice files", () => {
     state: "approved",
     source: "reported",
     textSha256: "0".repeat(64),
-    receivedAt: "2026-10-08T12:00:00Z",
+    receivedAt: "2026-10-08T13:00:00Z",
     by: "owner",
-    at: "2026-10-08T12:00:00Z",
+    at: "2026-10-08T13:00:00Z",
+    words: "ship it",
   });
 
   it.each([
@@ -997,6 +998,68 @@ describe("corrupted notice files", () => {
       expect(read?.revisions).toHaveLength(1);
       expect(read?.entries).toHaveLength(1);
       expect(read?.entries[0]).toMatchObject({ index: 0, state: "approved" });
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("skips an entry that fails validateStateEntry", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      // approved is an answer state, which a session source cannot carry; before
+      // the store validated entries this was served as an approval.
+      writeDecisionFile(
+        dataDir,
+        "alpha",
+        "d1",
+        JSON.stringify({
+          project: "alpha",
+          id: "d1",
+          revisions: [goodRev()],
+          entries: [{ ...goodEntry(), source: "session" }],
+        }),
+      );
+      expect(await store.getDecision("alpha", "d1")).toBeUndefined();
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("skips an entry whose index does not match its position", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      writeDecisionFile(
+        dataDir,
+        "alpha",
+        "d1",
+        JSON.stringify({
+          project: "alpha",
+          id: "d1",
+          revisions: [goodRev()],
+          entries: [{ ...goodEntry(), index: 5 }],
+        }),
+      );
+      expect(await store.getDecision("alpha", "d1")).toBeUndefined();
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("skips an entry whose revision does not pin a stored revision", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      writeDecisionFile(
+        dataDir,
+        "alpha",
+        "d1",
+        JSON.stringify({
+          project: "alpha",
+          id: "d1",
+          revisions: [goodRev()],
+          entries: [{ ...goodEntry(), revision: 2 }],
+        }),
+      );
+      expect(await store.getDecision("alpha", "d1")).toBeUndefined();
     } finally {
       await dispose();
     }

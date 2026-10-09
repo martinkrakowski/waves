@@ -2,7 +2,11 @@ import type { Stats } from "node:fs";
 import { lstat, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
-import { isLaneId, validateDecision } from "@hexagen-monaco/waves-contract";
+import {
+  isLaneId,
+  validateDecision,
+  validateStateEntry,
+} from "@hexagen-monaco/waves-contract";
 
 import type {
   AppendOutcome,
@@ -51,8 +55,10 @@ function isDecisionName(name: string): boolean {
  * match what was asked for, every revision must carry a positive integer
  * `revision`, a 64-hex `textSha256`, a string `receivedAt` and a `decision`
  * valid under the contract's `validateDecision` with that `project` and `id`,
- * and every entry must be an object with an integer `index` and `revision`, and
- * string `state`, `source`, `textSha256` and `receivedAt`. A bad file is never
+ * and every entry must pass the contract's `validateStateEntry` as the writer's
+ * request it was built from (with `expectedEntries` restored to its `index`),
+ * its `index` must equal its position in the list, and its `revision` and
+ * `textSha256` must pin to one of the decision's revisions. A bad file is never
  * thrown on: it is treated as absent so the inbox keeps listing the good
  * decisions alongside it, reads report no decision, and a write against it is a
  * conflict.
@@ -107,19 +113,44 @@ function readDecision(
       return undefined;
     }
   }
-  for (const entry of entries) {
+  for (let i = 0; i < entries.length; i += 1) {
+    const entry = entries[i];
     if (typeof entry !== "object" || entry === null) {
       return undefined;
     }
     const ent = entry as Record<string, unknown>;
+    const index = ent.index;
+    const receivedAt = ent.receivedAt;
     if (
-      !Number.isInteger(ent.index) ||
-      !Number.isInteger(ent.revision) ||
-      typeof ent.state !== "string" ||
-      typeof ent.source !== "string" ||
-      typeof ent.textSha256 !== "string" ||
-      typeof ent.receivedAt !== "string"
+      !Number.isInteger(index) ||
+      index !== i ||
+      typeof receivedAt !== "string"
     ) {
+      return undefined;
+    }
+    // Rebuild the writer's request: drop the store-added index/receivedAt and
+    // restore the entry count it pinned on, then validate with the contract.
+    const { index: _idx, receivedAt: _receivedAt, ...request } = ent;
+    void _idx;
+    void _receivedAt;
+    const validated = validateStateEntry({
+      ...request,
+      expectedEntries: index,
+    });
+    if (!validated.ok) {
+      return undefined;
+    }
+    // The entry pins the revision and text hash it answered; both must match one
+    // of the decision's revisions so a reader never trusts a drifted entry.
+    const { revision, textSha256 } = validated.value;
+    const matched = revisions.some(
+      (rev) =>
+        (rev as { revision: unknown; textSha256: unknown }).revision ===
+          revision &&
+        (rev as { revision: unknown; textSha256: unknown }).textSha256 ===
+          textSha256,
+    );
+    if (!matched) {
       return undefined;
     }
   }
