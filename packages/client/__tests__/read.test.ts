@@ -16,6 +16,7 @@ type ReadCommand = Extract<
 >;
 
 const DECISION_URL = `http://127.0.0.1:8080/api/v1/projects/${PROJECT}/decisions/d1`;
+const SHA = "a".repeat(64);
 
 function command(id = "d1"): ReadCommand {
   return { kind: "decision", action: "read", id };
@@ -102,6 +103,43 @@ describe("read", () => {
       "the server sent an unusable body",
     );
     expect(built.out).toEqual([]);
+  });
+
+  it("reads a record too large for a write, but within the GET cap", async () => {
+    const word = "x".repeat(2000);
+    const entry = {
+      state: "approved",
+      source: "reported",
+      at: "2026-10-08T10:00:00Z",
+      receivedAt: "2026-10-08T10:00:01Z",
+      words: word,
+      option: "b",
+      revision: 1,
+      textSha256: SHA,
+    };
+    const revision = {
+      revision: 1,
+      textSha256: SHA,
+      receivedAt: "2026-10-08T10:00:01Z",
+      decision: word,
+    };
+    const body = JSON.stringify({
+      head: {
+        id: "d1",
+        question: "What should we do?",
+        state: "approved",
+        source: "reported",
+        at: "2026-10-08T10:00:00Z",
+        revision: 1,
+        textSha256: SHA,
+      },
+      revisions: Array.from({ length: 20 }, () => revision),
+      entries: Array.from({ length: 70 }, () => entry),
+    });
+    const built = harness({ script: [reply(200, body)] });
+    expect(Buffer.byteLength(body)).toBeGreaterThan(65_536);
+    expect(await readDecision(command(), built.deps)).toBe(0);
+    expect(built.out).toEqual([body]);
   });
 
   it("reports a decision that is not there", async () => {

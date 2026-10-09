@@ -29,6 +29,14 @@ export const CONTINUE_WAIT_MS = 1000;
 /** An answer bigger than this is a sign the peer is not the server we asked for. */
 export const MAX_BODY_BYTES = 65_536;
 
+/**
+ * A read can be far larger than a write: a decision holds up to 20 revisions and
+ * 70 entries of up to 2,000 characters each, which is well under this and still
+ * small enough to print as one line. Writes keep the smaller cap, since a status
+ * or a snapshot that large is a peer that is not the server.
+ */
+export const MAX_GET_BODY_BYTES = 2 * 1024 * 1024;
+
 export const JSON_TYPE = "application/json";
 
 const BEARER = "Bearer ";
@@ -129,7 +137,15 @@ async function send(
     options.ca,
     signal,
   );
-  return await exchange(start, requestOptions, request.body, signal);
+  const maxBodyBytes =
+    request.method === "GET" ? MAX_GET_BODY_BYTES : MAX_BODY_BYTES;
+  return await exchange(
+    start,
+    requestOptions,
+    request.body,
+    signal,
+    maxBodyBytes,
+  );
 }
 
 /**
@@ -148,6 +164,7 @@ function exchange(
   options: RequestOptions,
   body: string | undefined,
   signal: AbortSignal,
+  maxBodyBytes: number,
 ): Promise<TransportOutcome> {
   return new Promise((resolve) => {
     let answered = false;
@@ -222,8 +239,8 @@ function exchange(
       };
       response.on("data", (chunk: Buffer) => {
         size += chunk.length;
-        if (size > MAX_BODY_BYTES) {
-          lost(`the answer is larger than ${MAX_BODY_BYTES} bytes`, () => {
+        if (size > maxBodyBytes) {
+          lost(`the answer is larger than ${maxBodyBytes} bytes`, () => {
             response.destroy();
           });
           return;

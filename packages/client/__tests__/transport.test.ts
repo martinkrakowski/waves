@@ -8,6 +8,7 @@ import {
   buildOptions,
   createTransport,
   MAX_BODY_BYTES,
+  MAX_GET_BODY_BYTES,
   REQUEST_TIMEOUT_MS,
 } from "../src/infrastructure/transport.js";
 
@@ -556,6 +557,46 @@ describe("the body of an answer", () => {
       kind: "reply",
       reply: { status: 413 },
     });
+  });
+
+  it("accepts a GET body larger than the write cap", async () => {
+    const response = new FakeResponse(200, [Buffer.alloc(200_000)], {
+      "content-type": "application/json",
+    });
+    const scripted = peer();
+    scripted.respondWith(response);
+    const transport = transportOver(scripted);
+
+    const pending = transport.send({
+      method: "GET",
+      url: "http://127.0.0.1:8080/api/v1/projects/waves-demo/decisions/d1",
+    });
+    expect(await pending).toMatchObject({
+      kind: "reply",
+      reply: { status: 200 },
+    });
+  });
+
+  it("refuses a GET body over the 2 MiB cap", async () => {
+    const response = new FakeResponse(
+      200,
+      [Buffer.alloc(MAX_GET_BODY_BYTES + 1)],
+      {},
+    );
+    const scripted = peer();
+    scripted.respondWith(response);
+    const transport = transportOver(scripted);
+
+    const pending = transport.send({
+      method: "GET",
+      url: "http://127.0.0.1:8080/api/v1/projects/waves-demo/decisions/d1",
+    });
+    expect(await pending).toEqual({
+      kind: "network",
+      message: `the answer is larger than ${MAX_GET_BODY_BYTES} bytes`,
+      beforeBody: true,
+    });
+    expect(response.destroyed).toBe(true);
   });
 
   it("has no status to report when the peer sends none", async () => {
