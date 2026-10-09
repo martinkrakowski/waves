@@ -302,11 +302,7 @@ export function projectInboxView(
   overrides: Partial<ProjectInboxView> = {},
 ): ProjectInboxView {
   return {
-    project: {
-      id: "alpha",
-      name: "Alpha",
-      repo: "https://git.example.test/alpha",
-    },
+    project: "alpha",
     counts: inboxCounts(),
     decisions: [],
     ...overrides,

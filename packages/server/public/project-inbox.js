@@ -6,10 +6,10 @@
  * a count on its project, not drawn as a card, so the page has a line for it
  * instead.
  *
- * The `project` it is shown for is what the page links its breadcrumb and cards
- * from, so a response whose project id is not the one asked for is a broken
- * endpoint the way a head the page cannot read is: the app treats it as a failed
- * load, never a half-filled page.
+ * The `project` it is shown for is the id the page was opened for, and the
+ * response carries it as that same string: a response whose project id is not
+ * the one asked for is a broken endpoint the way a head the page cannot read is,
+ * and the app treats it as a failed load, never a half-filled page.
  */
 
 import { GROUPS, GROUP_STATES, STATES, count, head } from "./inbox.js";
@@ -19,20 +19,16 @@ const PROJECT_GROUP_STATES = { ...GROUP_STATES, history: STATES };
 
 /**
  * Whether `view` is one project's inbox this page can draw for `project`: its
- * `project.id` is the one the page was opened for, its four counts pass the
- * inbox's count check, and every decision passes the inbox's `head` check,
- * with `history` allowed as an extra group.
+ * `project` is the id of the project the page was opened for, its four counts
+ * pass the inbox's count check, and every decision passes the inbox's `head`
+ * check, with `history` allowed as an extra group.
  */
 export function drawableProjectInbox(view, project) {
   return (
     view !== null &&
     typeof view === "object" &&
-    view.project !== null &&
-    typeof view.project === "object" &&
-    view.project.id === project &&
-    typeof view.project.name === "string" &&
-    (view.project.repo === undefined ||
-      typeof view.project.repo === "string") &&
+    typeof view.project === "string" &&
+    view.project === project &&
     view.counts !== null &&
     typeof view.counts === "object" &&
     count(view.counts.waiting) &&

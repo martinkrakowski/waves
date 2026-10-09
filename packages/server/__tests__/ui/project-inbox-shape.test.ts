@@ -15,31 +15,17 @@ const INVALID: readonly (readonly [string, unknown])[] = [
   ["a boolean", true],
   ["nothing at all", undefined],
   ["a project that is null", { ...projectInboxView(), project: null }],
-  ["a project that is a string", { ...projectInboxView(), project: "alpha" }],
+  [
+    "a project that is an object",
+    { ...projectInboxView(), project: { id: "alpha", name: "Alpha" } },
+  ],
+  ["a project that is a number", { ...projectInboxView(), project: 42 }],
   ["a view with no project", { counts: inboxCounts(), decisions: [] }],
   [
-    "a project with no id",
-    { project: { name: "Alpha" }, counts: inboxCounts(), decisions: [] },
-  ],
-  [
     "a project the page was not opened for",
-    projectInboxView({ project: { id: "beta", name: "Beta" } }),
+    { ...projectInboxView(), project: "beta" },
   ],
-  [
-    "a project with no name",
-    { id: "alpha", counts: inboxCounts(), decisions: [] },
-  ],
-  [
-    "a project with a repo that is not a string",
-    {
-      ...projectInboxView(),
-      project: { id: "alpha", name: "Alpha", repo: 42 },
-    },
-  ],
-  [
-    "a project with no counts",
-    { project: { id: "alpha", name: "Alpha" }, decisions: [] },
-  ],
+  ["a project with no counts", { project: "alpha", decisions: [] }],
   ["a project whose counts is null", { ...projectInboxView(), counts: null }],
   [
     "a project with a negative waiting",
@@ -260,12 +246,9 @@ describe("drawableProjectInbox", () => {
     expect(drawableProjectInbox(projectInboxView(), "alpha")).toBe(true);
   });
 
-  it("takes a project whose repo is absent", () => {
+  it("takes a project whose id matches the page", () => {
     expect(
-      drawableProjectInbox(
-        projectInboxView({ project: { id: "alpha", name: "Alpha" } }),
-        "alpha",
-      ),
+      drawableProjectInbox(projectInboxView({ project: "alpha" }), "alpha"),
     ).toBe(true);
   });
 
