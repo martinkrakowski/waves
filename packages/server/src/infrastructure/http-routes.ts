@@ -243,7 +243,14 @@ export function route(pathname: string, root: string): Route {
       parts[1] === "p" &&
       isProjectId(String(parts[2])) &&
       parts[3] === "d" &&
-      isLaneId(String(parts[4])))
+      isLaneId(String(parts[4]))) ||
+    // `/p/<project>/inbox`: one project's inbox, with `inbox` a fixed word and
+    // not a wave or decision id, so `/p/<project>/w/inbox` and `/p/<project>/d/inbox`
+    // still mean a wave and a decision named `inbox`.
+    (parts.length === 4 &&
+      parts[1] === "p" &&
+      isProjectId(String(parts[2])) &&
+      parts[3] === "inbox")
   ) {
     return { kind: "index" };
   }
