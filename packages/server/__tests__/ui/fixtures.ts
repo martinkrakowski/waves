@@ -49,6 +49,7 @@ export function projectCard(overrides: Partial<ProjectCard> = {}): ProjectCard {
     lastPush: "2026-04-01T11:58:00.000Z",
     stale: false,
     recentWaves: [],
+    decisions: { waiting: 0, oneWay: 0, reported: 0, closed: 0 },
     ...overrides,
   };
 }

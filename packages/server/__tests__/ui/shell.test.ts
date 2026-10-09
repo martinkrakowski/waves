@@ -22,6 +22,7 @@ import {
 const FLEET: Route = { kind: "projects" };
 const PROJECT: Route = { kind: "project", id: "alpha" };
 const WAVE: Route = { kind: "project", id: "alpha", wave: "wv1" };
+const INBOX: Route = { kind: "inbox" };
 
 /** The one handler the shell takes, and what it costs to press it. */
 const HANDLERS: ShellHandlers = { onRefresh() {} };
@@ -89,7 +90,7 @@ describe("the frame", () => {
     const bar = oneOf(draw(), "header.topbar") as HTMLElement;
     expect(
       Array.from(bar.children).map((child) => child.tagName),
-    ).toStrictEqual(["svg", "NAV", "SPAN", "SPAN", "BUTTON", "DETAILS"]);
+    ).toStrictEqual(["svg", "NAV", "SPAN", "SPAN", "BUTTON", "A", "DETAILS"]);
   });
 
   it("puts the mark first on the fleet page and on a project page", () => {
@@ -317,7 +318,9 @@ describe("the projects menu", () => {
     expect(menuLinks(host)).toStrictEqual([
       { href: "/p/alpha", text: "Alpha" },
     ]);
-    expect(host.querySelectorAll("a")).toHaveLength(1);
+    expect(host.querySelectorAll("a")).toHaveLength(2);
+    // One is the inbox link, the other is the one valid project in the menu.
+    expect(host.querySelectorAll(".menu-list a")).toHaveLength(1);
   });
 
   it("says nothing is registered when every project was skipped", () => {
@@ -615,5 +618,93 @@ describe("the attributes the app owns", () => {
     expect(keys.filter((key) => key === "refresh")).toHaveLength(1);
     expect(keys.filter((key) => key === "nav")).toHaveLength(keys.length - 2);
     expect(root().querySelectorAll("a:not([data-key='nav'])")).toHaveLength(0);
+  });
+});
+
+describe("the inbox link", () => {
+  it("is plain 'Inbox' when nothing is waiting", () => {
+    const host = draw({ route: FLEET });
+    const link = host.querySelector("header a[href='/inbox']") as HTMLElement;
+    expect(link).not.toBeNull();
+    expect(textOf(link)).toBe("Inbox");
+    expect(link.getAttribute("aria-current")).toBeNull();
+  });
+
+  it("says 'Inbox · 3 waiting' when three decisions wait", () => {
+    const host = draw({
+      route: FLEET,
+      projects: [
+        projectCard({
+          decisions: { waiting: 3, oneWay: 0, reported: 0, closed: 0 },
+        }),
+      ],
+    });
+    const link = host.querySelector("header a[href='/inbox']") as HTMLElement;
+    expect(textOf(link)).toBe("Inbox · 3 waiting");
+  });
+
+  it("says one 'one-way door' for one, and 'doors' for more", () => {
+    const one = draw({
+      route: FLEET,
+      projects: [
+        projectCard({
+          decisions: { waiting: 3, oneWay: 1, reported: 0, closed: 0 },
+        }),
+      ],
+    });
+    const oneLink = one.querySelector("header a[href='/inbox']") as HTMLElement;
+    expect(textOf(oneLink)).toBe("Inbox · 3 waiting · 1 one-way door");
+
+    const two = draw({
+      route: FLEET,
+      projects: [
+        projectCard({
+          decisions: { waiting: 3, oneWay: 2, reported: 0, closed: 0 },
+        }),
+      ],
+    });
+    const twoLink = two.querySelector("header a[href='/inbox']") as HTMLElement;
+    expect(textOf(twoLink)).toBe("Inbox · 3 waiting · 2 one-way doors");
+  });
+
+  it("sums waiting across every project", () => {
+    const host = draw({
+      route: FLEET,
+      projects: [
+        projectCard({
+          decisions: { waiting: 1, oneWay: 0, reported: 0, closed: 0 },
+        }),
+        projectCard({
+          id: "beta",
+          name: "Beta",
+          decisions: { waiting: 2, oneWay: 1, reported: 0, closed: 0 },
+        }),
+      ],
+    });
+    const link = host.querySelector("header a[href='/inbox']") as HTMLElement;
+    expect(textOf(link)).toBe("Inbox · 3 waiting · 1 one-way door");
+  });
+
+  it("marks the link current on /inbox, and never elsewhere", () => {
+    const onInbox = draw({ route: INBOX });
+    const inboxLink = onInbox.querySelector(
+      "header a[href='/inbox']",
+    ) as HTMLElement;
+    expect(inboxLink.getAttribute("aria-current")).toBe("page");
+
+    const onFleet = draw({ route: FLEET });
+    const fleetLink = onFleet.querySelector(
+      "header a[href='/inbox']",
+    ) as HTMLElement;
+    expect(fleetLink.getAttribute("aria-current")).toBeNull();
+  });
+
+  it("shows 'Inbox' when a project has no decisions field", () => {
+    const host = draw({
+      route: FLEET,
+      projects: [projectCard({ decisions: undefined })],
+    });
+    const link = host.querySelector("header a[href='/inbox']") as HTMLElement;
+    expect(textOf(link)).toBe("Inbox");
   });
 });
