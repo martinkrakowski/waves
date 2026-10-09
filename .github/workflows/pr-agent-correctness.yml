@@ -65,6 +65,7 @@ jobs:
           config.ai_timeout: "600"
           config.repo_context_files: '["AGENTS.md"]'
           config.repo_context_max_lines: "400"
+          config.repo_context_from_default_branch: "false"
           # Asked for, though 0.47.0 was seen to accept both and print nothing: the number of
           # model calls and their time are read from this job's log instead.
           config.output_run_details: "true"
