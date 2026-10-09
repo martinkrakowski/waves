@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import { drawableInbox } from "../../public/inbox.js";
 
-import { inboxCounts, inboxHead, inboxProject, inboxView } from "./fixtures.js";
+import {
+  inboxCounts,
+  inboxHead,
+  inboxProject,
+  inboxView,
+  NOW_ISO,
+} from "./fixtures.js";
 
 /**
  * One invalid view per rule, and the rule it breaks. Each bad entry is an object
@@ -279,6 +285,142 @@ const INVALID: readonly (readonly [string, unknown])[] = [
     },
   ],
   [
+    "a head with an earlierAnswer that is null",
+    {
+      ...inboxView(),
+      projects: [
+        {
+          ...inboxProject(),
+          decisions: [{ ...inboxHead(), earlierAnswer: null }],
+        },
+      ],
+    },
+  ],
+  [
+    "a head with an earlierAnswer that is not an object",
+    {
+      ...inboxView(),
+      projects: [
+        {
+          ...inboxProject(),
+          decisions: [{ ...inboxHead(), earlierAnswer: 42 }],
+        },
+      ],
+    },
+  ],
+  [
+    "a head with an answer whose source is outside the two",
+    {
+      ...inboxView(),
+      projects: [
+        {
+          ...inboxProject(),
+          decisions: [
+            {
+              ...inboxHead(),
+              coveredAnswer: {
+                state: "approved",
+                source: "maybe",
+                at: NOW_ISO,
+                by: "owner",
+              },
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  [
+    "a head with an answer whose at is not a string",
+    {
+      ...inboxView(),
+      projects: [
+        {
+          ...inboxProject(),
+          decisions: [
+            {
+              ...inboxHead(),
+              coveredAnswer: {
+                state: "approved",
+                source: "reported",
+                at: 42,
+                by: "owner",
+              },
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  [
+    "a head with an answer whose by is not a string",
+    {
+      ...inboxView(),
+      projects: [
+        {
+          ...inboxProject(),
+          decisions: [
+            {
+              ...inboxHead(),
+              coveredAnswer: {
+                state: "approved",
+                source: "reported",
+                at: NOW_ISO,
+                by: 42,
+              },
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  [
+    "a head with an answer whose words is not a string",
+    {
+      ...inboxView(),
+      projects: [
+        {
+          ...inboxProject(),
+          decisions: [
+            {
+              ...inboxHead(),
+              earlierAnswer: {
+                state: "approved",
+                source: "reported",
+                at: NOW_ISO,
+                by: "owner",
+                words: 42,
+              },
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  [
+    "a head with an answer whose option is not a string",
+    {
+      ...inboxView(),
+      projects: [
+        {
+          ...inboxProject(),
+          decisions: [
+            {
+              ...inboxHead(),
+              earlierAnswer: {
+                state: "approved",
+                source: "reported",
+                at: NOW_ISO,
+                by: "owner",
+                option: 42,
+              },
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  [
     "a head with a from that is not a project id",
     {
       ...inboxView(),
@@ -332,6 +474,34 @@ describe("drawableInbox", () => {
                     by: "session",
                   },
                   from: "fleet",
+                }),
+              ],
+            }),
+          ],
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("takes a head whose answer carries both words and an option", () => {
+    expect(
+      drawableInbox(
+        inboxView({
+          projects: [
+            inboxProject({
+              decisions: [
+                inboxHead({
+                  group: "reported",
+                  state: "answered",
+                  source: "reported",
+                  earlierAnswer: {
+                    state: "approved",
+                    source: "reported",
+                    at: NOW_ISO,
+                    by: "owner",
+                    words: "yes",
+                    option: "a",
+                  },
                 }),
               ],
             }),

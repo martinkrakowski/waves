@@ -50,7 +50,9 @@ function groupDecisions(decisions) {
       byGroup.waiting.push(head);
     } else if (group === "reported") {
       byGroup.reported.push(head);
-    } else if (group === "closed") {
+    } else {
+      // The shape check closes `group` to the three values above, so anything
+      // that reaches here is `closed`: the last branch needs no test of its own.
       byGroup.closed.push(head);
     }
   }

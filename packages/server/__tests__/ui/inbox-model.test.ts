@@ -118,6 +118,45 @@ describe("the inbox model", () => {
       );
       expect(model.projects.map((p) => p.id)).toStrictEqual(["z", "a"]);
     });
+
+    it("puts the busy project first when it comes before the empty one", () => {
+      const model = inboxModel(
+        inboxView({
+          projects: [
+            withWaiting({ id: "busy", name: "Busy" }),
+            inboxProject({ id: "empty", name: "Empty" }),
+          ],
+        }),
+      );
+      expect(model.projects.map((p) => p.id)).toStrictEqual(["busy", "empty"]);
+    });
+
+    it("keeps name order when the left name is alphabetically before the right", () => {
+      const model = inboxModel(
+        inboxView({
+          projects: [
+            withWaiting({ id: "a", name: "Alpha" }),
+            withWaiting({ id: "b", name: "Bravo" }),
+          ],
+        }),
+      );
+      expect(model.projects.map((p) => p.name)).toStrictEqual([
+        "Alpha",
+        "Bravo",
+      ]);
+    });
+
+    it("keeps original order when names are equal", () => {
+      const model = inboxModel(
+        inboxView({
+          projects: [
+            withWaiting({ id: "a", name: "Same" }),
+            withWaiting({ id: "b", name: "Same" }),
+          ],
+        }),
+      );
+      expect(model.projects.map((p) => p.id)).toStrictEqual(["a", "b"]);
+    });
   });
 
   describe("grouping", () => {

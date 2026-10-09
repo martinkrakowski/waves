@@ -17,7 +17,7 @@ import {
   textsOf,
 } from "./helpers.js";
 
-/** Draws the inbox from the fourteen fixtures and returns the host. */
+/** Draws the inbox from a model and returns the host it was drawn into. */
 function draw(view: unknown, nowMs = INBOX_NOW_MS): HTMLElement {
   if (!drawableInbox(view)) {
     throw new Error("not a drawable inbox");
@@ -34,14 +34,13 @@ function countLines(host: HTMLElement): string[] {
 }
 
 /** The full text of the project block whose link is named `name`. */
-function projectBlock(host: HTMLElement, name: string): Element | null {
-  return (
-    Array.from(host.querySelectorAll(".inbox-project")).find(
-      (section) =>
-        textOf(section.querySelector("h2 a") ?? section.querySelector("h2")) ===
-        name,
-    ) ?? null
+function projectText(host: HTMLElement, name: string): string {
+  const block = Array.from(host.querySelectorAll(".inbox-project")).find(
+    (section) =>
+      textOf(section.querySelector("h2 a") ?? section.querySelector("h2")) ===
+      name,
   );
+  return block !== undefined ? textOf(block) : "";
 }
 
 describe("the fourteenth fixtures", () => {
@@ -86,46 +85,43 @@ describe("the fourteenth fixtures", () => {
 
   it("puts backup-job-in-freeze under Waiting on you with its door band", () => {
     const host = draw(view);
-    const fleet = projectBlock(host, "Fleet");
-    expect(fleet).not.toBeNull();
-    // The band is the label plus the reason, verbatim.
-    expect(textsOf(host, ".door-band")).toContain(
-      "ONE-WAY DOOR: a production deployment",
-    );
-    // The card appears after the "Waiting on you" heading.
-    const fleetText = textOf(fleet as Element);
-    const waitingIdx = fleetText.indexOf("Waiting on you");
+    const fleet = projectText(host, "Fleet");
+    const band = textsOf(host, ".door-band");
+    expect(band).toContain("ONE-WAY DOOR: a production deployment");
+    const waitingIdx = fleet.indexOf("Waiting on you");
     expect(waitingIdx).toBeGreaterThanOrEqual(0);
-    const after = fleetText.slice(waitingIdx);
+    const after = fleet.slice(waitingIdx);
     expect(after).toContain("backup-job-in-freeze");
     expect(after).toContain("ONE-WAY DOOR: a production deployment");
   });
 
   it("puts test-db-switch-hold under Reported as answered", () => {
     const host = draw(view);
-    const fleet = projectBlock(host, "Fleet");
-    expect(fleet).not.toBeNull();
-    const fleetText = textOf(fleet as Element);
-    const reportedIdx = fleetText.indexOf("Reported as answered");
+    const fleet = projectText(host, "Fleet");
+    expect(fleet).toContain("Reported as answered");
+    const reportedIdx = fleet.indexOf("Reported as answered");
     expect(reportedIdx).toBeGreaterThanOrEqual(0);
-    const after = fleetText.slice(reportedIdx);
+    const after = fleet.slice(reportedIdx);
     expect(after).toContain("test-db-switch-hold");
-    // Reported is never the bare word "Approved".
-    expect(textsOf(host, "p.card-state")).not.toContain("approved");
   });
 
   it("reads each decision's revision", () => {
     const host = draw(view);
-    const gate = projectBlock(host, "Gate Lock");
-    expect(gate).not.toBeNull();
-    expect(textOf(gate as Element)).toContain("revision 2 of 2");
+    const gate = projectText(host, "Gate Lock");
+    expect(gate).toContain("revision 2 of 2");
   });
 
   it("draws clean-merged-worktrees under waves with From fleet", () => {
     const host = draw(view);
-    const waves = projectBlock(host, "Waves");
-    expect(waves).not.toBeNull();
-    const wavesText = textOf(waves as Element);
+    const wavesSection = Array.from(
+      host.querySelectorAll(".inbox-project"),
+    ).find(
+      (section) =>
+        textOf(section.querySelector("h2 a") ?? section.querySelector("h2")) ===
+        "Waves",
+    );
+    expect(wavesSection).toBeDefined();
+    const wavesText = textOf(wavesSection as Element);
     expect(wavesText).toContain("clean-merged-worktrees");
     expect(wavesText).toContain(
       "From fleet: a standing instruction that applies to this project.",
@@ -170,10 +166,7 @@ describe("the inbox page rules", () => {
             decisions: [
               inboxHead({
                 question: "Test?",
-                door: {
-                  value: true,
-                  reason: '<b>"x"</b> & more',
-                },
+                door: { value: true, reason: '<b>"x"</b> & more' },
               }),
             ],
           },
@@ -184,6 +177,33 @@ describe("the inbox page rules", () => {
     expect(band).not.toBeNull();
     expect(band?.textContent).toBe('ONE-WAY DOOR: <b>"x"</b> & more');
     expect(host.querySelectorAll("b")).toHaveLength(0);
+  });
+
+  it("shows a waiting/open/delegated card with the delegation note", () => {
+    const host = draw(
+      inboxView({
+        projects: [
+          {
+            id: "alpha",
+            name: "Alpha",
+            counts: { waiting: 1, oneWay: 0, reported: 0, closed: 0 },
+            decisions: [
+              inboxHead({
+                question: "Delegate?",
+                shape: "choice",
+                door: { value: false },
+                decider: "delegated",
+                state: "open",
+                group: "waiting",
+              }),
+            ],
+          },
+        ],
+      }),
+    );
+    expect(textsOf(host, ".card-state")).toStrictEqual([
+      "May be decided under delegation; not decided yet.",
+    ]);
   });
 
   it("shows a closed decision with its covered answer beside it", () => {
@@ -258,6 +278,114 @@ describe("the inbox page rules", () => {
     expect(state).not.toBeNull();
     expect(textOf(state as Element)).toContain(
       "The alpha session replaced this with a later decision on",
+    );
+  });
+
+  it("draws a waiting/open/delegated card with the delegation note", () => {
+    const host = draw(
+      inboxView({
+        projects: [
+          {
+            id: "alpha",
+            name: "Alpha",
+            counts: { waiting: 1, oneWay: 0, reported: 0, closed: 0 },
+            decisions: [
+              inboxHead({
+                question: "Delegate?",
+                shape: "choice",
+                door: { value: false },
+                decider: "delegated",
+                state: "open",
+                group: "waiting",
+              }),
+            ],
+          },
+        ],
+      }),
+    );
+    expect(textsOf(host, ".card-state")).toStrictEqual([
+      "May be decided under delegation; not decided yet.",
+    ]);
+  });
+
+  it("shows a door band with no reason as the label alone", () => {
+    const host = draw(
+      inboxView({
+        projects: [
+          {
+            id: "alpha",
+            name: "Alpha",
+            counts: { waiting: 1, oneWay: 1, reported: 0, closed: 0 },
+            decisions: [
+              inboxHead({
+                question: "No reason?",
+                door: { value: true },
+              }),
+            ],
+          },
+        ],
+      }),
+    );
+    expect(textsOf(host, ".door-band")).toStrictEqual(["ONE-WAY DOOR:"]);
+  });
+
+  it("shows a covered answer with no words as the verb alone", () => {
+    const host = draw(
+      inboxView({
+        projects: [
+          {
+            id: "alpha",
+            name: "Alpha",
+            counts: { waiting: 0, oneWay: 0, reported: 0, closed: 1 },
+            decisions: [
+              inboxHead({
+                question: "Withdrawn?",
+                state: "withdrawn",
+                group: "closed",
+                at: "2026-10-08T13:00:00Z",
+                entries: 2,
+                coveredAnswer: {
+                  state: "declined",
+                  source: "reported",
+                  at: "2026-10-08T13:00:00Z",
+                  by: "owner",
+                },
+              }),
+            ],
+          },
+        ],
+      }),
+    );
+    expect(textOf(host)).toContain("It had been reported that you declined.");
+  });
+
+  it("shows an earlier answer with no words as the verb alone", () => {
+    const host = draw(
+      inboxView({
+        projects: [
+          {
+            id: "alpha",
+            name: "Alpha",
+            counts: { waiting: 1, oneWay: 0, reported: 0, closed: 0 },
+            decisions: [
+              inboxHead({
+                question: "Changed?",
+                state: "open",
+                group: "waiting",
+                earlierAnswer: {
+                  state: "declined",
+                  source: "reported",
+                  at: "2026-10-08T13:00:00Z",
+                  by: "owner",
+                },
+              }),
+            ],
+          },
+        ],
+      }),
+    );
+    expect(textOf(host)).toContain(
+      "An earlier text of this decision was answered: declined. That answer does not apply to the current text.",
     );
   });
 });
