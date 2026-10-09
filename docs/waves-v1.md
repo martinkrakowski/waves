@@ -681,22 +681,22 @@ the write pipeline and is answered by it. Because the query is step 8, an
 unauthenticated request to the lanes route with a bad query is a `401` and a
 `PATCH` with a bad query is a `405`, both before the query is looked at.
 
-| path                                              | 200 response                                                                                                                                      |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /healthz`                                    | `{"ok":true}` — the process is up                                                                                                                 |
-| `GET /readyz`                                     | `{"ok":true}` — the store can be read; otherwise `503` `{"ok":false}`                                                                             |
-| `GET /api/v1/projects`                            | array of `{ id, name, repo?, registeredAt, waves, lanes, lastPush?, stale, recentWaves, status?, decisions? }`, see below                         |
-| `GET /api/v1/projects/<id>/waves`                 | array of `{ wave, receivedAt, intervalSeconds, lanes, stale, retained }`, `lanes` a count, newest receive first                                   |
-| `GET /api/v1/projects/<id>/lanes`                 | `{ project: { id, name, repo? }, waves: [...], wavesOmitted, lanes: [...], truncated }`, see 5.1.1                                                |
-| `GET /api/v1/projects/<id>/waves/<wave>`          | `{ envelope, receivedAt, stale, staleAfterMs }`, where `envelope` is the stored envelope with `lanes[].derived.alive` possibly `"unknown"`        |
-| `GET /api/v1/projects/<id>/status`                | `{ status, receivedAt, stale, staleAfterMs }`, where `status` is the stored document of "The project status document"                             |
-| `GET /api/v1/attention`                           | `{ lanes: [{ project, wave, lane, seat?, reasons, receivedAt, stale, pr? }], projects: [{ id, attention }], truncated, wavesOmitted }`, see below |
-| `GET /api/v1/projects/<id>/decisions`             | `{ project, counts, decisions: [Head] }`, the project's own and every instruction of another project that applies to it, see 5.1.2                |
-| `GET /api/v1/projects/<id>/decisions/<decision>`  | `{ head, revisions: StoredRevision[], entries: StoredEntry[] }`, or `404` if there is no such decision                                            |
-| `GET /api/v1/projects/<id>/events`                | `{ events: StoredEvent[] }`, newest first, at most `MAX_NOTICE_EVENTS` (200)                                                                      |
-| `GET /api/v1/inbox`                               | `{ projects: [{ id, name, counts, decisions: [Head] }] }`, one entry per registered project in registry order                                     |
-| `GET /`, `GET /p/<id>` and `GET /p/<id>/w/<wave>` | the status page (`public/index.html`)                                                                                                             |
-| `GET /<static file>`                              | a file from `public`, allow-listed extensions only                                                                                                |
+| path                                                        | 200 response                                                                                                                                      |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /healthz`                                              | `{"ok":true}` — the process is up                                                                                                                 |
+| `GET /readyz`                                               | `{"ok":true}` — the store can be read; otherwise `503` `{"ok":false}`                                                                             |
+| `GET /api/v1/projects`                                      | array of `{ id, name, repo?, registeredAt, waves, lanes, lastPush?, stale, recentWaves, status?, decisions? }`, see below                         |
+| `GET /api/v1/projects/<id>/waves`                           | array of `{ wave, receivedAt, intervalSeconds, lanes, stale, retained }`, `lanes` a count, newest receive first                                   |
+| `GET /api/v1/projects/<id>/lanes`                           | `{ project: { id, name, repo? }, waves: [...], wavesOmitted, lanes: [...], truncated }`, see 5.1.1                                                |
+| `GET /api/v1/projects/<id>/waves/<wave>`                    | `{ envelope, receivedAt, stale, staleAfterMs }`, where `envelope` is the stored envelope with `lanes[].derived.alive` possibly `"unknown"`        |
+| `GET /api/v1/projects/<id>/status`                          | `{ status, receivedAt, stale, staleAfterMs }`, where `status` is the stored document of "The project status document"                             |
+| `GET /api/v1/attention`                                     | `{ lanes: [{ project, wave, lane, seat?, reasons, receivedAt, stale, pr? }], projects: [{ id, attention }], truncated, wavesOmitted }`, see below |
+| `GET /api/v1/projects/<id>/decisions`                       | `{ project, counts, decisions: [Head] }`, the project's own and every instruction of another project that applies to it, see 5.1.2                |
+| `GET /api/v1/projects/<id>/decisions/<decision>`            | `{ head, revisions: StoredRevision[], entries: StoredEntry[] }`, or `404` if there is no such decision                                            |
+| `GET /api/v1/projects/<id>/events`                          | `{ events: StoredEvent[] }`, newest first, at most `MAX_NOTICE_EVENTS` (200)                                                                      |
+| `GET /api/v1/inbox`                                         | `{ projects: [{ id, name, counts, decisions: [Head] }] }`, one entry per registered project in registry order                                     |
+| `GET /` and `/inbox` — and `/p/<id>` and `/p/<id>/w/<wave>` | the status page (`public/index.html`)                                                                                                             |
+| `GET /<static file>`                                        | a file from `public`, allow-listed extensions only                                                                                                |
 
 #### 5.1.2 The notice head, the groups and the counts
 
@@ -1098,6 +1098,21 @@ history with one entry per word.
 (`TABS`, `packages/server/public/query.js:14-20`; `formatQuery`,
 `…/query.js:93-104`; `renderFleet`, `packages/server/public/views/fleet.js:418-436`;
 `fleetHandlers`, `packages/server/public/app.js:354-367`)
+
+#### 5.1.4 `/inbox`
+
+`GET /inbox` is the page the owner reads: one block per project, each holding the
+decisions `GET /api/v1/inbox` answers with — those in the `waiting`, `reported`
+and `closed` groups, in that order, each under its own sub-heading, and the four
+counts named separately in a line that never sums them. A project with nothing
+listed is one line — its name and "nothing waiting" — so the eye skips it. The
+page takes no query string: it is the same answer for every reader, refreshed
+with the same ten-second pass the other views use, and it answers nothing.
+There is no button, no input, no form: a decision is read here and answered in
+the session that owns it, and the word for that is at the foot of the page, not
+in a control on it. A session that writes a report or a withdrawal moves a card
+from one heading to another and never removes it; the counts name the sources
+and never add them up.
 
 ### 5.2 The optional viewer token
 
