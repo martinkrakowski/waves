@@ -3,6 +3,7 @@ import type { DecisionState } from "@hexagen-monaco/waves-contract";
 import type {
   StoredDecision,
   StoredEntry,
+  StoredRevision,
 } from "../application/ports/notice-store.js";
 
 export type DecisionGroup = "waiting" | "reported" | "closed" | "history";
@@ -13,31 +14,60 @@ export function isAnswer(state: DecisionState): boolean {
 }
 
 /**
- * The current revision, the top of the append-only list: a decision store always
- * creates it with revision 1, so a stored decision has at least one.
+ * The current text's run: the unbroken tail of revisions whose `textSha256`
+ * equals the current revision's. A revision that changed only a non-binding
+ * field (same hash) is the same text and stays in the run; a new hash starts a
+ * new run and ends the old one, so an entry written under an earlier text is
+ * never "on the current text" again even if that exact text returns later
+ * (rule 1 and rule 4).
  */
-function currentRevision(
+function currentTextRun(
   decision: StoredDecision,
-): StoredDecision["revisions"][number] | undefined {
-  return decision.revisions[decision.revisions.length - 1];
+): { firstRevision: number; hash: string } | undefined {
+  const revisions = decision.revisions;
+  if (revisions.length === 0) {
+    return undefined;
+  }
+  const hash = (revisions[revisions.length - 1] as StoredRevision).textSha256;
+  let first = revisions.length - 1;
+  while (
+    first > 0 &&
+    (revisions[first - 1] as StoredRevision).textSha256 === hash
+  ) {
+    first--;
+  }
+  return { firstRevision: (revisions[first] as StoredRevision).revision, hash };
 }
 
 /**
- * The current state entry: the last entry whose `textSha256` is the current
- * revision's, or undefined when no entry matches the current text. Two entries on
- * the same text are kept (and both count); this returns the one that stands.
+ * Whether an entry is on the current text: its `textSha256` matches the current
+ * revision's and its `revision` is at or after the first revision of the current
+ * text's run. `currentEntry`, `earlierAnswer` and `coveredAnswer` all use it so
+ * they agree on what "current text" means.
+ */
+function isOnCurrentText(
+  entry: StoredEntry,
+  run: { firstRevision: number; hash: string },
+): boolean {
+  return entry.textSha256 === run.hash && entry.revision >= run.firstRevision;
+}
+
+/**
+ * The current state entry: the last entry on the current text, or undefined when
+ * no entry is on it. An entry is on the current text only when its hash matches
+ * the current revision's and its revision is within the current text's run, so a
+ * returned text does not wake an entry from before its own run.
  */
 export function currentEntry(
   decision: StoredDecision,
 ): StoredEntry | undefined {
-  const revision = currentRevision(decision);
-  if (revision === undefined) {
+  const run = currentTextRun(decision);
+  if (run === undefined) {
     return undefined;
   }
-  const hash = revision.textSha256;
   let found: StoredEntry | undefined;
   for (const entry of decision.entries) {
-    if (entry.textSha256 === hash) {
+    if (isOnCurrentText(entry, run)) {
       found = entry;
     }
   }
@@ -56,20 +86,21 @@ export function decisionState(decision: StoredDecision): DecisionState {
 
 /**
  * The last answer on a text that is not the current one: the case where a writer
- * reported an answer that a later revision's new text supersedes. `open` and
+ * reported an answer that a later revision's new text supersedes. The current
+ * text's run is what "not the current text" means here, so an entry from before
+ * the run is an earlier answer even when the text later returns. `open` and
  * `delegated` are not answers, so they never appear here.
  */
 export function earlierAnswer(
   decision: StoredDecision,
 ): StoredEntry | undefined {
-  const revision = currentRevision(decision);
-  if (revision === undefined) {
+  const run = currentTextRun(decision);
+  if (run === undefined) {
     return undefined;
   }
-  const hash = revision.textSha256;
   let found: StoredEntry | undefined;
   for (const entry of decision.entries) {
-    if (entry.textSha256 !== hash && isAnswer(entry.state)) {
+    if (!isOnCurrentText(entry, run) && isAnswer(entry.state)) {
       found = entry;
     }
   }
@@ -109,13 +140,17 @@ export function groupOf(
 }
 
 /**
- * The answer a withdrawal or supersession covers: the last answer on the same
- * text as the current entry, before it. Shown beside the session's statement so
- * a session cannot remove an answer by covering it; `undefined` when there is none.
+ * The answer a withdrawal or supersession covers: the last answer on the current
+ * text, before it. Shown beside the session's statement so a session cannot
+ * remove an answer by covering it; `undefined` when there is none.
  */
 export function coveredAnswer(
   decision: StoredDecision,
 ): StoredEntry | undefined {
+  const run = currentTextRun(decision);
+  if (run === undefined) {
+    return undefined;
+  }
   const current = currentEntry(decision);
   if (current === undefined) {
     return undefined;
@@ -126,8 +161,8 @@ export function coveredAnswer(
   let found: StoredEntry | undefined;
   for (const entry of decision.entries) {
     if (
+      isOnCurrentText(entry, run) &&
       entry.index < current.index &&
-      entry.textSha256 === current.textSha256 &&
       isAnswer(entry.state)
     ) {
       found = entry;
