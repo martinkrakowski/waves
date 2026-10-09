@@ -131,6 +131,7 @@ export class FileNoticeStore implements NoticeStorePort {
     id: string,
     entry: StoredEntry,
     expectEntries: number,
+    expectRevisions: number,
   ): Promise<AppendOutcome> {
     assertNoticeIds(project, id);
     return this.#serialised(async () => {
@@ -142,7 +143,10 @@ export class FileNoticeStore implements NoticeStorePort {
         return "missing";
       }
       const stored = JSON.parse(raw) as StoredDecision;
-      if (stored.entries.length !== expectEntries) {
+      if (
+        stored.entries.length !== expectEntries ||
+        stored.revisions.length !== expectRevisions
+      ) {
         return "conflict";
       }
       stored.entries.push(entry);

@@ -116,7 +116,13 @@ describe("FileNoticeStore", () => {
   it("answers missing when the decision does not exist on appendEntry", async () => {
     const { store, dispose } = harness();
     try {
-      const outcome = await store.appendEntry("alpha", "d1", storedEntry(0), 0);
+      const outcome = await store.appendEntry(
+        "alpha",
+        "d1",
+        storedEntry(0),
+        0,
+        1,
+      );
       expect(outcome).toBe("missing");
     } finally {
       await dispose();
@@ -133,6 +139,7 @@ describe("FileNoticeStore", () => {
         "d1",
         storedEntry(0, { by: "owner" }),
         0,
+        1,
       );
       expect(outcome).toBe("stored");
 
@@ -148,12 +155,41 @@ describe("FileNoticeStore", () => {
     const { store, dispose } = harness();
     try {
       await store.appendRevision("alpha", "d1", storedRevision(1), 0, 3);
-      await store.appendEntry("alpha", "d1", storedEntry(0), 0);
+      await store.appendEntry("alpha", "d1", storedEntry(0), 0, 1);
 
-      const outcome = await store.appendEntry("alpha", "d1", storedEntry(1), 5);
+      const outcome = await store.appendEntry(
+        "alpha",
+        "d1",
+        storedEntry(1),
+        5,
+        1,
+      );
       expect(outcome).toBe("conflict");
       const read = await store.getDecision("alpha", "d1");
       expect(read?.entries).toHaveLength(1);
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("answers conflict when the revision count is stale on appendEntry", async () => {
+    const { store, dispose } = harness();
+    try {
+      await store.appendRevision("alpha", "d1", storedRevision(1), 0, 3);
+
+      const outcome = await store.appendEntry(
+        "alpha",
+        "d1",
+        storedEntry(0),
+        0,
+        5,
+      );
+      expect(outcome).toBe("conflict");
+      const read = await store.getDecision("alpha", "d1");
+      expect(read).toMatchObject({
+        revisions: { length: 1 },
+        entries: { length: 0 },
+      });
     } finally {
       await dispose();
     }
@@ -342,7 +378,7 @@ describe("FileNoticeStore", () => {
     const { store, dataDir, dispose } = harness();
     try {
       await store.appendRevision("alpha", "d1", storedRevision(1), 0, 3);
-      await store.appendEntry("alpha", "d1", storedEntry(0), 0);
+      await store.appendEntry("alpha", "d1", storedEntry(0), 0, 1);
 
       const reopened = new FileNoticeStore(dataDir);
 

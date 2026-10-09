@@ -16,6 +16,7 @@ import {
   decisionRevision,
   event,
   stateEntryRequest,
+  storedRevision,
 } from "./notice-contract.js";
 
 const NOW_MS = Date.parse("2026-10-08T12:00:00Z");
@@ -410,6 +411,55 @@ describe("postState", () => {
 
     expect(await m.postState(PROJECT, ID, stateEntry())).toEqual({
       kind: "notFound",
+    });
+  });
+
+  it("reports a revision that lands between the read and the append as a 409", async () => {
+    const real = new MemoryStore();
+    await createNoticeWriteModel({
+      noticeStore: real,
+      now: () => NOW_MS,
+      hashText: sha256Hex,
+    }).raiseDecision(PROJECT, ID, BODY);
+    // A store whose appendEntry first slips a second revision in: the text the
+    // model pinned on its read is no longer current, and the store's own
+    // revision-count check must refuse it.
+    const gained = storedRevision(
+      2,
+      decisionRevision(ID, PROJECT, { question: "Other?" }),
+    );
+    const stub: NoticeStorePort = {
+      getDecision: (p, i) => real.getDecision(p, i),
+      listDecisions: (p) => real.listDecisions(p),
+      appendRevision: (p, i, r, e, c) => real.appendRevision(p, i, r, e, c),
+      appendEntry: async (p, i, entry, expectEntries, expectRevisions) => {
+        await real.appendRevision(
+          p,
+          i,
+          gained,
+          expectRevisions,
+          MAX_DECISIONS_PER_PROJECT,
+        );
+        return real.appendEntry(p, i, entry, expectEntries, expectRevisions);
+      },
+      appendEvent: (p, s, keep) => real.appendEvent(p, s, keep),
+      listEvents: (p, limit) => real.listEvents(p, limit),
+      deleteNotices: (p) => real.deleteNotices(p),
+    };
+    const racing = createNoticeWriteModel({
+      noticeStore: stub,
+      now: () => NOW_MS,
+      hashText: sha256Hex,
+    });
+
+    expect(
+      await racing.postState(PROJECT, ID, stateEntry({ expectedEntries: 0 })),
+    ).toEqual({
+      kind: "conflict",
+      error: "the state entry is out of date",
+      revision: 1,
+      textSha256: BINDING_HASH,
+      entries: 0,
     });
   });
 

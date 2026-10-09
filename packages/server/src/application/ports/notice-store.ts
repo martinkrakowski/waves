@@ -92,12 +92,18 @@ export interface NoticeStorePort {
     expectRevisions: number,
     ceiling: number,
   ): Promise<AppendOutcome>;
-  /** Appends an entry only when the decision holds exactly `expectEntries`. */
+  /**
+   * Appends an entry only when the decision holds exactly `expectEntries` entries
+   * and `expectRevisions` revisions. A revision added since the writer read it
+   * changes the count and is a conflict, so a text that moved between the read
+   * and the write is refused with the current three (rule 2).
+   */
   appendEntry(
     project: string,
     id: string,
     entry: StoredEntry,
     expectEntries: number,
+    expectRevisions: number,
   ): Promise<AppendOutcome>;
   /**
    * Appends an event; when the project then holds more than `keep`, the oldest

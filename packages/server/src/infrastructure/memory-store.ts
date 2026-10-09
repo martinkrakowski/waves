@@ -210,6 +210,7 @@ export class MemoryStore
     id: string,
     entry: StoredEntry,
     expectEntries: number,
+    expectRevisions: number,
   ): Promise<AppendOutcome> {
     assertNoticeIds(project, id);
     const decisions = this.#decisions.get(project);
@@ -220,7 +221,10 @@ export class MemoryStore
     if (existing === undefined) {
       return "missing";
     }
-    if (existing.entries.length !== expectEntries) {
+    if (
+      existing.entries.length !== expectEntries ||
+      existing.revisions.length !== expectRevisions
+    ) {
       return "conflict";
     }
     existing.entries.push(structuredClone(entry));
