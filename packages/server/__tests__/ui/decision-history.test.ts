@@ -326,6 +326,22 @@ describe("historyBlock", () => {
       'owner recorded that you declined on 2026-04-01 at 12:00 UTC: "no" reported, not signed',
     );
   });
+
+  it("renders an answer entry without words as the verb alone", () => {
+    const host = drawHistory(
+      decisionModel(
+        decisionResponse({
+          head: inboxHead({ revision: 1, revisions: 1, entries: 1 }),
+          entries: [
+            { ...decisionEntry(), words: undefined, option: undefined },
+          ],
+        }),
+      ),
+    );
+    expect(textsOf(host, ".history-event")).toContain(
+      "owner recorded that you approved on 2026-04-01 at 12:00 UTC reported, not signed",
+    );
+  });
 });
 
 describe("earlierTextsBlock", () => {
