@@ -194,6 +194,11 @@ function compareHeads(a: Head, b: Head): number {
 export interface NoticeReadModel {
   counts(project: string): Promise<NoticeCounts>;
   decisions(project: string): Promise<readonly Head[]>;
+  /** The counts and heads for one project, from a single listing of every project's decisions. */
+  decisionsView(project: string): Promise<{
+    readonly counts: NoticeCounts;
+    readonly decisions: readonly Head[];
+  }>;
   getDecision(project: string, id: string): Promise<DecisionView | undefined>;
   events(project: string, limit: number): Promise<readonly StoredEvent[]>;
   inbox(): Promise<readonly InboxProject[]>;
@@ -214,22 +219,46 @@ export function createNoticeReadModel(
   const { store, noticeStore, now } = deps;
 
   /**
-   * A project's own decisions, plus every instruction another project raised
-   * against it (the `appliesTo` of an `instruction` decision that names this
-   * project). `from` carries the raising project; the head otherwise describes
-   * the decision that raised it.
+   * One pass over the store: every project's decisions, keyed by id. Both the
+   * inbox and a project's own page need every project's decisions — the page to
+   * find the `appliesTo` instructions another project raised against it — so this
+   * loads them once and lets the callers below reuse the result instead of
+   * relisting per project (rule: no P × P listings in one request).
    */
-  async function decisionsOf(project: string): Promise<Head[]> {
-    const own = await noticeStore.listDecisions(project);
-    const nowMs = now();
-    const heads: Head[] = own.map((decision) => headOf(decision, nowMs));
-
+  async function loadAllDecisions(): Promise<{
+    projects: readonly Project[];
+    decisions: Map<string, readonly StoredDecision[]>;
+    nowMs: number;
+  }> {
     const projects = await store.listProjects();
+    const nowMs = now();
+    const decisions = new Map<string, readonly StoredDecision[]>();
+    for (const project of projects) {
+      decisions.set(project.id, await noticeStore.listDecisions(project.id));
+    }
+    return { projects, decisions, nowMs };
+  }
+
+  /**
+   * A project's heads: its own decisions, plus every `instruction` of another
+   * project whose `appliesTo` names this one, marked `from` the raiser. Both sets
+   * come from the map loaded once by `loadAllDecisions`, so a request lists each
+   * project's decisions at most once.
+   */
+  function headsOf(
+    project: string,
+    projects: readonly Project[],
+    decisions: Map<string, readonly StoredDecision[]>,
+    nowMs: number,
+  ): Head[] {
+    const heads = (decisions.get(project) ?? []).map((decision) =>
+      headOf(decision, nowMs),
+    );
     for (const other of projects) {
       if (other.id === project) {
         continue;
       }
-      const theirs = await noticeStore.listDecisions(other.id);
+      const theirs = decisions.get(other.id)!;
       for (const decision of theirs) {
         const dec = currentRevision(decision).decision;
         if (dec.shape === "instruction" && dec.appliesTo.includes(project)) {
@@ -242,31 +271,46 @@ export function createNoticeReadModel(
   }
 
   async function inbox(): Promise<InboxProject[]> {
-    const nowMs = now();
-    const projects = await store.listProjects();
+    const { projects, decisions, nowMs } = await loadAllDecisions();
     const result: InboxProject[] = [];
     for (const project of projects) {
-      const own = await noticeStore.listDecisions(project.id);
-      const counts = noticeCounts(own, nowMs);
-      const decisions = (await decisionsOf(project.id)).filter(
-        (head) => head.group !== "history",
-      );
+      const own = decisions.get(project.id)!;
       result.push({
         id: project.id,
         name: project.name,
-        counts,
-        decisions,
+        counts: noticeCounts(own, nowMs),
+        decisions: headsOf(project.id, projects, decisions, nowMs).filter(
+          (head) => head.group !== "history",
+        ),
       });
     }
     return result;
   }
 
+  /**
+   * The heads and the counts for one project, built from the single listing of
+   * every project's decisions: `counts`, `decisions` and the `/decisions` route
+   * all reuse it, so a request lists each project's decisions at most once.
+   */
+  async function viewProject(project: string): Promise<{
+    counts: NoticeCounts;
+    decisions: readonly Head[];
+  }> {
+    const { projects, decisions: map, nowMs } = await loadAllDecisions();
+    return {
+      counts: noticeCounts(map.get(project) ?? [], nowMs),
+      decisions: headsOf(project, projects, map, nowMs),
+    };
+  }
+
   return {
     async counts(project) {
-      const own = await noticeStore.listDecisions(project);
-      return noticeCounts(own, now());
+      return (await viewProject(project)).counts;
     },
-    decisions: (project) => decisionsOf(project),
+    decisions: async (project) => {
+      return (await viewProject(project)).decisions;
+    },
+    decisionsView: viewProject,
     async getDecision(project, id) {
       const decision = await noticeStore.getDecision(project, id);
       if (decision === undefined) {

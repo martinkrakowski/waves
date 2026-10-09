@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createNoticeReadModel } from "../src/application/notice-read-model.js";
+import type { NoticeStorePort } from "../src/application/ports/notice-store.js";
 import { MemoryStore } from "../src/infrastructure/memory-store.js";
 import {
   decisionRevision,
@@ -116,5 +117,80 @@ describe("the notice read model", () => {
       "c-earlier",
       "a-later",
     ]);
+  });
+
+  it("answers empty counts and heads for a project that is not registered", async () => {
+    const { store, model } = await harness();
+    await store.appendRevision("alpha", "d1", storedRevision(1), 0, 10);
+
+    expect(await model.counts("absent")).toEqual({
+      waiting: 0,
+      oneWay: 0,
+      reported: 0,
+      closed: 0,
+    });
+    expect(await model.decisions("absent")).toEqual([]);
+    const view = await model.decisionsView("absent");
+    expect(view.counts).toEqual({
+      waiting: 0,
+      oneWay: 0,
+      reported: 0,
+      closed: 0,
+    });
+    expect(view.decisions).toEqual([]);
+  });
+});
+
+describe("single pass over notice listings", () => {
+  function counting(base: NoticeStorePort) {
+    let calls = 0;
+    const store: NoticeStorePort = {
+      getDecision: (project, id) => base.getDecision(project, id),
+      listDecisions: (project) => {
+        calls += 1;
+        return base.listDecisions(project);
+      },
+      appendRevision: (project, id, revision, expectRevisions, ceiling) =>
+        base.appendRevision(project, id, revision, expectRevisions, ceiling),
+      appendEntry: (project, id, entry, expectEntries, expectRevisions) =>
+        base.appendEntry(project, id, entry, expectEntries, expectRevisions),
+      appendEvent: (project, stored, keep) =>
+        base.appendEvent(project, stored, keep),
+      listEvents: (project, limit) => base.listEvents(project, limit),
+      deleteNotices: (project) => base.deleteNotices(project),
+    };
+    return { store, calls: () => calls };
+  }
+
+  async function seeded() {
+    const base = new MemoryStore();
+    for (const id of ["a", "b", "c"]) {
+      await base.putProject({
+        id,
+        name: id,
+        tokenSha256: "0".repeat(64),
+        registeredAt: "2026-10-01T00:00:00Z",
+      });
+      await base.appendRevision(id, "d", storedRevision(1), 0, 10);
+    }
+    const { store: noticeStore, calls } = counting(base);
+    const model = createNoticeReadModel({
+      store: base,
+      noticeStore,
+      now: () => NOW,
+    });
+    return { model, calls };
+  }
+
+  it("inbox() lists each project's decisions once", async () => {
+    const { model, calls } = await seeded();
+    await model.inbox();
+    expect(calls()).toBe(3);
+  });
+
+  it("decisions(project) lists each project at most once", async () => {
+    const { model, calls } = await seeded();
+    await model.decisions("a");
+    expect(calls()).toBe(3);
   });
 });

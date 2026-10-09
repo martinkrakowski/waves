@@ -153,10 +153,11 @@ async function replyFor(
     }
     case "decisions": {
       const project = matched.project;
+      const view = await noticeReadModel.decisionsView(project);
       return jsonReply(200, {
         project,
-        counts: await noticeReadModel.counts(project),
-        decisions: await noticeReadModel.decisions(project),
+        counts: view.counts,
+        decisions: view.decisions,
       });
     }
     case "events":
