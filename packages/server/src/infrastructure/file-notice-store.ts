@@ -383,7 +383,11 @@ export class FileNoticeStore implements NoticeStorePort {
   }
 
   async #decisionNames(dir: string): Promise<string[]> {
-    return (await this.#entryNames(dir, isDecisionName)).sort();
+    const byId = new Map<string, string>();
+    for (const name of await this.#entryNames(dir, isDecisionName)) {
+      byId.set(decisionId(name), name);
+    }
+    return [...byId.keys()].sort().map((id) => byId.get(id) as string);
   }
 
   async #lstatOrUndefined(path: string): Promise<Stats | undefined> {

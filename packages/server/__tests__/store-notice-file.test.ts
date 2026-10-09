@@ -14,7 +14,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { FileNoticeStore } from "../src/infrastructure/file-notice-store.js";
+import { FileNoticeStore, MemoryStore } from "../src/index.js";
 import {
   decisionRevision,
   event,
@@ -268,6 +268,34 @@ describe("FileNoticeStore", () => {
 
       const ids = (await store.listDecisions("alpha")).map((d) => d.id);
       expect(ids).toEqual(["a", "z"]);
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("lists a and a-b in id order, matching the memory store", async () => {
+    const { dataDir, dispose } = harness();
+    try {
+      const fileStore = new FileNoticeStore(dataDir);
+      const memStore = new MemoryStore();
+      for (const store of [fileStore, memStore] as const) {
+        await store.appendRevision(
+          "alpha",
+          "a-b",
+          storedRevision(1, "a-b"),
+          0,
+          3,
+        );
+        await store.appendRevision("alpha", "a", storedRevision(1, "a"), 0, 3);
+      }
+
+      const expected = ["a", "a-b"];
+      expect((await fileStore.listDecisions("alpha")).map((d) => d.id)).toEqual(
+        expected,
+      );
+      expect((await memStore.listDecisions("alpha")).map((d) => d.id)).toEqual(
+        expected,
+      );
     } finally {
       await dispose();
     }
