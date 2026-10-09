@@ -9,6 +9,7 @@ import type { ProjectLanesView } from "../../src/application/read-model.js";
 import {
   attentionView,
   decisionResponse,
+  inboxHead,
   inboxProject,
   inboxView,
   laneRow,
@@ -1747,7 +1748,9 @@ describe("the decision route", () => {
         : path === "/api/v1/attention"
           ? { status: 200, body: attentionView() }
           : path === "/api/v1/projects/alpha/decisions/d1"
-            ? { status: 200, body }
+            ? body === undefined
+              ? { status: 404 }
+              : { status: 200, body }
             : { status: 404 },
     );
   }
@@ -1784,6 +1787,22 @@ describe("the decision route", () => {
       id: "d1",
     });
     expect(textsOf(root(), ".empty")).toStrictEqual(["No such decision."]);
+    app.stop();
+  });
+
+  it("shows offline for a 200 with an unusable body", async () => {
+    const bad = { ...decisionResponse(), head: { ...inboxHead(), project: "beta" } };
+    const fetchImpl = decisionFetch(bad);
+    const { app } = harness({ pathname: "/p/alpha/d/d1", fetchImpl });
+    app.start();
+    await flush();
+
+    expect(app.route).toStrictEqual({
+      kind: "decision",
+      project: "alpha",
+      id: "d1",
+    });
+    expect(textsOf(root(), ".note")).toStrictEqual(["offline, retrying"]);
     app.stop();
   });
 
