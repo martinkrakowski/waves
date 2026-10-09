@@ -192,7 +192,156 @@ export function readReceivedAt(body: string): string | undefined {
   return typeof receivedAt === "string" ? safeText(receivedAt) : undefined;
 }
 
-function parseObject(body: string): Record<string, unknown> | undefined {
+/** The fields a `raise` 200 answers with, or `undefined` when the body is unusable. */
+export interface RaiseReply {
+  readonly revision: number;
+  readonly textSha256: string;
+  readonly created: boolean;
+  readonly entries: number;
+}
+
+/**
+ * Reads a `raise` reply body the same way `readReceivedAt` does: check the shape
+ * the server sent rather than trusting it. A body that is not one, or that carries
+ * a field of the wrong type, is refused so the caller can fail rather than print a
+ * half-read answer.
+ */
+export function readRaiseReply(body: string): RaiseReply | undefined {
+  const parsed = parseObject(body);
+  if (parsed === undefined) {
+    return undefined;
+  }
+  const revision = own(parsed, "revision");
+  const textSha256 = own(parsed, "textSha256");
+  const created = own(parsed, "created");
+  const entries = own(parsed, "entries");
+  if (
+    typeof revision !== "number" ||
+    !Number.isInteger(revision) ||
+    typeof textSha256 !== "string" ||
+    typeof created !== "boolean" ||
+    typeof entries !== "number" ||
+    !Number.isInteger(entries)
+  ) {
+    return undefined;
+  }
+  return { revision, textSha256, created, entries };
+}
+
+/**
+ * The text of a server-provided `error`, the single message the routes answer with
+ * on a 409. Empty when the body carried none, so a caller that prints it prints a
+ * blank line and never a crash.
+ */
+export function readServerError(body: string): string {
+  const issues = readIssues(body);
+  return issues.map((issue) => issue.message).join("\n");
+}
+
+/**
+ * Validation issues as `<label>: <pointer>: <message>`, one per line, with `/` for
+ * the root pointer. Commands whose local-validation failures are printed line by
+ * line and then given a closing "did not send" line use this rather than a thrown
+ * `UsageError`, so each line carries the command's own name.
+ */
+export function labelIssueLines(
+  label: string,
+  issues: readonly ServerIssue[],
+): string[] {
+  return issues.map((issue) => {
+    const pointer = issue.path === "" ? "/" : issue.path;
+    return `${label}: ${pointer}: ${issue.message}`;
+  });
+}
+
+/** The `id` an event 201 answers with, or `undefined` when absent. */
+export function readEventId(body: string): string | undefined {
+  const parsed = parseObject(body);
+  if (parsed === undefined) {
+    return undefined;
+  }
+  const id = own(parsed, "id");
+  return typeof id === "string" ? safeText(id) : undefined;
+}
+
+/** The `index` a state entry 201 answers with, or `undefined` when absent. */
+export function readStateEntryIndex(body: string): number | undefined {
+  const parsed = parseObject(body);
+  if (parsed === undefined) {
+    return undefined;
+  }
+  const index = own(parsed, "index");
+  return typeof index === "number" && Number.isInteger(index)
+    ? index
+    : undefined;
+}
+
+/** The current revision, hash and entry count the server sends on a 409. */
+export interface StaleReply {
+  readonly revision: number;
+  readonly textSha256: string;
+  readonly entries: number;
+}
+
+/**
+ * Reads the 409 body a state write gets when its pin moved before the request:
+ * the current `revision`, `textSha256` and `entries`, so the writer knows what to
+ * read again. `undefined` when the body is not one, which is a failure to read.
+ */
+export function readStaleReply(body: string): StaleReply | undefined {
+  const parsed = parseObject(body);
+  if (parsed === undefined) {
+    return undefined;
+  }
+  const revision = own(parsed, "revision");
+  const textSha256 = own(parsed, "textSha256");
+  const entries = own(parsed, "entries");
+  if (
+    typeof revision !== "number" ||
+    !Number.isInteger(revision) ||
+    typeof textSha256 !== "string" ||
+    typeof entries !== "number" ||
+    !Number.isInteger(entries)
+  ) {
+    return undefined;
+  }
+  return { revision, textSha256, entries };
+}
+
+/**
+ * The body of a `GET .../decisions/<id>`: an object holding the head's `id`,
+ * plus `revisions` and `entries` arrays the caller prints verbatim. `undefined`
+ * when the body is not one — a body read.ts cannot trust to name the decision,
+ * it refuses rather than echo. The matched `id` is the one the request named.
+ *
+ * The parsed record is re-encoded with `JSON.stringify` so what is printed is
+ * always one line of JSON, whatever shape the server sent the body in: a
+ * pretty-printed record prints many lines otherwise.
+ */
+export function readDecisionRecord(
+  body: string,
+  id: string,
+): string | undefined {
+  const parsed = parseObject(body);
+  if (parsed === undefined) {
+    return undefined;
+  }
+  const head = own(parsed, "head");
+  if (!isRecord(head)) {
+    return undefined;
+  }
+  if (own(head, "id") !== id) {
+    return undefined;
+  }
+  const revisions = own(parsed, "revisions");
+  const entries = own(parsed, "entries");
+  if (!Array.isArray(revisions) || !Array.isArray(entries)) {
+    return undefined;
+  }
+  return JSON.stringify(parsed);
+}
+
+export function parseObject(body: string): Record<string, unknown> | undefined {
   let parsed: unknown;
   try {
     parsed = JSON.parse(body);

@@ -1,4 +1,8 @@
-import { isProjectId, isWaveId } from "@hexagen-monaco/waves-contract";
+import {
+  isLaneId,
+  isProjectId,
+  isWaveId,
+} from "@hexagen-monaco/waves-contract";
 
 import { flagIssues, readProjectRequest } from "./project-request.js";
 
@@ -14,6 +18,12 @@ export const USAGE = [
   "  waves status (--file <path> | --stdin) [--interval <1-300>]",
   "  waves delete --wave <wave>",
   "  waves sync [--check]",
+  "  waves decision raise --file <path|->",
+  "  waves decision read <id>",
+  "  waves decision report <id> --state ... --words <text> --revision <n> --text-sha256 <hex> --entries <k> [--option <key>] [--by <text>]",
+  "  waves decision state <id> --state ... --revision <n> --text-sha256 <hex> --entries <k> [--reason <text>] [--superseded-by <id>] [--option <key>] [--words <text>] [--by <text>]",
+  "  waves event --topic <topic> --text <text> [--detail <text>]",
+  "  waves decisions export [--since <YYYY-MM-DD>]",
   "",
   `WAVES_URL is required. WAVES_PROJECT names the project a push, a status or`,
   "a delete belongs to. The project token is read from the file",
@@ -78,7 +88,55 @@ export type Command =
       /** Read the configuration and print the period, starting nothing. */
       readonly check: boolean;
     }
-  | { readonly kind: "delete"; readonly wave: string };
+  | { readonly kind: "delete"; readonly wave: string }
+  | {
+      readonly kind: "decision";
+      readonly action: "raise";
+      readonly source: InputSource;
+    }
+  | { readonly kind: "decision"; readonly action: "read"; readonly id: string }
+  | {
+      readonly kind: "decision";
+      readonly action: "report";
+      readonly id: string;
+      readonly state: string;
+      readonly words: string;
+      readonly revision: number;
+      readonly textSha256: string;
+      readonly entries: number;
+      readonly option?: string;
+      readonly by?: string;
+    }
+  | {
+      readonly kind: "decision";
+      readonly action: "state";
+      readonly id: string;
+      readonly state: string;
+      readonly revision: number;
+      readonly textSha256: string;
+      readonly entries: number;
+      readonly reason?: string;
+      readonly supersededBy?: string;
+      readonly option?: string;
+      readonly words?: string;
+      readonly by?: string;
+    }
+  | {
+      readonly kind: "decision";
+      readonly action: "raise";
+      readonly source: InputSource;
+    }
+  | {
+      readonly kind: "event";
+      readonly topic: string;
+      readonly text: string;
+      readonly detail?: string;
+    }
+  | {
+      readonly kind: "decisions";
+      readonly action: "export";
+      readonly since: string | null;
+    };
 
 export type ParseResult =
   | { readonly ok: true; readonly command: Command }
@@ -142,6 +200,19 @@ const VALUE_FLAGS = [
   "--wave",
   "--file",
   "--interval",
+  "--state",
+  "--words",
+  "--revision",
+  "--text-sha256",
+  "--entries",
+  "--option",
+  "--by",
+  "--reason",
+  "--superseded-by",
+  "--since",
+  "--topic",
+  "--text",
+  "--detail",
 ] as const;
 
 const SWITCH_FLAGS = [
@@ -177,6 +248,36 @@ const STATUS_FLAGS: readonly string[] = ["--file", "--stdin", "--interval"];
 /** `sync` is configured by a file, so `--check` is the only flag it takes. */
 const SYNC_FLAGS: readonly string[] = [CHECK];
 
+const DECISION_RAISE_FLAGS: readonly string[] = ["--file", "--stdin"];
+const DECISION_READ_FLAGS: readonly string[] = [];
+const DECISION_REPORT_FLAGS: readonly string[] = [
+  "--state",
+  "--words",
+  "--revision",
+  "--text-sha256",
+  "--entries",
+  "--option",
+  "--by",
+];
+const DECISION_STATE_FLAGS: readonly string[] = [
+  "--state",
+  "--revision",
+  "--text-sha256",
+  "--entries",
+  "--reason",
+  "--superseded-by",
+  "--option",
+  "--words",
+  "--by",
+];
+const EVENT_FLAGS: readonly string[] = ["--topic", "--text", "--detail"];
+const DECISIONS_EXPORT_FLAGS: readonly string[] = ["--since"];
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+const REPORT_STATES = ["approved", "declined", "answered"] as const;
+const STATE_STATES = ["delegated", "withdrawn", "superseded"] as const;
+const FLAG_INTEGER = /^\d+$/;
+
 const MIN_INTERVAL_SECONDS = 1;
 const MAX_INTERVAL_SECONDS = 300;
 const INTEGER = /^\d{1,3}$/;
@@ -204,7 +305,10 @@ export function parseArgv(argv: readonly string[]): ParseResult {
     head !== "push" &&
     head !== "status" &&
     head !== "sync" &&
-    head !== "delete"
+    head !== "delete" &&
+    head !== "decision" &&
+    head !== "event" &&
+    head !== "decisions"
   ) {
     return { ok: false, error: `unknown command ${head}` };
   }
@@ -227,7 +331,16 @@ export function parseArgv(argv: readonly string[]): ParseResult {
   if (head === "sync") {
     return readSync(tokens);
   }
-  return readDelete(tokens);
+  if (head === "delete") {
+    return readDelete(tokens);
+  }
+  if (head === "decision") {
+    return readDecision(tokens);
+  }
+  if (head === "event") {
+    return readEvent(tokens);
+  }
+  return readDecisions(tokens);
 }
 
 function tokenize(argv: readonly string[]): Tokens | string {
@@ -510,6 +623,9 @@ function readInputSource(tokens: Tokens): InputSource | string {
   if (path === undefined) {
     return fromStdin ? { kind: "stdin" } : "give --file or --stdin";
   }
+  if (path === "-") {
+    return { kind: "stdin" };
+  }
   return { kind: "file", path };
 }
 
@@ -528,12 +644,285 @@ function readInterval(raw: string | undefined): number | null | string {
   return seconds;
 }
 
-export const COMMAND_NAME: Readonly<Record<Command["kind"], string>> = {
-  help: WAVES,
-  register: `${WAVES} register`,
-  "register-all": `${WAVES} register-all`,
-  push: `${WAVES} push`,
-  status: `${WAVES} status`,
-  delete: `${WAVES} delete`,
-  sync: `${WAVES} sync`,
-};
+function readDecision(tokens: Tokens): ParseResult {
+  const action = tokens.positionals[0];
+  if (action === undefined) {
+    return {
+      ok: false,
+      error: "decision takes a sub-command: raise, read, report or state",
+    };
+  }
+  if (action === "raise") {
+    return readDecisionRaise(tokens);
+  }
+  if (action === "read") {
+    return readDecisionRead(tokens);
+  }
+  if (action === "report") {
+    return readDecisionReport(tokens);
+  }
+  if (action === "state") {
+    return readDecisionState(tokens);
+  }
+  return { ok: false, error: `unknown decision sub-command ${action}` };
+}
+
+function readDecisionRaise(tokens: Tokens): ParseResult {
+  const unused = firstUnused(tokens, DECISION_RAISE_FLAGS);
+  if (unused !== undefined) {
+    return { ok: false, error: `${unused} is not a decision option` };
+  }
+  if (tokens.positionals.length !== 1) {
+    return { ok: false, error: "raise takes no arguments" };
+  }
+  const source = readInputSource(tokens);
+  if (typeof source === "string") {
+    return { ok: false, error: source };
+  }
+  return { ok: true, command: { kind: "decision", action: "raise", source } };
+}
+
+function readDecisionRead(tokens: Tokens): ParseResult {
+  const unused = firstUnused(tokens, DECISION_READ_FLAGS);
+  if (unused !== undefined) {
+    return { ok: false, error: `${unused} is not a decision option` };
+  }
+  const id = tokens.positionals[1];
+  if (id === undefined || tokens.positionals.length !== 2) {
+    return { ok: false, error: "read takes exactly one id" };
+  }
+  if (!isLaneId(id)) {
+    return { ok: false, error: `${id} is not a decision id` };
+  }
+  return {
+    ok: true,
+    command: { kind: "decision", action: "read", id },
+  };
+}
+
+function readDecisionReport(tokens: Tokens): ParseResult {
+  const unused = firstUnused(tokens, DECISION_REPORT_FLAGS);
+  if (unused !== undefined) {
+    return { ok: false, error: `${unused} is not a decision option` };
+  }
+  const id = tokens.positionals[1];
+  if (id === undefined || tokens.positionals.length !== 2) {
+    return { ok: false, error: "report takes exactly one id" };
+  }
+  if (!isLaneId(id)) {
+    return { ok: false, error: `${id} is not a decision id` };
+  }
+  const state = tokens.values.get("--state");
+  if (state === undefined) {
+    return { ok: false, error: "give --state" };
+  }
+  if (!(REPORT_STATES as readonly string[]).includes(state)) {
+    return {
+      ok: false,
+      error: `--state must be one of ${REPORT_STATES.join(", ")}`,
+    };
+  }
+  const words = tokens.values.get("--words");
+  if (words === undefined) {
+    return { ok: false, error: "give --words" };
+  }
+  const revision = readIntegerFlag(tokens, "--revision");
+  if (typeof revision === "string") {
+    return { ok: false, error: revision };
+  }
+  const textSha256 = tokens.values.get("--text-sha256");
+  if (textSha256 === undefined) {
+    return { ok: false, error: "give --text-sha256" };
+  }
+  const entries = readIntegerFlag(tokens, "--entries");
+  if (typeof entries === "string") {
+    return { ok: false, error: entries };
+  }
+  return {
+    ok: true,
+    command: {
+      kind: "decision",
+      action: "report",
+      id,
+      state,
+      words,
+      revision,
+      textSha256,
+      entries,
+      option: tokens.values.get("--option"),
+      by: tokens.values.get("--by"),
+    },
+  };
+}
+
+function readDecisionState(tokens: Tokens): ParseResult {
+  const unused = firstUnused(tokens, DECISION_STATE_FLAGS);
+  if (unused !== undefined) {
+    return { ok: false, error: `${unused} is not a decision option` };
+  }
+  const id = tokens.positionals[1];
+  if (id === undefined || tokens.positionals.length !== 2) {
+    return { ok: false, error: "state takes exactly one id" };
+  }
+  if (!isLaneId(id)) {
+    return { ok: false, error: `${id} is not a decision id` };
+  }
+  const supersededBy = tokens.values.get("--superseded-by");
+  if (supersededBy !== undefined && !isLaneId(supersededBy)) {
+    return { ok: false, error: `${supersededBy} is not a decision id` };
+  }
+  const state = tokens.values.get("--state");
+  if (state === undefined) {
+    return { ok: false, error: "give --state" };
+  }
+  // The three answer states belong to report, not state: naming one of them
+  // here is a steer rather than an argument.
+  if ((REPORT_STATES as readonly string[]).includes(state)) {
+    return { ok: false, error: "use: waves decision report" };
+  }
+  if (!(STATE_STATES as readonly string[]).includes(state)) {
+    return {
+      ok: false,
+      error: `--state must be one of ${STATE_STATES.join(", ")}`,
+    };
+  }
+  const revision = readIntegerFlag(tokens, "--revision");
+  if (typeof revision === "string") {
+    return { ok: false, error: revision };
+  }
+  const textSha256 = tokens.values.get("--text-sha256");
+  if (textSha256 === undefined) {
+    return { ok: false, error: "give --text-sha256" };
+  }
+  const entries = readIntegerFlag(tokens, "--entries");
+  if (typeof entries === "string") {
+    return { ok: false, error: entries };
+  }
+  return {
+    ok: true,
+    command: {
+      kind: "decision",
+      action: "state",
+      id,
+      state,
+      revision,
+      textSha256,
+      entries,
+      reason: tokens.values.get("--reason"),
+      supersededBy,
+      option: tokens.values.get("--option"),
+      words: tokens.values.get("--words"),
+      by: tokens.values.get("--by"),
+    },
+  };
+}
+
+function readIntegerFlag(tokens: Tokens, flag: string): number | string {
+  const raw = tokens.values.get(flag);
+  if (raw === undefined) {
+    return `give ${flag}`;
+  }
+  if (!FLAG_INTEGER.test(raw)) {
+    return `${flag} must be an integer`;
+  }
+  return Number(raw);
+}
+
+function readEvent(tokens: Tokens): ParseResult {
+  const unused = firstUnused(tokens, EVENT_FLAGS);
+  if (unused !== undefined) {
+    return { ok: false, error: `${unused} is not an event option` };
+  }
+  if (tokens.positionals.length !== 0) {
+    return { ok: false, error: "event takes no positional arguments" };
+  }
+  const topic = tokens.values.get("--topic");
+  if (topic === undefined) {
+    return { ok: false, error: "give --topic" };
+  }
+  const text = tokens.values.get("--text");
+  if (text === undefined) {
+    return { ok: false, error: "give --text" };
+  }
+  return {
+    ok: true,
+    command: {
+      kind: "event",
+      topic,
+      text,
+      detail: tokens.values.get("--detail"),
+    },
+  };
+}
+
+function readSince(
+  raw: string | undefined,
+): { ok: true; since: string | null } | { ok: false; error: string } {
+  if (raw === undefined) {
+    return { ok: true, since: null };
+  }
+  if (!DATE_PATTERN.test(raw)) {
+    return { ok: false, error: "--since must be a date in YYYY-MM-DD form" };
+  }
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) {
+    return { ok: false, error: "--since must be a real date" };
+  }
+  if (date.toISOString().slice(0, 10) !== raw) {
+    return { ok: false, error: "--since must be a real date" };
+  }
+  return { ok: true, since: raw };
+}
+
+function readDecisions(tokens: Tokens): ParseResult {
+  const unused = firstUnused(tokens, DECISIONS_EXPORT_FLAGS);
+  if (unused !== undefined) {
+    return { ok: false, error: `${unused} is not a decisions option` };
+  }
+  if (tokens.positionals.length === 0) {
+    return {
+      ok: false,
+      error: "decisions takes a sub-command: export",
+    };
+  }
+  const action = tokens.positionals[0];
+  if (action !== "export") {
+    return { ok: false, error: `unknown decisions sub-command ${action}` };
+  }
+  if (tokens.positionals.length !== 1) {
+    return { ok: false, error: "export takes no arguments" };
+  }
+  const since = readSince(tokens.values.get("--since"));
+  if (!since.ok) {
+    return { ok: false, error: since.error };
+  }
+  return {
+    ok: true,
+    command: { kind: "decisions", action: "export", since: since.since },
+  };
+}
+
+export function commandName(command: Command): string {
+  switch (command.kind) {
+    case "help":
+      return WAVES;
+    case "register":
+      return `${WAVES} register`;
+    case "register-all":
+      return `${WAVES} register-all`;
+    case "push":
+      return `${WAVES} push`;
+    case "status":
+      return `${WAVES} status`;
+    case "delete":
+      return `${WAVES} delete`;
+    case "sync":
+      return `${WAVES} sync`;
+    case "decision":
+      return `${WAVES} decision ${command.action}`;
+    case "event":
+      return `${WAVES} event`;
+    case "decisions":
+      return `${WAVES} decisions ${command.action}`;
+  }
+}

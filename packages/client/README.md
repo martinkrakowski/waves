@@ -95,6 +95,92 @@ The input is a JSON object with two optional keys, `prs` and `backlog`, and no o
 
 **Pacing.** The server gives a project one write a second, shared by its pushes and its status. A `429` is waited for exactly as long as the `Retry-After` header asks, up to a minute, so a status sent right after a push is waited for rather than refused outright, up to three times.
 
+## Raise a decision
+
+```sh
+WAVES_URL=https://waves.example.com WAVES_PROJECT=my-project \
+  waves decision raise --file decision.json
+```
+
+A decision is a one-off question the owner must settle. It is its own record, with its own id, and is not carried in a wave. The input is a `waves-notice/v1` document (`docs/waves-v1.md` in the repository); the CLI fills in `schema`, `kind`, `project`, `shape` (defaulting to `choice`), `raisedAt`, and `commits`, `appliesTo`, `evidence`, `options` (defaulting to `[]`) — only a key the document lacks is filled in, and a key the document already has is kept as given: a file that claims another project is refused before anything is sent. `raise` is safe to repeat, so it retries a `429` and a `5xx` and a network failure the same way `status` does.
+
+The smallest valid document for each shape:
+
+A `choice`:
+
+```json
+{
+  "id": "d1",
+  "question": "What should we do?",
+  "options": [
+    { "key": "a", "text": "A", "cost": "C1" },
+    { "key": "b", "text": "B", "cost": "C2" }
+  ],
+  "hardToUndo": { "value": false },
+  "decider": "owner",
+  "raisedBy": "session"
+}
+```
+
+An `action` only the owner runs:
+
+```json
+{
+  "shape": "action",
+  "id": "d2",
+  "question": "Should I restart the platform?",
+  "hardToUndo": { "value": true, "reason": "the work is merged or obsolete" },
+  "decider": "owner",
+  "raisedBy": "session",
+  "actElsewhere": {
+    "where": "session platform-1",
+    "what": "run deploy/platform.sh"
+  }
+}
+```
+
+A standing `instruction`:
+
+```json
+{
+  "shape": "instruction",
+  "id": "d3",
+  "question": "Should I follow the on-call runbook?",
+  "hardToUndo": { "value": false },
+  "decider": "owner",
+  "raisedBy": "session",
+  "appliesTo": ["platform-1"]
+}
+```
+
+On success `raise` prints one line:
+
+```
+raised <project>/<id>: revision <n> (<new|unchanged>), textSha256 <hex>, entries <k>
+```
+
+A decision the contract will not take is refused before anything is sent — one line per issue, the JSON pointer of the field, then a closing line. For a `choice` with one option and a `hardToUndo.value: true` with no reason:
+
+```
+waves decision raise: /hardToUndo/reason: expected a reason
+waves decision raise: /options: expected at least 2 options for a choice
+waves decision raise: not raised; fix the document, or ask in the terminal
+```
+
+Exit 2, nothing sent.
+
+A configuration error — a missing or bad `WAVES_URL`, no `WAVES_PROJECT`, or an unreadable token file — ends with `waves decision raise: not raised; fix the configuration, or ask in the terminal` and exits 2, sending nothing.
+
+`waves decision read <id>` prints the full decision record as one line of JSON. A decision id is letters, digits, `_` and `-`; anything else is refused before a request is made. **Exit 0 means the record was read and printed; it says nothing about whether the owner answered.** The reads — `read`, `export` — need no token: a decision is readable by anyone on the network the page is served to, so no secret is sent. These reads send no token, so they work only where the service has no viewer token configured.
+
+`waves decision report <id>` records the owner's answer from the terminal (`--state approved|declined|answered`, `--words`, `--revision`, `--text-sha256`, `--entries`, `[--option]`, `[--by]`). A decision id is letters, digits, `_` and `-`; anything else is refused before a request is made. `waves decision state <id>` does the same for a session state change (`--state delegated|withdrawn|superseded`, `--revision`, `--text-sha256`, `--entries`, `[--reason]`, `[--superseded-by]`, `[--option]`, `[--words]`, `[--by]`); `approved`, `declined` and `answered` are refused here with `use: waves decision report`. A `report` or `state` is not retried once the request may have been sent: a state write is not idempotent. A `409` is exit 5 — the pin is stale, read the decision again before writing. If the request may have been recorded but no usable reply came back — a `5xx`, a `201` with an unusable body, or a network failure after the body was sent — the line says it may or may not have been recorded and exits 1; only a refusal that certainly did not arrive — a `401`, a `404`, or a `429` past its retries — says `not recorded, ask in the terminal`.
+
+`waves event --topic <topic> --text <text> [--detail <text>]` records one immutable event: a topic, a sentence, and optional detail.
+
+`waves decisions export [--since <YYYY-MM-DD>]` GETs the project's decisions and prints the reported answers that were received on or after `--since` (all of them when the flag is absent) as a Markdown table under `## Reported answers (reported, not signed)`, for `policy.md` to append.
+
+No secret, token, key or personal data belongs in a decision: the service's reads need no token.
+
 ## Keep the waves fresh
 
 ```sh
@@ -163,7 +249,7 @@ TLS verification is always on. Plain `http://` is accepted for loopback hosts wi
 
 ## Exit codes
 
-`0` success, `1` a server or network failure (after at most two retries for a network error and, for `push` and `status`, a 5xx, and a bounded wait on 429; `register` and `register-all` never retry a 5xx, because the request may already have minted a project), `2` a usage, configuration or local-validation error. A `register-all` run exits `2` for anything wrong with its list or its credential — having sent nothing — and `1` when a request failed or the run stopped; conflicts alone leave it at `0`. A `sync` run exits `2` for a `sync.json` it cannot use, having started nothing, and `1` when any project failed or was skipped for want of time — a project that was not pushed is not a successful tick.
+`0` success, `1` a server or network failure (after at most two retries for a network error and, for `push` and `status`, a 5xx, and a bounded wait on 429; `register` and `register-all` never retry a 5xx, because the request may already have minted a project). A `report`, `state` or `event` that may have reached the server with no usable reply is reported as `…; it may or may not have been recorded`, and only a request that certainly did not arrive — a refusal before the body was sent, a `401`, a `404`, or a `429` past its retries — is reported as `…; not recorded, ask in the terminal`. `2` a usage, configuration or local-validation error (nothing sent). `5` a `409` on a state write (`report` or `state`): the pin is stale — whether the server sent the current revision, hash and entry count or an unusable body — read the decision again. A `register-all` run exits `2` for anything wrong with its list or its credential — having sent nothing — and `1` when a request failed or the run stopped; conflicts alone leave it at `0`. A `sync` run exits `2` for a `sync.json` it cannot use, having started nothing, and `1` when any project failed or was skipped for want of time — a project that was not pushed is not a successful tick.
 
 ## Licence
 

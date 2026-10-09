@@ -1,3 +1,5 @@
+import { isLaneId, isProjectId } from "@hexagen-monaco/waves-contract";
+
 import { isValidId } from "./id.js";
 
 export const API_PREFIX = "/api/v1/projects";
@@ -146,7 +148,41 @@ export function statusPath(project: string): string {
   return `${API_PREFIX}/${encodeURIComponent(project)}/status`;
 }
 
-/** The line printed before every request to an insecurely allowed host. */
-export function insecureWarning(origin: string): string {
-  return `waves: ${origin} is plain http, so the token travels in clear text`;
+/** The URL of one decision, the route a `raise` PUTs and a `read` GETs. */
+export function decisionPath(project: string, id: string): string {
+  if (!isProjectId(project)) {
+    throw new Error(`invalid project id: ${JSON.stringify(project)}`);
+  }
+  if (!isLaneId(id)) {
+    throw new Error(`invalid decision id: ${JSON.stringify(id)}`);
+  }
+  return `${API_PREFIX}/${encodeURIComponent(project)}/decisions/${encodeURIComponent(id)}`;
+}
+
+/** `POST` for one project's state entries on one decision. */
+export function decisionStatesPath(project: string, id: string): string {
+  return `${decisionPath(project, id)}/states`;
+}
+
+/** `POST` for one project's events. */
+export function eventsPath(project: string): string {
+  return `${API_PREFIX}/${encodeURIComponent(project)}/events`;
+}
+
+/** The heads of every decision in one project. */
+export function projectDecisionsPath(project: string): string {
+  return `${API_PREFIX}/${encodeURIComponent(project)}/decisions`;
+}
+
+/**
+ * The line printed before every request to an insecurely allowed host. A write
+ * carries the project's token, so the warning names it; a read does not, so it
+ * speaks plainly about the response instead — the host is still untrusted, but
+ * no secret is crossing it.
+ */
+export function insecureWarning(origin: string, hasToken: boolean): string {
+  const secret = hasToken
+    ? "the token travels in clear text"
+    : "the response is fetched in clear text";
+  return `waves: ${origin} is plain http, so ${secret}`;
 }

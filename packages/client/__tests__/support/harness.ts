@@ -38,12 +38,23 @@ export const GENERATED_AT = "2026-02-03T04:05:06.789Z";
 const printed: string[] = [];
 const secrets = new Set<string>([ADMIN_TOKEN, ENROLL_TOKEN, PROJECT_TOKEN]);
 
-/**
- * A secret is a secret whether or not a test named it: the tokens this package
+/** A secret is a secret whether or not a test named it: the tokens this package
  * issues or reads all carry the same deliberate misspelling, so a line that
  * contains one is caught even if no test registered it.
  */
 export const SECRET_SHAPE = /t0ken[^\s"\\]*/;
+
+/**
+ * The bearer a request carries, read safely: a `GET` has no bearer at all, and a
+ * mutation's is the project's token. Tests use this so a read never has to pretend
+ * a token slipped out.
+ */
+export function bearerOf(request: HttpRequest | undefined): string | undefined {
+  if (request === undefined || request.method === "GET") {
+    return undefined;
+  }
+  return request.bearer;
+}
 
 export function registerSecret(secret: string): void {
   secrets.add(secret);

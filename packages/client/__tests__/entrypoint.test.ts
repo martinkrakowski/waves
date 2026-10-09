@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { run } from "../src/application/entrypoint.js";
 import { USAGE } from "../src/domain/args.js";
+import { FileRefusal } from "../src/application/ports.js";
 import {
   CONFIG_DIR,
   PROJECT,
@@ -132,5 +133,137 @@ describe("run", () => {
         broken,
       ),
     ).rejects.toBe("not even an error");
+  });
+
+  it("labels a refused decision command with its name", async () => {
+    const built = harness({ vars: { WAVES_PROJECT: undefined } });
+    expect(
+      await run(["decision", "raise", "--stdin"], built.io, built.deps),
+    ).toBe(2);
+    expect(built.err).toEqual([
+      "waves decision raise: WAVES_PROJECT is required",
+      "waves decision raise: not raised; fix the configuration, or ask in the terminal",
+    ]);
+  });
+
+  it("labels a refused event command with its name", async () => {
+    const built = harness({
+      vars: { WAVES_PROJECT: undefined },
+    });
+    expect(
+      await run(
+        ["event", "--topic", "relay", "--text", "ok"],
+        built.io,
+        built.deps,
+      ),
+    ).toBe(2);
+    expect(built.err).toEqual(["waves event: WAVES_PROJECT is required"]);
+  });
+
+  it("labels a refused decisions command with its name", async () => {
+    const built = harness({
+      vars: { WAVES_PROJECT: undefined },
+    });
+    expect(await run(["decisions", "export"], built.io, built.deps)).toBe(2);
+    expect(built.err).toEqual([
+      "waves decisions export: WAVES_PROJECT is required",
+    ]);
+  });
+
+  it("reports a file it will not read, and exits 2", async () => {
+    const built = harness({
+      files: { [tokenPath]: { text: PROJECT_TOKEN, mode: 0o600 } },
+    });
+    const broken = {
+      ...built.deps,
+      files: {
+        ...built.deps.files,
+        readSecret: async () => {
+          throw new FileRefusal("/path is a link");
+        },
+      },
+    };
+    expect(await run(["decision", "raise", "--stdin"], built.io, broken)).toBe(
+      2,
+    );
+    expect(built.err).toEqual(["waves decision raise: /path is a link"]);
+  });
+
+  describe("read exit 0 is not an answer", () => {
+    it("reads a decision and prints the body, without the owner's answer", async () => {
+      const body = JSON.stringify({
+        head: {
+          id: "d1",
+          question: "q",
+          state: "approved",
+          source: "reported",
+          at: "2026-10-08T10:00:00Z",
+          revision: 1,
+          textSha256: "abc",
+        },
+        revisions: [],
+        entries: [],
+      });
+      const built = harness({ script: [reply(200, body)] });
+      expect(await run(["decision", "read", "d1"], built.io, built.deps)).toBe(
+        0,
+      );
+      expect(built.out).toEqual([body]);
+      expect(built.err).toEqual([]);
+    });
+  });
+
+  it("labels a refused decision report with its name", async () => {
+    const built = harness({ vars: { WAVES_PROJECT: undefined } });
+    expect(
+      await run(
+        [
+          "decision",
+          "report",
+          "d1",
+          "--state",
+          "approved",
+          "--words",
+          "yes",
+          "--revision",
+          "1",
+          "--text-sha256",
+          "a".repeat(64),
+          "--entries",
+          "0",
+        ],
+        built.io,
+        built.deps,
+      ),
+    ).toBe(2);
+    expect(built.err).toEqual([
+      "waves decision report: WAVES_PROJECT is required",
+    ]);
+  });
+
+  it("labels a refused decision state with its name", async () => {
+    const built = harness({ vars: { WAVES_PROJECT: undefined } });
+    expect(
+      await run(
+        [
+          "decision",
+          "state",
+          "d1",
+          "--state",
+          "withdrawn",
+          "--revision",
+          "1",
+          "--text-sha256",
+          "a".repeat(64),
+          "--entries",
+          "0",
+        ],
+        built.io,
+        built.deps,
+      ),
+    ).toBe(2);
+    expect(built.err).toEqual([
+      "waves decision state: WAVES_PROJECT is required",
+    ]);
   });
 });

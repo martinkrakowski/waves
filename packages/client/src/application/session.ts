@@ -173,8 +173,8 @@ export function transportFor(
     origin: endpoint.origin,
     ca: session.ca,
     warnInsecure: endpoint.warnInsecure
-      ? () => {
-          deps.err(insecureWarning(endpoint.origin));
+      ? (request) => {
+          deps.err(insecureWarning(endpoint.origin, request.method !== "GET"));
         }
       : undefined,
   });

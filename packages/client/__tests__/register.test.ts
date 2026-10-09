@@ -14,6 +14,7 @@ import {
   ENROLL_TOKEN,
   PROJECT,
   PROJECT_TOKEN,
+  bearerOf,
   fakeFiles,
   harness,
   network,
@@ -190,7 +191,7 @@ describe("register", () => {
       mode: 0o400,
     });
     await register(command(), deps);
-    expect(sent[0]?.request.bearer).toBe(ADMIN_TOKEN);
+    expect(bearerOf(sent[0]?.request)).toBe(ADMIN_TOKEN);
   });
 
   it("refuses an admin token file that is not there or is empty", async () => {

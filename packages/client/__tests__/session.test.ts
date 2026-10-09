@@ -296,9 +296,12 @@ describe("transportFor", () => {
       },
       built.deps,
     );
-    built.transportOptions[0]?.warnInsecure?.();
+    built.transportOptions[0]?.warnInsecure?.({
+      method: "GET",
+      url: "http://10.0.0.4:8080/api/v1/projects/d1",
+    });
     expect(built.err).toEqual([
-      "waves: http://10.0.0.4:8080 is plain http, so the token travels in clear text",
+      "waves: http://10.0.0.4:8080 is plain http, so the response is fetched in clear text",
     ]);
   });
 });

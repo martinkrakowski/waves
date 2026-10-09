@@ -6,6 +6,7 @@ import {
   GENERATED_AT,
   PROJECT,
   PROJECT_TOKEN,
+  bearerOf,
   harness,
   laneWithTail,
   reply,
@@ -53,7 +54,7 @@ describe("sendWave", () => {
     expect(request?.url).toBe(
       `https://waves.example.com/api/v1/projects/${OTHER}/waves/${WAVE}`,
     );
-    expect(request?.bearer).toBe(OTHER_TOKEN);
+    expect(bearerOf(request)).toBe(OTHER_TOKEN);
     expect(JSON.parse(request?.body ?? "{}")).toMatchObject({
       project: OTHER,
       wave: WAVE,
@@ -125,7 +126,7 @@ describe("sendProjectStatus", () => {
     expect(request?.url).toBe(
       `https://waves.example.com/api/v1/projects/${OTHER}/status`,
     );
-    expect(request?.bearer).toBe(OTHER_TOKEN);
+    expect(bearerOf(request)).toBe(OTHER_TOKEN);
     expect(JSON.parse(request?.body ?? "{}")).toMatchObject({
       project: OTHER,
       generatedAt: GENERATED_AT,

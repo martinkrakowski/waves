@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  decisionPath,
+  decisionStatesPath,
   insecureWarning,
   isHostName,
   isHttpsUrl,
@@ -133,8 +135,33 @@ describe("paths", () => {
     expect(statusPath("waves-demo")).toBe("/api/v1/projects/waves-demo/status");
   });
 
-  it("names an insecure origin once, for every request", () => {
-    expect(insecureWarning("http://10.0.0.4:8080")).toBe(
+  it("encodes an id and a project that is already valid", () => {
+    expect(decisionPath("waves-demo", "d1")).toBe(
+      "/api/v1/projects/waves-demo/decisions/d1",
+    );
+    expect(decisionStatesPath("waves-demo", "d1")).toBe(
+      "/api/v1/projects/waves-demo/decisions/d1/states",
+    );
+  });
+
+  it("throws before a bad project or id becomes a path segment", () => {
+    expect(() => decisionPath("Waves Demo", "d1")).toThrow(
+      "invalid project id",
+    );
+    expect(() => decisionPath("waves-demo", "..")).toThrow(
+      "invalid decision id",
+    );
+    // decisionStatesPath is built on decisionPath, so it checks too.
+    expect(() => decisionStatesPath("waves-demo", "..")).toThrow(
+      "invalid decision id",
+    );
+  });
+
+  it("names an insecure origin for a write and for a read", () => {
+    expect(insecureWarning("http://10.0.0.4:8080", false)).toBe(
+      "waves: http://10.0.0.4:8080 is plain http, so the response is fetched in clear text",
+    );
+    expect(insecureWarning("http://10.0.0.4:8080", true)).toBe(
       "waves: http://10.0.0.4:8080 is plain http, so the token travels in clear text",
     );
   });

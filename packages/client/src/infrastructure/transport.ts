@@ -29,6 +29,14 @@ export const CONTINUE_WAIT_MS = 1000;
 /** An answer bigger than this is a sign the peer is not the server we asked for. */
 export const MAX_BODY_BYTES = 65_536;
 
+/**
+ * A read can be far larger than a write: a decision holds up to 20 revisions and
+ * 70 entries of up to 2,000 characters each, which is well under this and still
+ * small enough to print as one line. Writes keep the smaller cap, since a status
+ * or a snapshot that large is a peer that is not the server.
+ */
+export const MAX_GET_BODY_BYTES = 2 * 1024 * 1024;
+
 export const JSON_TYPE = "application/json";
 
 const BEARER = "Bearer ";
@@ -54,15 +62,17 @@ type Deadline = () => AbortSignal;
 export function buildOptions(
   url: URL,
   method: string,
-  bearer: string,
+  bearer: string | undefined,
   body: string | undefined,
   ca: string | undefined,
   deadline: AbortSignal,
 ): RequestOptions {
   const headers: Record<string, string> = {
     accept: JSON_TYPE,
-    authorization: `${BEARER}${bearer}`,
   };
+  if (bearer !== undefined) {
+    headers["authorization"] = `${BEARER}${bearer}`;
+  }
   if (body !== undefined) {
     headers["content-type"] = JSON_TYPE;
     headers["content-length"] = String(Buffer.byteLength(body));
@@ -116,18 +126,26 @@ async function send(
 ): Promise<TransportOutcome> {
   const url = new URL(request.url);
   if (url.protocol === "http:") {
-    options.warnInsecure?.();
+    options.warnInsecure?.(request);
   }
   const signal = deadline();
   const requestOptions = buildOptions(
     url,
     request.method,
-    request.bearer,
+    request.method === "GET" ? undefined : request.bearer,
     request.body,
     options.ca,
     signal,
   );
-  return await exchange(start, requestOptions, request.body, signal);
+  const maxBodyBytes =
+    request.method === "GET" ? MAX_GET_BODY_BYTES : MAX_BODY_BYTES;
+  return await exchange(
+    start,
+    requestOptions,
+    request.body,
+    signal,
+    maxBodyBytes,
+  );
 }
 
 /**
@@ -146,6 +164,7 @@ function exchange(
   options: RequestOptions,
   body: string | undefined,
   signal: AbortSignal,
+  maxBodyBytes: number,
 ): Promise<TransportOutcome> {
   return new Promise((resolve) => {
     let answered = false;
@@ -220,8 +239,8 @@ function exchange(
       };
       response.on("data", (chunk: Buffer) => {
         size += chunk.length;
-        if (size > MAX_BODY_BYTES) {
-          lost(`the answer is larger than ${MAX_BODY_BYTES} bytes`, () => {
+        if (size > maxBodyBytes) {
+          lost(`the answer is larger than ${maxBodyBytes} bytes`, () => {
             response.destroy();
           });
           return;
