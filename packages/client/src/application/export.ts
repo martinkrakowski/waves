@@ -39,24 +39,28 @@ export async function exportDecisions(
   const project = readProject(deps.env);
   const transport = transportFor(session, deps);
 
-  const headsOutcome = await transport.send({
+  const readOutcome = await transport.send({
     method: "GET",
     url: `${session.endpoint.origin}${projectDecisionsPath(project)}`,
   });
-  if (headsOutcome.kind === "network") {
-    throw new Failure(headsOutcome.message);
+  if (readOutcome.kind === "network") {
+    throw new Failure(readOutcome.message);
   }
-  const { status: headsStatus, body: headsBody } = headsOutcome.reply;
-  if (headsStatus !== 200) {
-    throw new Failure(`${headsStatus} ${reasonPhrase(headsStatus)}`);
+  const { status: listStatus, body: listBody } = readOutcome.reply;
+  if (listStatus !== 200) {
+    throw new Failure(`${listStatus} ${reasonPhrase(listStatus)}`);
   }
-
-  const pending = readHeads(headsBody).filter(
-    (head) => isReportedAnswer(head) && matchesSince(head.at, command.since),
-  );
-
+  // The list is refused as a whole when it is not the object with a `decisions`
+  // array the route should answer: a half-parsed list is no basis for a table.
+  const heads = readHeads(listBody);
+  if (heads === undefined) {
+    throw new Failure("the server sent an unusable body");
+  }
   const records: DecisionRecord[] = [];
-  for (const head of pending) {
+  for (const head of heads) {
+    if (!isReportedAnswer(head)) {
+      continue;
+    }
     const outcome = await transport.send({
       method: "GET",
       url: `${session.endpoint.origin}${decisionPath(project, head.id)}`,
@@ -72,9 +76,17 @@ export async function exportDecisions(
     if (record === undefined) {
       throw new Failure("the server sent an unusable body");
     }
+    // A head that was an answer on the list can stop being one while it is
+    // fetched, so the check is done again on the fresh record: a question that
+    // is still open is left out, never half-printed.
+    if (!isReportedAnswer(record.head)) {
+      continue;
+    }
+    if (!matchesSince(record.entry?.receivedAt, command.since)) {
+      continue;
+    }
     records.push(record);
   }
-
   deps.out(buildMarkdown(records));
   return EXIT_OK;
 }

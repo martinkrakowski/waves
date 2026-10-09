@@ -30,8 +30,9 @@ describe("readHeads", () => {
         },
       ],
     });
-    expect(readHeads(bodies)).toHaveLength(1);
-    expect(readHeads(bodies)[0]?.id).toBe("d1");
+    const heads = readHeads(bodies);
+    expect(heads).toHaveLength(1);
+    expect(heads?.[0]?.id).toBe("d1");
   });
 
   it("skips heads with the wrong field types", () => {
@@ -49,14 +50,41 @@ describe("readHeads", () => {
     });
     const heads = readHeads(bodies);
     expect(heads).toHaveLength(1);
-    expect(heads[0]?.id).toBe("d2");
+    expect(heads?.[0]?.id).toBe("d2");
   });
 
-  it("returns nothing for a body that is not the list", () => {
-    expect(readHeads("not json")).toEqual([]);
-    expect(readHeads("{}")).toEqual([]);
-    expect(readHeads("[1,2]")).toEqual([]);
-    expect(readHeads('{"decisions":"x"}')).toEqual([]);
+  it("returns undefined for a body that is not the list", () => {
+    expect(readHeads("not json")).toBeUndefined();
+    expect(readHeads("{}")).toBeUndefined();
+    expect(readHeads("[1,2]")).toBeUndefined();
+    expect(readHeads('{"decisions":"x"}')).toBeUndefined();
+  });
+
+  it("skips heads that belong to another project via a from key", () => {
+    const bodies = JSON.stringify({
+      decisions: [
+        {
+          id: "d1",
+          from: "waves-other",
+          question: "q",
+          state: "approved",
+          source: "reported",
+          revision: 1,
+          textSha256: "a".repeat(64),
+        },
+        {
+          id: "d2",
+          question: "q",
+          state: "approved",
+          source: "reported",
+          revision: 1,
+          textSha256: "b".repeat(64),
+        },
+      ],
+    });
+    const heads = readHeads(bodies);
+    expect(heads).toHaveLength(1);
+    expect(heads?.[0]?.id).toBe("d2");
   });
 });
 
@@ -212,10 +240,13 @@ describe("matchesSince", () => {
 });
 
 describe("escapeCell", () => {
-  it("escapes pipes and newlines so the table stays one row per decision", () => {
+  it("escapes backslash, pipes and line endings so the table stays one row", () => {
+    expect(escapeCell("a\\b")).toBe("a\\\\b");
     expect(escapeCell("a|b")).toBe("a\\|b");
     expect(escapeCell("a\nb")).toBe("a b");
-    expect(escapeCell("a|b\nc")).toBe("a\\|b c");
+    expect(escapeCell("a\r\nb")).toBe("a b");
+    expect(escapeCell("a\rb")).toBe("a b");
+    expect(escapeCell("a\\|b\nc")).toBe("a\\\\\\|b c");
   });
 });
 
@@ -237,7 +268,7 @@ describe("formatRow", () => {
       receivedAt: "2026-10-08T10:00:01Z",
     };
     expect(formatRow(head, entry)).toBe(
-      "reported, not signed | d1 | What should we do? | approved (b) | go with B | 2026-10-08T10:00:00Z | revision 1, textSha256 abc",
+      "reported, not signed | d1 | What should we do? | approved (b) | go with B | 2026-10-08T10:00:01Z | revision 1, textSha256 abc",
     );
   });
 
@@ -248,11 +279,11 @@ describe("formatRow", () => {
       receivedAt: undefined,
     };
     expect(formatRow(head, entry)).toBe(
-      "reported, not signed | d1 | What should we do? | approved |  | 2026-10-08T10:00:00Z | revision 1, textSha256 abc",
+      "reported, not signed | d1 | What should we do? | approved |  |  | revision 1, textSha256 abc",
     );
   });
 
-  it("falls back to the entry's receivedAt when the head has no at", () => {
+  it("uses the entry's receivedAt for the time cell", () => {
     const noAtHead: HeadInfo = { ...head, at: undefined };
     const entry: EntryInfo = {
       option: undefined,
@@ -262,7 +293,7 @@ describe("formatRow", () => {
     expect(formatRow(noAtHead, entry)).toContain("2026-10-08T12:00:00Z");
   });
 
-  it("uses an empty time when neither head nor entry has one", () => {
+  it("uses an empty time cell when the entry has no receivedAt", () => {
     const noAtHead: HeadInfo = { ...head, at: undefined };
     expect(formatRow(noAtHead, undefined)).toContain(
       "|  | revision 1, textSha256 abc",
@@ -290,7 +321,7 @@ describe("buildMarkdown", () => {
 
     expect(output).toContain("## Reported answers (reported, not signed)");
     expect(output).toContain("| reported, not signed |");
-    expect(output).toContain("| --- |");
+    expect(output).toContain("| --- | --- | --- | --- | --- | --- | --- |");
     expect(output).toContain(
       "| reported, not signed | d1 | What should we do? | approved (b) | go with B",
     );

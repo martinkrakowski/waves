@@ -33,14 +33,14 @@ export interface DecisionRecord {
  * is not the right shape is skipped: an unparseable body, a non-array of heads,
  * or one head with a wrong field type. The caller sees only what it can use.
  */
-export function readHeads(body: string): readonly HeadInfo[] {
+export function readHeads(body: string): readonly HeadInfo[] | undefined {
   const parsed = parseObject(body);
   if (parsed === undefined) {
-    return [];
+    return undefined;
   }
   const decisions = own(parsed, "decisions");
   if (!Array.isArray(decisions)) {
-    return [];
+    return undefined;
   }
   const heads: HeadInfo[] = [];
   for (const value of decisions) {
@@ -54,6 +54,11 @@ export function readHeads(body: string): readonly HeadInfo[] {
 
 function readHead(value: unknown): HeadInfo | undefined {
   if (!isRecord(value)) {
+    return undefined;
+  }
+  // A head that carries a `from` belongs to another project: it is exported by
+  // that project, and it is never this one.
+  if (own(value, "from") !== undefined) {
     return undefined;
   }
   const id = own(value, "id");
@@ -159,12 +164,15 @@ export function matchesSince(
 }
 
 /**
- * Escapes a cell so a pipe or a newline cannot break the table: a pipe becomes
- * `\|`, and a newline becomes a space — one row, no matter what the decision's
- * question held.
+ * Escapes a cell so a pipe or a newline cannot break the table: a backslash
+ * becomes two, a pipe becomes an escaped pipe, and every line ending — `\r\n`,
+ * `\r` or `\n` — becomes a space, so one decision is always one row.
  */
 export function escapeCell(text: string): string {
-  return text.replace(/\|/g, "\\|").replace(/\n/g, " ");
+  return text
+    .replace(/\\/g, "\\\\")
+    .replace(/\|/g, "\\|")
+    .replace(/\r\n|\r|\n/g, " ");
 }
 
 /** Builds one markdown table row from the verdict, the words and the time. */
@@ -177,7 +185,7 @@ export function formatRow(
       ? `${head.state} (${entry.option})`
       : head.state;
   const words = entry?.words ?? "";
-  const time = head.at ?? entry?.receivedAt ?? "";
+  const time = entry?.receivedAt ?? "";
   return [
     ANSWER_PREFIX,
     head.id,
@@ -205,4 +213,4 @@ export function buildMarkdown(rows: readonly DecisionRecord[]): string {
 
 const EXPORT_HEADING = "## Reported answers (reported, not signed)";
 const TABLE_HEADER = `${ANSWER_PREFIX} | decision | question | verdict | words | time | text`;
-const TABLE_SEPARATOR = "---";
+const TABLE_SEPARATOR = "--- | --- | --- | --- | --- | --- | ---";
