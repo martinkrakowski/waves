@@ -33,11 +33,28 @@ jobs:
       && github.event.sender.type != 'Bot'
       && github.event.pull_request.draft == false
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Stamp run start
         id: started
         run: echo "at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      # A two-arm trial, the same in every project that runs this reviewer so their records can
+      # be compared: even-numbered pull requests are reviewed by GPT-6.1 Sol, odd-numbered by Hy4
+      # preview, with the same instructions, caps and fallback, so the model is the only
+      # difference. Actions expressions have no arithmetic, hence a step. The number comes in
+      # through env and is never interpolated into the script.
+      - name: Pick the trial arm
+        id: arm
+        env:
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          case "$PR" in
+            ''|*[!0-9]*) echo "not a pull request number: '$PR'" >&2; exit 1 ;;
+          esac
+          if [ $((PR % 2)) -eq 0 ]; then model="openrouter/openai/gpt-6.1-sol"; else model="openrouter/tencent/hy4-preview"; fi
+          echo "model=$model" >> "$GITHUB_OUTPUT"
+          echo "PR #$PR -> $model" >> "$GITHUB_STEP_SUMMARY"
 
       - name: PR-Agent
         uses: docker://pragent/pr-agent@sha256:31b9aac6ab067bada9a0c1b001d30ebc500ea4487e00a93c18c59b9ef5fa66db # 0.47.0-github_action
@@ -45,18 +62,20 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENROUTER__KEY: ${{ secrets.OPENROUTER_KEY }}
           config.restricted_mode: "true"
-          config.model: "openrouter/openai/gpt-6.1-sol"
+          config.model: ${{ steps.arm.outputs.model }}
+          # Haiku only: a fallback to the other arm's model would turn a failed call into a review
+          # by the wrong model and spoil the comparison. A Haiku review is visibly a third thing.
           config.fallback_models: '["openrouter/anthropic/claude-haiku-4.5"]'
-          # The ceiling: at most 3 calls, each with at most 60,000 prompt tokens and 8,000
-          # completion tokens, and 5 minutes per call inside the job's 15.
+          # The ceiling: at most 4 calls, each with at most 70,000 prompt tokens and 8,000
+          # completion tokens, and 10 minutes per call inside the job's 20.
           config.custom_model_max_tokens: "128000"
-          config.max_model_tokens: "60000"
+          config.max_model_tokens: "70000"
           openrouter.max_tokens: "8000"
-          config.ai_timeout: "300"
+          config.ai_timeout: "600"
           config.repo_context_files: '["AGENTS.md"]'
           config.repo_context_max_lines: "400"
-          # Model, tokens and estimated cost are appended to the comment, so the cost of every
-          # review is on the pull request it reviewed.
+          # Asked for, though 0.47.0 was seen to accept both and print nothing: the number of
+          # model calls and their time are read from this job's log instead.
           config.output_run_details: "true"
           config.output_run_cost: "true"
           pr_reviewer.require_ticket_analysis_review: "false"
@@ -68,7 +87,7 @@ jobs:
           pr_code_suggestions.committable_code_suggestions: "true"
           pr_code_suggestions.publish_output_no_suggestions: "false"
           pr_code_suggestions.num_code_suggestions_per_chunk: "5"
-          pr_code_suggestions.max_number_of_calls: "3"
+          pr_code_suggestions.max_number_of_calls: "4"
           pr_code_suggestions.parallel_calls: "true"
           pr_code_suggestions.suggestions_score_threshold: "0"
           pr_code_suggestions.extra_instructions: |
@@ -148,7 +167,7 @@ jobs:
             Prefer one real defect to five plausible ones. Do not acknowledge, praise or summarise.
 
       # PR-Agent can exit 0 without having produced a review. A green check must not claim work
-      # that never happened.
+      # that never happened. A red check here blocks nothing: no rule requires this job.
       - name: Fail if the review did not actually run
         if: always()
         env:
