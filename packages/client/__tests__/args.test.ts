@@ -554,6 +554,14 @@ describe("decision", () => {
     });
   });
 
+  it("reads a decision id for read", () => {
+    expect(commandOf(["decision", "read", "d1"])).toEqual({
+      kind: "decision",
+      action: "read",
+      id: "d1",
+    });
+  });
+
   it("wants a source and a sub-command", () => {
     expect(errorOf(["decision"])).toBe(
       "decision takes a sub-command: raise, read, report or state",
@@ -564,6 +572,13 @@ describe("decision", () => {
     );
     expect(errorOf(["decision", "raise", "--file", "x", "extra"])).toBe(
       "raise takes no arguments",
+    );
+    expect(errorOf(["decision", "read"])).toBe("read takes exactly one id");
+    expect(errorOf(["decision", "read", "d1", "extra"])).toBe(
+      "read takes exactly one id",
+    );
+    expect(errorOf(["decision", "read", "--file", "x"])).toBe(
+      "--file is not a decision option",
     );
   });
 

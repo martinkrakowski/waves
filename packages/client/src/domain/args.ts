@@ -89,7 +89,8 @@ export type Command =
       readonly kind: "decision";
       readonly action: "raise";
       readonly source: InputSource;
-    };
+    }
+  | { readonly kind: "decision"; readonly action: "read"; readonly id: string };
 
 export type ParseResult =
   | { readonly ok: true; readonly command: Command }
@@ -189,6 +190,7 @@ const STATUS_FLAGS: readonly string[] = ["--file", "--stdin", "--interval"];
 const SYNC_FLAGS: readonly string[] = [CHECK];
 
 const DECISION_RAISE_FLAGS: readonly string[] = ["--file", "--stdin"];
+const DECISION_READ_FLAGS: readonly string[] = [];
 
 const MIN_INTERVAL_SECONDS = 1;
 const MAX_INTERVAL_SECONDS = 300;
@@ -559,6 +561,9 @@ function readDecision(tokens: Tokens): ParseResult {
   if (action === "raise") {
     return readDecisionRaise(tokens);
   }
+  if (action === "read") {
+    return readDecisionRead(tokens);
+  }
   return { ok: false, error: `unknown decision sub-command ${action}` };
 }
 
@@ -575,6 +580,21 @@ function readDecisionRaise(tokens: Tokens): ParseResult {
     return { ok: false, error: source };
   }
   return { ok: true, command: { kind: "decision", action: "raise", source } };
+}
+
+function readDecisionRead(tokens: Tokens): ParseResult {
+  const unused = firstUnused(tokens, DECISION_READ_FLAGS);
+  if (unused !== undefined) {
+    return { ok: false, error: `${unused} is not a decision option` };
+  }
+  const id = tokens.positionals[1];
+  if (id === undefined || tokens.positionals.length !== 2) {
+    return { ok: false, error: "read takes exactly one id" };
+  }
+  return {
+    ok: true,
+    command: { kind: "decision", action: "read", id },
+  };
 }
 
 export function commandName(command: Command): string {

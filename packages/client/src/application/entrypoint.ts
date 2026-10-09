@@ -9,6 +9,7 @@ import {
 } from "./errors.js";
 import { FileRefusal, type CliDeps, type UseCaseDeps } from "./ports.js";
 import { push } from "./push.js";
+import { readDecision } from "./read.js";
 import { raise } from "./raise.js";
 import { register } from "./register.js";
 import { registerAll } from "./register-all.js";
@@ -66,7 +67,12 @@ export async function run(
         : await sync(useCase);
     }
     if (parsed.command.kind === "decision") {
-      return await raise(parsed.command, useCase);
+      switch (parsed.command.action) {
+        case "raise":
+          return await raise(parsed.command, useCase);
+        case "read":
+          return await readDecision(parsed.command, useCase);
+      }
     }
     return await remove(parsed.command, useCase);
   } catch (error) {

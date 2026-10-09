@@ -198,6 +198,15 @@ describe("buildOptions", () => {
     });
   });
 
+  it("sends no authorization header for a GET without a bearer", () => {
+    expect(
+      buildOptions(url, "GET", undefined, undefined, undefined, deadline)
+        .headers,
+    ).toEqual({
+      accept: "application/json",
+    });
+  });
+
   it("unwraps a bracketed IPv6 host and defaults the port", () => {
     expect(
       buildOptions(

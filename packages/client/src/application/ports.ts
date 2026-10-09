@@ -69,12 +69,13 @@ export interface InputStream {
   read(): Promise<string>;
 }
 
-export type Method = "POST" | "PUT" | "DELETE";
+export type Method = "GET" | "POST" | "PUT" | "DELETE";
 
 export interface HttpRequest {
   readonly method: Method;
   readonly url: string;
-  readonly bearer: string;
+  /** Absent for reads, which need no token. */
+  readonly bearer?: string;
   readonly body?: string;
 }
 

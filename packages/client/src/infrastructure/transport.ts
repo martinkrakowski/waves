@@ -54,15 +54,17 @@ type Deadline = () => AbortSignal;
 export function buildOptions(
   url: URL,
   method: string,
-  bearer: string,
+  bearer: string | undefined,
   body: string | undefined,
   ca: string | undefined,
   deadline: AbortSignal,
 ): RequestOptions {
   const headers: Record<string, string> = {
     accept: JSON_TYPE,
-    authorization: `${BEARER}${bearer}`,
   };
+  if (bearer !== undefined) {
+    headers["authorization"] = `${BEARER}${bearer}`;
+  }
   if (body !== undefined) {
     headers["content-type"] = JSON_TYPE;
     headers["content-length"] = String(Buffer.byteLength(body));
