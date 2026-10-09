@@ -9,11 +9,13 @@ import type { ProjectLanesView } from "../../src/application/read-model.js";
 import {
   attentionView,
   decisionResponse,
+  inboxEvent,
   inboxHead,
   inboxProject,
   inboxView,
   laneRow,
   projectCard,
+  projectEventsView,
   projectInboxView,
   projectLanes,
   waveSummary,
@@ -1857,8 +1859,11 @@ describe("the decision route", () => {
 });
 
 describe("the project-inbox route", () => {
-  /** A fetch stub that answers the rail's two lists and one project's decisions. */
-  function projectInboxFetch(body: unknown) {
+  /** A fetch stub that answers the rail's two lists, one project's decisions and its events. */
+  function projectInboxFetch(
+    decisionsBody: unknown,
+    eventsBody: unknown = projectEventsView(),
+  ) {
     return fetchStub((path) =>
       path === "/api/v1/projects"
         ? {
@@ -1868,10 +1873,14 @@ describe("the project-inbox route", () => {
         : path === "/api/v1/attention"
           ? { status: 200, body: attentionView() }
           : path === "/api/v1/projects/alpha/decisions"
-            ? body === undefined
+            ? decisionsBody === undefined
               ? { status: 404 }
-              : { status: 200, body }
-            : { status: 404 },
+              : { status: 200, body: decisionsBody }
+            : path === "/api/v1/projects/alpha/events"
+              ? eventsBody === undefined
+                ? { status: 404 }
+                : { status: 200, body: eventsBody }
+              : { status: 404 },
     );
   }
 
@@ -1904,7 +1913,9 @@ describe("the project-inbox route", () => {
           ? { status: 200, body: attentionView() }
           : path === "/api/v1/projects/alpha/decisions"
             ? { status: 200, body: projectInboxView() }
-            : { status: 404 },
+            : path === "/api/v1/projects/alpha/events"
+              ? { status: 200, body: projectEventsView() }
+              : { status: 404 },
     );
     const { app } = harness({ pathname: "/p/alpha/inbox", fetchImpl });
     app.start();
@@ -1921,7 +1932,7 @@ describe("the project-inbox route", () => {
     app.stop();
   });
 
-  it("fetches the project's decisions alongside the rail's two lists", async () => {
+  it("fetches the project's decisions and events alongside the rail's two lists", async () => {
     const fetchImpl = projectInboxFetch(projectInboxView());
     const { app } = harness({ pathname: "/p/alpha/inbox", fetchImpl });
     app.start();
@@ -1931,6 +1942,7 @@ describe("the project-inbox route", () => {
       "/api/v1/projects",
       "/api/v1/attention",
       "/api/v1/projects/alpha/decisions",
+      "/api/v1/projects/alpha/events",
     ]);
     app.stop();
   });
@@ -1977,6 +1989,82 @@ describe("the project-inbox route", () => {
     expect(textOf(root().querySelector(".crumbs") as Element)).toBe(
       "waves / alpha / Inbox",
     );
+    app.stop();
+  });
+
+  it("draws the project's events on its inbox page", async () => {
+    const fetchImpl = projectInboxFetch(
+      projectInboxView(),
+      projectEventsView({ events: [inboxEvent()] }),
+    );
+    const { app } = harness({ pathname: "/p/alpha/inbox", fetchImpl });
+    app.start();
+    await flush();
+
+    expect(fetchImpl.calls).toContain("/api/v1/projects/alpha/events");
+    expect(textsOf(root(), ".project-event")).toStrictEqual([
+      "2026-04-01 at 12:00 UTC · relay · Round 3 sent to five sessions",
+    ]);
+    app.stop();
+  });
+
+  it("refuses a 404 on events as no such project", async () => {
+    const fetchImpl = fetchStub((path) =>
+      path === "/api/v1/projects"
+        ? {
+            status: 200,
+            body: [projectCard(), projectCard({ id: "beta", name: "Beta" })],
+          }
+        : path === "/api/v1/attention"
+          ? { status: 200, body: attentionView() }
+          : path === "/api/v1/projects/alpha/decisions"
+            ? { status: 200, body: projectInboxView() }
+            : { status: 404 },
+    );
+    const { app } = harness({ pathname: "/p/alpha/inbox", fetchImpl });
+    app.start();
+    await flush();
+
+    expect(textsOf(root(), ".empty")).toStrictEqual(["No such project."]);
+    app.stop();
+  });
+
+  it("shows offline and keeps the previous page when events are refused on a refetch", async () => {
+    let badEvents = false;
+    const fetchImpl = fetchStub((path) =>
+      path === "/api/v1/projects"
+        ? {
+            status: 200,
+            body: [projectCard(), projectCard({ id: "beta", name: "Beta" })],
+          }
+        : path === "/api/v1/attention"
+          ? { status: 200, body: attentionView() }
+          : path === "/api/v1/projects/alpha/decisions"
+            ? { status: 200, body: projectInboxView() }
+            : path === "/api/v1/projects/alpha/events"
+              ? {
+                  status: 200,
+                  body: badEvents
+                    ? { events: [{ id: 1 }] }
+                    : projectEventsView(),
+                }
+              : { status: 404 },
+    );
+    const { app } = harness({ pathname: "/p/alpha/inbox", fetchImpl });
+    app.start();
+    await flush();
+
+    expect(textsOf(root(), ".project-event")).toStrictEqual([
+      "2026-04-01 at 12:00 UTC · relay · Round 3 sent to five sessions",
+    ]);
+
+    badEvents = true;
+    await app.refresh();
+
+    expect(textsOf(root(), ".note")).toStrictEqual(["offline, retrying"]);
+    expect(textsOf(root(), ".project-event")).toStrictEqual([
+      "2026-04-01 at 12:00 UTC · relay · Round 3 sent to five sessions",
+    ]);
     app.stop();
   });
 
