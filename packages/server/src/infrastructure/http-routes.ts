@@ -236,7 +236,14 @@ export function route(pathname: string, root: string): Route {
       parts[1] === "p" &&
       isProjectId(String(parts[2])) &&
       parts[3] === "w" &&
-      isWaveId(String(parts[4])))
+      isWaveId(String(parts[4]))) ||
+    // `/p/<project>/d/<decision>`: one decision, as `/p/<id>/w/<wave>` is.
+    // The decision id is a lane id, checked with the same pattern as a wave.
+    (parts.length === 5 &&
+      parts[1] === "p" &&
+      isProjectId(String(parts[2])) &&
+      parts[3] === "d" &&
+      isLaneId(String(parts[4])))
   ) {
     return { kind: "index" };
   }
