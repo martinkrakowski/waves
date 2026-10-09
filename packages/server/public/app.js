@@ -1,4 +1,5 @@
 import { drawableAttention } from "./attention.js";
+import { drawableDecision } from "./decision.js";
 import { drawableInbox } from "./inbox.js";
 import { createApi } from "./api.js";
 import { digestOf } from "./digest.js";
@@ -13,6 +14,8 @@ import { renderDrawer } from "./views/drawer.js";
 import { renderFleet } from "./views/fleet.js";
 import { inboxModel } from "./views/inbox-model.js";
 import { renderInbox } from "./views/inbox.js";
+import { decisionModel } from "./views/decision-model.js";
+import { renderDecision } from "./views/decision.js";
 import { rowIdOf } from "./views/fleet-rows.js";
 import {
   hrefFor,
@@ -33,6 +36,8 @@ const LOADING = "Loading…";
 
 /** `/p/<id>` or `/p/<id>/w/<wave>`: the server serves the page on both. */
 const PROJECT_PATH = /^\/p\/([^/]+)(\/w\/([^/]+))?$/;
+/** `/p/<project>/d/<decision>`: one decision's page. */
+const DECISION_PATH = /^\/p\/([^/]+)\/d\/([^/]+)$/;
 
 /** The tags a reader is already typing into, where a `/` is a `/`. */
 const TYPING = ["INPUT", "SELECT", "TEXTAREA"];
@@ -48,20 +53,29 @@ export function routeOf(pathname) {
     return { kind: "unknown" };
   }
   const parts = PROJECT_PATH.exec(pathname);
-  if (parts === null) {
-    return { kind: "unknown" };
+  if (parts !== null) {
+    const id = parts[1];
+    // The segments are read as they arrived: a valid id never needs decoding, so
+    // a segment carrying a percent escape is a segment the server never served.
+    if (!isProjectId(id)) {
+      return { kind: "unknown" };
+    }
+    if (parts[2] === undefined) {
+      return { kind: "project", id };
+    }
+    const wave = parts[3];
+    return isWaveId(wave) ? { kind: "project", id, wave } : { kind: "unknown" };
   }
-  const id = parts[1];
-  // The segments are read as they arrived: a valid id never needs decoding, so
-  // a segment carrying a percent escape is a segment the server never served.
-  if (!isProjectId(id)) {
-    return { kind: "unknown" };
+  const decision = DECISION_PATH.exec(pathname);
+  if (decision !== null) {
+    const project = decision[1];
+    const id = decision[2];
+    if (!isProjectId(project) || !isWaveId(id)) {
+      return { kind: "unknown" };
+    }
+    return { kind: "decision", project, id };
   }
-  if (parts[2] === undefined) {
-    return { kind: "project", id };
-  }
-  const wave = parts[3];
-  return isWaveId(wave) ? { kind: "project", id, wave } : { kind: "unknown" };
+  return { kind: "unknown" };
 }
 
 /** Only same-origin absolute paths: no scheme, and no protocol-relative form. */
@@ -230,6 +244,24 @@ export function createApp(deps) {
   }
 
   /**
+   * One decision's whole record, with its head, revisions and entries. A 404 is
+   * "no such decision" rather than a failure: the reader asked for a specific
+   * decision, and the page says it is absent rather than offline. A response the
+   * page cannot read is a failed load — its head does not name the decision the
+   * reader asked for, and a dead-end page is worse than no page.
+   */
+  async function loadDecision(projectId, decisionId) {
+    const decision = await api.decision(projectId, decisionId);
+    if (decision === undefined) {
+      return undefined;
+    }
+    if (!drawableDecision(decision, projectId, decisionId)) {
+      throw new Error("the decision view is not a decision view");
+    }
+    return decision;
+  }
+
+  /**
    * What the project last said about itself, which the project page draws as a
    * panel. A 404 is "it has pushed none", not a failure: the status is the one
    * read on this page that a project may legitimately never make, and a page that
@@ -295,6 +327,33 @@ export function createApp(deps) {
         return undefined;
       }
       return { kind: "inbox", projects, attention, inbox };
+    }
+    if (at.kind === "decision") {
+      const [projects, attention, decision] = await Promise.all([
+        loadProjects(),
+        loadAttention(),
+        loadDecision(at.project, at.id),
+      ]);
+      if (mine !== generation) {
+        return undefined;
+      }
+      if (decision === undefined) {
+        return {
+          kind: "missing-decision",
+          project: at.project,
+          id: at.id,
+          projects,
+          attention,
+        };
+      }
+      return {
+        kind: "decision",
+        project: at.project,
+        id: at.id,
+        projects,
+        attention,
+        decision,
+      };
     }
     // Four calls in one Promise.all, in the order the page needs them: the menu's
     // two, then every lane of every wave of the project the route names, then
@@ -373,6 +432,15 @@ export function createApp(deps) {
     }
     if (data.kind === "inbox") {
       return renderInbox(inboxModel(data.inbox), clock());
+    }
+    if (data.kind === "decision") {
+      return renderDecision(decisionModel(data.decision));
+    }
+    if (data.kind === "missing-decision") {
+      return el("p", {
+        attrs: { class: "empty" },
+        text: "No such decision.",
+      });
     }
     return el("p", { attrs: { class: "empty" }, text: "No such project." });
   }
@@ -828,7 +896,12 @@ export function createApp(deps) {
   }
 
   function draw() {
-    doc.title = route.kind === "project" ? `waves — ${route.id}` : "waves";
+    doc.title =
+      route.kind === "project"
+        ? `waves — ${route.id}`
+        : route.kind === "decision"
+          ? `waves — ${route.project}`
+          : "waves";
     if (root === null) {
       return;
     }

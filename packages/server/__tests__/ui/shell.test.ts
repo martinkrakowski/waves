@@ -23,6 +23,7 @@ const FLEET: Route = { kind: "projects" };
 const PROJECT: Route = { kind: "project", id: "alpha" };
 const WAVE: Route = { kind: "project", id: "alpha", wave: "wv1" };
 const INBOX: Route = { kind: "inbox" };
+const DECISION: Route = { kind: "decision", project: "alpha", id: "d1" };
 
 /** The one handler the shell takes, and what it costs to press it. */
 const HANDLERS: ShellHandlers = { onRefresh() {} };
@@ -533,6 +534,21 @@ describe("the breadcrumb", () => {
     ]);
     expect(textOf(oneOf(host, ".crumbs") as Element)).toBe(
       "waves / alpha / wv1",
+    );
+  });
+
+  it("is the brand, the project and the decision on a decision route", () => {
+    const host = draw({ route: DECISION });
+    expect(textsOf(host, ".crumbs a")).toStrictEqual(["waves", "alpha"]);
+    expect(textsOf(host, ".crumbs a")[1]).toBe("alpha");
+    expect(host.querySelectorAll(".crumbs a")[1]?.getAttribute("href")).toBe(
+      "/p/alpha",
+    );
+    expect(textsOf(host, '.crumbs [aria-current="page"]')).toStrictEqual([
+      "d1",
+    ]);
+    expect(textOf(oneOf(host, ".crumbs") as Element)).toBe(
+      "waves / alpha / d1",
     );
   });
 });

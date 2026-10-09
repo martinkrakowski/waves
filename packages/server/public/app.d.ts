@@ -9,6 +9,11 @@ export type Route =
       readonly wave?: string;
     }
   | { readonly kind: "inbox" }
+  | {
+      readonly kind: "decision";
+      readonly project: string;
+      readonly id: string;
+    }
   | { readonly kind: "unknown" };
 
 export interface AppGlobals {

@@ -25,7 +25,13 @@ describe("the placeholder page", () => {
   it("serves the page at the root, at the inbox and at a project's waves", async () => {
     const started = await startHarness();
 
-    for (const path of ["/", "/inbox", "/p/alpha", "/p/alpha/w/wv1"]) {
+    for (const path of [
+      "/",
+      "/inbox",
+      "/p/alpha",
+      "/p/alpha/w/wv1",
+      "/p/alpha/d/d1",
+    ]) {
       const response = await fetch(`${started.origin}${path}`);
 
       expect(response.status).toBe(200);
@@ -46,6 +52,11 @@ describe("the placeholder page", () => {
     ["/p/alpha/x/wv1", "a segment that is not w"],
     ["/p/ALPHA/w/wv1", "a project id the contract rejects"],
     ["/p/alpha/w/-bad", "a wave id the contract rejects"],
+    ["/p/alpha/d/", "no decision id at all"],
+    ["/p/alpha/d/a/b", "a path under the decision page"],
+    ["/p/alpha/x/d1", "a segment that is not d"],
+    ["/p/ALPHA/d/d1", "a project id the contract rejects"],
+    ["/p/alpha/d/-bad", "a decision id the contract rejects"],
   ])("refuses %s (%s)", async (path) => {
     const started = await startHarness();
 

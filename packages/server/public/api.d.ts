@@ -1,4 +1,7 @@
-import type { InboxView } from "../src/application/notice-read-model.js";
+import type {
+  InboxView,
+  DecisionView,
+} from "../src/application/notice-read-model.js";
 import type {
   AttentionView,
   ProjectLanesView,
@@ -54,6 +57,15 @@ export interface Api {
    * are not.
    */
   status(projectId: string): Promise<StatusView | undefined>;
+  /**
+   * One decision's whole record, or `undefined` for a 404. A 404 is a failed
+   * load: the route is not optional, and a decision the page cannot draw is one
+   * the app treats as offline rather than as a page that was right.
+   */
+  decision(
+    projectId: string,
+    decisionId: string,
+  ): Promise<DecisionView | undefined>;
 }
 
 export declare function createApi(fetchImpl: FetchLike): Api;

@@ -34,7 +34,7 @@ const GROUP_HEAD = {
  * The shape, in a word: "choice", "action only you run", "standing instruction".
  * These are the page's own words for the three shapes, not the shape value itself.
  */
-const SHAPE_WORD = {
+export const SHAPE_WORD = {
   choice: "choice",
   action: "action only you run",
   instruction: "standing instruction",
@@ -44,7 +44,7 @@ const SHAPE_WORD = {
  * Who may decide, in a word: "yours to decide" or "may be decided under
  * delegation". The page says it in the reader's own terms, not the stored value.
  */
-const DECIDER_WORD = {
+export const DECIDER_WORD = {
   owner: "yours to decide",
   delegated: "may be decided under delegation",
 };
@@ -63,9 +63,10 @@ const CLOSED_ACTION = {
  * "partly" is partly undoable; `false` has no band at all. The page adds nothing
  * to the reason: the label is the stored words, and the reason the session wrote
  * is shown verbatim, character for character, as text and never as markup. A band
- * with no reason shows the label alone.
+ * with no reason shows the label alone. Exported for the decision page, which
+ * shows a door band exactly as the inbox card does.
  */
-function doorBand(head) {
+export function doorBand(head) {
   if (head.door.value === false) {
     return undefined;
   }
@@ -91,9 +92,10 @@ function factsLine(head) {
  * more for an open owner decision; "Reported as answered" names the verdict in a
  * full sentence and never as the bare word "Approved"; "Closed by a session"
  * says what the session did and, when an answer was reported first, says so
- * beside it without striking it out.
+ * beside it without striking it out. Exported for the decision page, which
+ * reuses these exact sentences for the same groups.
  */
-function stateNodes(head) {
+export function stateNodes(head) {
   const nodes = [];
   if (head.group === "waiting") {
     if (head.state === "delegated") {
@@ -159,7 +161,23 @@ function stateNodes(head) {
 }
 
 /**
- * One decision card, in the order the brief lists: the door band, the question,
+ * The "an earlier text was answered" note the card prints when the head's
+ * `earlierAnswer` is set, exported so the decision page can reuse it in its
+ * own state area for every group.
+ */
+export function earlierAnswerNode(head) {
+  if (!head.earlierAnswer) {
+    return undefined;
+  }
+  const ear = head.earlierAnswer;
+  const withWords = ear.words ? `: "${ear.words}"` : "";
+  return el("p", {
+    attrs: { class: "card-earlier" },
+    text: `An earlier text of this decision was answered: ${ear.state}${withWords}. That answer does not apply to the current text.`,
+  });
+}
+
+/**
  * the facts, the state line, then the four optional notes — earlier answer,
  * act-elsewhere, the `from` instruction, and the id line at the bottom.
  */
@@ -174,15 +192,9 @@ function card(head, nowMs) {
     el("p", { attrs: { class: "card-facts" }, text: factsLine(head) }),
     ...stateNodes(head),
   );
-  if (head.earlierAnswer) {
-    const ear = head.earlierAnswer;
-    const withWords = ear.words ? `: "${ear.words}"` : "";
-    children.push(
-      el("p", {
-        attrs: { class: "card-earlier" },
-        text: `An earlier text of this decision was answered: ${ear.state}${withWords}. That answer does not apply to the current text.`,
-      }),
-    );
+  const earlierNode = earlierAnswerNode(head);
+  if (earlierNode !== undefined) {
+    children.push(earlierNode);
   }
   if (head.actElsewhere) {
     children.push(
@@ -203,7 +215,11 @@ function card(head, nowMs) {
   children.push(
     el("p", {
       attrs: { class: "card-meta" },
-      children: [text(head.id), text(" · "), stamp(head.at, nowMs)],
+      children: [
+        internalLink(head.id, `/p/${head.project}/d/${head.id}`),
+        text(" · "),
+        stamp(head.at, nowMs),
+      ],
     }),
   );
   return el("li", { attrs: { class: "inbox-card" }, children });

@@ -1,0 +1,145 @@
+/*
+ * The decision page's own rules. The frame, the colours and the measure all
+ * come from tokens.css, shell.css and app.css; what is here is only the look
+ * of the decision's parts.
+ */
+
+.view.decision {
+  padding: 1.25rem 0;
+}
+
+.view.decision h1 {
+  font-family: var(--display);
+  font-size: clamp(1.6rem, 1.1rem + 1.5vw, 2.4rem);
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  margin: 0.5rem 0;
+}
+
+.decision-breadcrumbs {
+  font-size: 0.8rem;
+  margin: 0 0 0.5rem;
+}
+
+.decision-facts {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  margin: 0 0 0.5rem;
+  overflow-wrap: anywhere;
+}
+
+/* The door band, state and act-elsewhere lines are defined once in
+   inbox.css, the first stylesheet to load; this file only adds the rules
+   that are specific to the decision page. */
+
+.decision-options h2,
+.decision-commits h2,
+.decision-evidence h2 {
+  font-size: 0.9rem;
+  letter-spacing: 0.06em;
+  margin: 0.75rem 0 0.3rem;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.options {
+  list-style: none;
+  margin: 0 0 0.5rem;
+  padding: 0;
+}
+
+.option {
+  margin: 0 0 0.25rem;
+  overflow-wrap: anywhere;
+}
+
+.option-head {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.option-cost {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  margin: 0.1rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.option-why {
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin: 0.1rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.no-recommendation {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0.25rem 0 0.5rem;
+  overflow-wrap: anywhere;
+}
+
+.commits {
+  list-style: disc inside;
+  margin: 0 0 0.5rem;
+  padding: 0;
+}
+
+.evidence {
+  list-style: none;
+  margin: 0 0 0.3rem;
+  padding: 0;
+}
+
+.decision-refs {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  margin: 0 0 0.5rem;
+  overflow-wrap: anywhere;
+}
+
+.history h2,
+.decision-earlier-texts h2 {
+  font-size: 0.9rem;
+  letter-spacing: 0.06em;
+  margin: 0.75rem 0 0.3rem;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.history-event {
+  margin: 0 0 0.4rem;
+  overflow-wrap: anywhere;
+}
+
+.earlier-text {
+  margin: 0 0 0.75rem;
+}
+
+.earlier-text summary {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  cursor: default;
+}
+
+.earlier-text-body {
+  margin: 0.25rem 0 0 1rem;
+  overflow-wrap: anywhere;
+}
+
+.decision-footer {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin: 1rem 0 0;
+  overflow-wrap: anywhere;
+}
