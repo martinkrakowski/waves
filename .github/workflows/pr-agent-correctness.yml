@@ -85,7 +85,10 @@ jobs:
           github_action_config.pr_actions: '["opened", "reopened", "ready_for_review"]'
           pr_code_suggestions.focus_only_on_problems: "true"
           pr_code_suggestions.committable_code_suggestions: "true"
-          pr_code_suggestions.publish_output_no_suggestions: "false"
+          # On: a review that finds nothing says so in a comment. The guard below counts this
+          # run's comments, and a run that posted none did not review (a model answer PR-Agent
+          # could not parse ends that way, with exit 0).
+          pr_code_suggestions.publish_output_no_suggestions: "true"
           pr_code_suggestions.num_code_suggestions_per_chunk: "5"
           pr_code_suggestions.max_number_of_calls: "4"
           pr_code_suggestions.parallel_calls: "true"
@@ -166,8 +169,11 @@ jobs:
 
             Prefer one real defect to five plausible ones. Do not acknowledge, praise or summarise.
 
-      # PR-Agent can exit 0 without having produced a review. A green check must not claim work
-      # that never happened. A red check here blocks nothing: no rule requires this job.
+      # PR-Agent can exit 0 without having produced a review: it posts a failure notice, or, when
+      # it cannot parse the model's answer, posts nothing at all. A green check must not claim
+      # work that never happened, so this step fails unless this run left at least one comment
+      # and none of them is a failure notice. A red check here blocks nothing: no rule requires
+      # this job.
       - name: Fail if the review did not actually run
         if: always()
         env:
@@ -176,17 +182,26 @@ jobs:
           STARTED_AT: ${{ steps.started.outputs.at }}
         run: |
           set -euo pipefail
-          gh api --paginate --slurp --method GET "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" > "$RUNNER_TEMP/pages.json"
-          FILTER='[.[][] | select(.user.login == "github-actions[bot]") | select(.created_at >= $since) | select(.body | test("Failed to generate"))] | length'
-          failed=$(jq --arg since "$STARTED_AT" "$FILTER" "$RUNNER_TEMP/pages.json")
-          case "$failed" in
-            ''|*[!0-9]*)
-              echo "Expected a single integer from the comment scan, got: $failed"
-              exit 1
-              ;;
-          esac
+          gh api --paginate --slurp --method GET "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" > "$RUNNER_TEMP/issue.json"
+          gh api --paginate --slurp --method GET "repos/${GITHUB_REPOSITORY}/pulls/${PR}/comments" > "$RUNNER_TEMP/review.json"
+          MINE='[.[][] | select(.user.login == "github-actions[bot]") | select(.created_at >= $since)]'
+          failed=$(jq --arg since "$STARTED_AT" "$MINE | map(select(.body | test(\"Failed to generate\"))) | length" "$RUNNER_TEMP/issue.json")
+          posted_issue=$(jq --arg since "$STARTED_AT" "$MINE | length" "$RUNNER_TEMP/issue.json")
+          posted_review=$(jq --arg since "$STARTED_AT" "$MINE | length" "$RUNNER_TEMP/review.json")
+          for n in "$failed" "$posted_issue" "$posted_review"; do
+            case "$n" in
+              ''|*[!0-9]*)
+                echo "Expected an integer from the comment scan, got: $n"
+                exit 1
+                ;;
+            esac
+          done
           if [ "$failed" -gt 0 ]; then
             echo "PR-Agent reported it could not generate a review."
             exit 1
           fi
-          echo "No PR-Agent failure notice from this run."
+          if [ $((posted_issue + posted_review)) -eq 0 ]; then
+            echo "PR-Agent left no comment in this run: it did not review this pull request."
+            exit 1
+          fi
+          echo "This run left $posted_issue comment(s) and $posted_review line comment(s)."
