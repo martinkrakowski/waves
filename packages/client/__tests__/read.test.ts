@@ -41,6 +41,20 @@ describe("read", () => {
     expect(built.sent()).toBe(1);
   });
 
+  it("prints a pretty-printed record as one line of JSON", async () => {
+    // A body the server indented would otherwise print many lines; read prints
+    // the parsed record re-encoded as a single line.
+    const body = JSON.stringify(JSON.parse(record()), null, 2);
+    expect(body).toContain("\n");
+    const built = harness({ script: [reply(200, body)] });
+
+    expect(await readDecision(command(), built.deps)).toBe(0);
+    expect(built.out).toHaveLength(1);
+    expect(built.out[0]).not.toContain("\n");
+    expect(built.out[0]).toBe(JSON.stringify(JSON.parse(body)));
+    expect(built.err).toEqual([]);
+  });
+
   it("sends a GET with no token, on the decision route", async () => {
     const built = harness({ script: [reply(200, record())] });
 
