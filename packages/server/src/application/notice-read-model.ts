@@ -82,6 +82,17 @@ export interface InboxProject {
   readonly decisions: readonly Head[];
 }
 
+/**
+ * The answer `GET /api/v1/inbox` gives: one entry per registered project, each
+ * with its own counts and the decisions still in the reader's inbox. The counts
+ * cover a project's own decisions only — instructions another project raised
+ * against it are drawn beside the project that raised them and never counted in
+ * its totals.
+ */
+export interface InboxView {
+  readonly projects: readonly InboxProject[];
+}
+
 const GROUP_ORDER: Readonly<Record<DecisionGroup, number>> = {
   waiting: 0,
   reported: 1,

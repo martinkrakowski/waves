@@ -10,6 +10,12 @@ import type {
   WaveSummary,
   WaveView,
 } from "../../src/application/read-model.js";
+import type {
+  Head,
+  InboxProject,
+  InboxView,
+  NoticeCounts,
+} from "../../src/application/notice-read-model.js";
 import type { ProjectCard } from "../../public/api.js";
 
 export const NOW_MS = Date.parse("2026-04-01T12:00:00.000Z");
@@ -226,6 +232,56 @@ export function attentionView(
     projects: [],
     truncated: false,
     wavesOmitted: 0,
+    ...overrides,
+  };
+}
+
+export const INBOX_NOW_MS = Date.parse("2026-10-08T14:00:00.000Z");
+
+/** One entry of the `counts` object the inbox answers with. */
+export function inboxCounts(
+  overrides: Partial<NoticeCounts> = {},
+): NoticeCounts {
+  return { waiting: 0, oneWay: 0, reported: 0, closed: 0, ...overrides };
+}
+
+/** One decision head, as `GET /api/v1/inbox` answers it. */
+export function inboxHead(overrides: Partial<Head> = {}): Head {
+  return {
+    project: "alpha",
+    id: "d1",
+    question: "Go?",
+    shape: "choice",
+    door: { value: false },
+    decider: "owner",
+    revision: 1,
+    revisions: 1,
+    textSha256: "0".repeat(64),
+    entries: 0,
+    state: "open",
+    at: NOW_ISO,
+    group: "waiting",
+    ...overrides,
+  };
+}
+
+/** One project in the inbox list, with its counts and its decisions. */
+export function inboxProject(
+  overrides: Partial<InboxProject> = {},
+): InboxProject {
+  return {
+    id: "alpha",
+    name: "Alpha",
+    counts: inboxCounts(),
+    decisions: [],
+    ...overrides,
+  };
+}
+
+/** The whole inbox, empty until a test fills it. */
+export function inboxView(overrides: Partial<InboxView> = {}): InboxView {
+  return {
+    projects: [],
     ...overrides,
   };
 }
