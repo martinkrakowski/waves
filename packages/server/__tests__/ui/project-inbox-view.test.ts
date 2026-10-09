@@ -18,12 +18,16 @@ import {
  * Date — the helper the decision view tests call on every draw, called here the
  * same way.
  */
-function draw(view: ProjectInboxView, nowMs = INBOX_NOW_MS): HTMLElement {
-  if (!drawableProjectInbox(view, view.project.id)) {
+function draw(
+  view: ProjectInboxView,
+  nowMs = INBOX_NOW_MS,
+  name = "Alpha",
+): HTMLElement {
+  if (!drawableProjectInbox(view, view.project)) {
     throw new Error("not a drawable project inbox");
   }
   const host = freshRoot();
-  host.append(renderProjectInbox(view, nowMs));
+  host.append(renderProjectInbox(view, nowMs, name));
   assertNoInjectedMarkup();
   const text = host.textContent ?? "";
   for (const word of ["undefined", "null", "NaN", "Invalid Date"]) {
@@ -36,7 +40,6 @@ describe("renderProjectInbox", () => {
   it("shows the breadcrumb, heading, counts and footer", () => {
     const host = draw(
       projectInboxView({
-        project: { id: "alpha", name: "Alpha" },
         counts: { waiting: 1, oneWay: 0, reported: 0, closed: 0 },
         decisions: [inboxHead({ id: "d1", question: "Go?", group: "waiting" })],
       }),
@@ -55,10 +58,30 @@ describe("renderProjectInbox", () => {
     ]);
   });
 
+  it("draws the project id when the listing has no such project", () => {
+    const host = draw(
+      projectInboxView({
+        counts: { waiting: 1, oneWay: 0, reported: 0, closed: 0 },
+        decisions: [
+          inboxHead({
+            id: "d1",
+            group: "waiting",
+            state: "open",
+            decider: "owner",
+          }),
+        ],
+      }),
+      INBOX_NOW_MS,
+      "alpha",
+    );
+    const crumb = host.querySelector(".project-inbox-breadcrumbs");
+    expect(textOf(crumb)).toBe("Inbox · alpha");
+    expect(textsOf(host, "h1")).toStrictEqual(["alpha · decisions"]);
+  });
+
   it("draws each of the three groups under the inbox's own headings", () => {
     const host = draw(
       projectInboxView({
-        project: { id: "alpha", name: "Alpha" },
         counts: { waiting: 1, oneWay: 0, reported: 1, closed: 1 },
         decisions: [
           inboxHead({
@@ -93,7 +116,6 @@ describe("renderProjectInbox", () => {
   it("draws a from card and links it to the raising project's decision page", () => {
     const host = draw(
       projectInboxView({
-        project: { id: "alpha", name: "Alpha" },
         counts: { waiting: 1, oneWay: 0, reported: 0, closed: 0 },
         decisions: [
           inboxHead({
@@ -122,7 +144,6 @@ describe("renderProjectInbox", () => {
   it("counts the waiting cards as own waiting plus from heads in that group", () => {
     const host = draw(
       projectInboxView({
-        project: { id: "alpha", name: "Alpha" },
         counts: { waiting: 2, oneWay: 0, reported: 0, closed: 0 },
         decisions: [
           inboxHead({
@@ -157,7 +178,6 @@ describe("renderProjectInbox", () => {
     it("draws nothing when there are no history heads", () => {
       const host = draw(
         projectInboxView({
-          project: { id: "alpha", name: "Alpha" },
           counts: { waiting: 0, oneWay: 0, reported: 0, closed: 0 },
           decisions: [
             inboxHead({
@@ -175,7 +195,6 @@ describe("renderProjectInbox", () => {
     it("draws the singular line for one history head", () => {
       const host = draw(
         projectInboxView({
-          project: { id: "alpha", name: "Alpha" },
           counts: { waiting: 0, oneWay: 0, reported: 0, closed: 0 },
           decisions: [
             inboxHead({ id: "h1", group: "history", state: "answered" }),
@@ -190,7 +209,6 @@ describe("renderProjectInbox", () => {
     it("draws the plural line for three history heads", () => {
       const host = draw(
         projectInboxView({
-          project: { id: "alpha", name: "Alpha" },
           counts: { waiting: 0, oneWay: 0, reported: 0, closed: 0 },
           decisions: [
             inboxHead({ id: "h1", group: "history", state: "answered" }),
@@ -208,7 +226,6 @@ describe("renderProjectInbox", () => {
   it("shows the empty line for a project with nothing in the three groups", () => {
     const host = draw(
       projectInboxView({
-        project: { id: "alpha", name: "Alpha" },
         counts: { waiting: 0, oneWay: 0, reported: 0, closed: 0 },
         decisions: [],
       }),
@@ -226,7 +243,6 @@ describe("renderProjectInbox", () => {
   it("contains no button, input, select, textarea or form", () => {
     const host = draw(
       projectInboxView({
-        project: { id: "alpha", name: "Alpha" },
         counts: { waiting: 1, oneWay: 0, reported: 0, closed: 0 },
         decisions: [
           inboxHead({
@@ -254,7 +270,6 @@ describe("renderProjectInbox", () => {
   it("never prints undefined, null, NaN or Invalid Date", () => {
     const host = draw(
       projectInboxView({
-        project: { id: "alpha", name: "Alpha" }, // no repo: the optional field is absent
         counts: { waiting: 0, oneWay: 0, reported: 0, closed: 0 },
         decisions: [
           inboxHead({

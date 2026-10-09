@@ -6,10 +6,12 @@
  * same way — including a `from` card, whose link already goes to the raising
  * project, because a `from` head carries the raiser as its own `project`.
  *
- * History heads — decisions that left the inbox after fourteen days — are not
- * drawn as cards; a single line counts them instead. A project with nothing in
- * any of the three groups gets one line saying so. The page takes no answers:
- * no button, input or form.
+ * The server's response carries only the project id, not its name: the page
+ * takes `name` from the projects listing the app already has, falling back to
+ * the id when that listing has no such project. History heads — decisions that
+ * left the inbox after fourteen days — are not drawn as cards; a single line
+ * counts them instead. A project with nothing in any of the three groups gets
+ * one line saying so. The page takes no answers: no button, input or form.
  */
 
 import { countLine } from "./inbox-model.js";
@@ -36,13 +38,13 @@ function groupHeads(decisions) {
 }
 
 /** "Inbox · <project>": the path back from the all-projects inbox. */
-function breadcrumbs(view) {
+function breadcrumbs(view, name) {
   return el("nav", {
     attrs: { class: "project-inbox-breadcrumbs" },
     children: [
       internalLink("Inbox", "/inbox"),
       text(" · "),
-      internalLink(view.project.name, `/p/${view.project.id}`),
+      internalLink(name, `/p/${view.project}`),
     ],
   });
 }
@@ -62,13 +64,13 @@ function historyLine(historyCount) {
  * there is nothing to draw, and the inbox's footer sentence — always, even when
  * the inbox is empty, so the rule sits above the fold as well as named.
  */
-export function renderProjectInbox(view, nowMs) {
+export function renderProjectInbox(view, nowMs, name) {
   const groups = groupHeads(view.decisions);
   const inGroups =
     groups.waiting.length + groups.reported.length + groups.closed.length;
   const children = [
-    breadcrumbs(view),
-    el("h1", { text: `${view.project.name} · decisions` }),
+    breadcrumbs(view, name),
+    el("h1", { text: `${name} · decisions` }),
     el("p", {
       attrs: { class: "inbox-counts" },
       text: countLine(view.counts),

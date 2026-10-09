@@ -1893,6 +1893,34 @@ describe("the project-inbox route", () => {
     app.stop();
   });
 
+  it("falls back to the project id when the listing has no such project", async () => {
+    const fetchImpl = fetchStub((path) =>
+      path === "/api/v1/projects"
+        ? {
+            status: 200,
+            body: [projectCard({ id: "beta", name: "Beta" })],
+          }
+        : path === "/api/v1/attention"
+          ? { status: 200, body: attentionView() }
+          : path === "/api/v1/projects/alpha/decisions"
+            ? { status: 200, body: projectInboxView() }
+            : { status: 404 },
+    );
+    const { app } = harness({ pathname: "/p/alpha/inbox", fetchImpl });
+    app.start();
+    await flush();
+
+    expect(app.route).toStrictEqual({
+      kind: "project-inbox",
+      project: "alpha",
+    });
+    // The listing has no "alpha", so the heading falls back to the id.
+    expect(textsOf(root(), ".project-inbox h1")).toStrictEqual([
+      "alpha · decisions",
+    ]);
+    app.stop();
+  });
+
   it("fetches the project's decisions alongside the rail's two lists", async () => {
     const fetchImpl = projectInboxFetch(projectInboxView());
     const { app } = harness({ pathname: "/p/alpha/inbox", fetchImpl });
@@ -1924,7 +1952,7 @@ describe("the project-inbox route", () => {
   it("shows offline for a 200 with an unusable body", async () => {
     const bad = {
       ...projectInboxView(),
-      project: { id: "beta", name: "Beta" },
+      project: "beta",
     };
     const fetchImpl = projectInboxFetch(bad);
     const { app } = harness({ pathname: "/p/alpha/inbox", fetchImpl });

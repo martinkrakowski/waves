@@ -98,6 +98,18 @@ function ownPath(url) {
   return url;
 }
 
+/**
+ * The project's display name from the projects listing the app already loaded,
+ * or the project id when the listing has no such project: the listing is the
+ * page that has the name, and the project inbox page never asks for one of its
+ * own. The decision page does the same, falling back to the id it was opened
+ * for.
+ */
+function projectName(projects, projectId) {
+  const found = projects.find((project) => project.id === projectId);
+  return found === undefined ? projectId : found.name;
+}
+
 export function createApp(deps) {
   const {
     doc,
@@ -489,7 +501,11 @@ export function createApp(deps) {
       return renderInbox(inboxModel(data.inbox), clock());
     }
     if (data.kind === "project-inbox") {
-      return renderProjectInbox(data.inbox, clock());
+      return renderProjectInbox(
+        data.inbox,
+        clock(),
+        projectName(data.projects, data.project),
+      );
     }
     if (data.kind === "decision") {
       return renderDecision(decisionModel(data.decision));
