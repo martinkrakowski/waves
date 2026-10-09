@@ -136,14 +136,13 @@ describe("run", () => {
   });
 
   it("labels a refused decision command with its name", async () => {
-    const built = harness({
-      vars: { WAVES_PROJECT: undefined },
-    });
+    const built = harness({ vars: { WAVES_PROJECT: undefined } });
     expect(
       await run(["decision", "raise", "--stdin"], built.io, built.deps),
     ).toBe(2);
     expect(built.err).toEqual([
       "waves decision raise: WAVES_PROJECT is required",
+      "waves decision raise: not raised; fix the configuration, or ask in the terminal",
     ]);
   });
 

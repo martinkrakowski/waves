@@ -19,7 +19,12 @@ import {
 } from "./errors.js";
 import type { UseCaseDeps } from "./ports.js";
 import { readJsonInput } from "./send.js";
-import { openSession, readProjectToken, transportFor } from "./session.js";
+import {
+  type Session,
+  openSession,
+  readProjectToken,
+  transportFor,
+} from "./session.js";
 
 type RaiseCommand = Extract<
   Command,
@@ -40,20 +45,37 @@ const LABEL = "waves decision raise";
  * A local validation failure is exit 2, printed one issue per line, before a byte
  * goes out: the user fixes the document, not the server. A 409 from the server is a
  * bound (too many decisions, too many revisions), and the server's own message is
- * printed as-is. Every other failure after retries ends with "ask in the terminal":
- * a session that cannot raise falls back to asking the owner directly, and this is
+ * printed as-is. Every other failure — a missing or bad `WAVES_URL`, no
+ * `WAVES_PROJECT`, an unreadable token file, a network failure, a 5xx and a 429
+ * past its retries — ends with the line "not raised; ... ask in the terminal": a
+ * session that cannot raise falls back to asking the owner directly, and this is
  * the line the owner sees.
  */
 export async function raise(
   command: RaiseCommand,
   deps: UseCaseDeps,
 ): Promise<number> {
-  const session = await openSession(deps.env, deps.files);
-  const { project, token } = await readProjectToken(
-    session,
-    deps.files,
-    deps.env,
-  );
+  // The session is read up front; a configuration failure there (a missing or
+  // bad `WAVES_URL`, no `WAVES_PROJECT`, or a token file that cannot be read) is
+  // handled in one place, so every failure of `raise` ends with a line that
+  // says to ask in the terminal, rather than only the failures that reach the
+  // retry loop. Exit codes are unchanged: a configuration failure is exit 2.
+  let session: Session;
+  let project: string;
+  let token: string;
+  try {
+    session = await openSession(deps.env, deps.files);
+    ({ project, token } = await readProjectToken(session, deps.files, deps.env));
+  } catch (error) {
+    if (error instanceof UsageError) {
+      deps.err(`${LABEL}: ${error.message}`);
+      deps.err(
+        `${LABEL}: not raised; fix the configuration, or ask in the terminal`,
+      );
+      return EXIT_USAGE;
+    }
+    throw error;
+  }
   let input: unknown;
   try {
     input = await readJsonInput(command.source, deps);

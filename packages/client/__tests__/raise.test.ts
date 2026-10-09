@@ -355,18 +355,37 @@ describe("raise", () => {
     expect(built.out).toEqual([]);
   });
 
-  it("wants a project and a token before it sends anything", async () => {
+  it("ends a configuration failure with a line that says to ask in the terminal", async () => {
     const noProject = harnessFor({
       vars: { WAVES_PROJECT: undefined },
       stdin: MINIMAL_DECISION,
     });
-    await expect(raise(command(), noProject.deps)).rejects.toThrow(
-      "WAVES_PROJECT is required",
-    );
+    expect(await raise(command(), noProject.deps)).toBe(2);
+    expect(noProject.err).toEqual([
+      "waves decision raise: WAVES_PROJECT is required",
+      "waves decision raise: not raised; fix the configuration, or ask in the terminal",
+    ]);
+    expect(noProject.sent()).toBe(0);
 
     const noToken = harness({ stdin: MINIMAL_DECISION });
-    await expect(raise(command(), noToken.deps)).rejects.toThrow(
-      `no token for ${PROJECT} at ${tokenPath}`,
-    );
+    expect(await raise(command(), noToken.deps)).toBe(2);
+    expect(noToken.err).toEqual([
+      `waves decision raise: no token for ${PROJECT} at ${tokenPath}; run waves register first`,
+      "waves decision raise: not raised; fix the configuration, or ask in the terminal",
+    ]);
+    expect(noToken.sent()).toBe(0);
+  });
+
+  it("ends a bad WAVES_URL with a line that says to ask in the terminal", async () => {
+    const built = harnessFor({
+      vars: { WAVES_URL: "not-a-url" },
+      stdin: MINIMAL_DECISION,
+    });
+    expect(await raise(command(), built.deps)).toBe(2);
+    expect(built.err).toEqual([
+      "waves decision raise: WAVES_URL must be an absolute URL",
+      "waves decision raise: not raised; fix the configuration, or ask in the terminal",
+    ]);
+    expect(built.sent()).toBe(0);
   });
 });
