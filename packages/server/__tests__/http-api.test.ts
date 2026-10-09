@@ -290,6 +290,7 @@ describe("the API surface", () => {
         lanes: 1,
         lastPush: "2026-10-01T12:00:01Z",
         stale: true,
+        decisions: { waiting: 0, oneWay: 0, reported: 0, closed: 0 },
         recentWaves: [
           {
             wave: "wv1",
