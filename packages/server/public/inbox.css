@@ -1,0 +1,151 @@
+/*
+ * The inbox page's own rules. The frame, the colours and the measure all come
+ * from tokens.css, shell.css and app.css; what is here is only the look of the
+ * inbox's parts. Colours come only from tokens, and every state that carries a
+ * colour is also said in a word — the door band says "ONE-WAY DOOR:" as well as
+ * it is amber.
+ */
+
+.view.inbox {
+  padding: 1.25rem 0;
+}
+
+.view.inbox h1 {
+  font-family: var(--display);
+  font-size: clamp(1.6rem, 1.1rem + 1.5vw, 2.4rem);
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  margin: 0 0 0.5rem;
+}
+
+/* The totals line and the per-project line: the four numbers, named, not summed. */
+.inbox-totals,
+.inbox-counts {
+  font-family: var(--mono);
+  margin: 0 0 1.5rem;
+}
+
+.inbox-totals {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* One project: a glass card holding its counts and its decisions. */
+.inbox-project {
+  background: var(--card-sheen), var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+}
+
+.inbox-project h2 {
+  font-size: 1.02rem;
+  margin: 0 0 0.25rem;
+  overflow-wrap: anywhere;
+}
+
+.inbox-counts {
+  color: var(--faint);
+  font-size: 0.75rem;
+}
+
+/* A project with nothing listed: one line, no card frame. */
+.inbox-empty {
+  color: var(--muted);
+  padding: 0.5rem 0;
+  overflow-wrap: anywhere;
+}
+
+/* The three sub-headings, one per group that has cards. */
+.inbox-group h3 {
+  color: var(--muted);
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  margin: 0.75rem 0 0.3rem;
+  text-transform: uppercase;
+}
+
+/* One card: the door band, the question, the facts, the state and the meta. */
+.inbox-card {
+  background: var(--bg-raise);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  list-style: none;
+  margin: 0 0 0.75rem;
+  padding: 0.6rem 0.75rem;
+}
+
+.inbox-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/*
+ * The door band: full-width, in words and not in colour alone. Amber says
+ * "undo this and the work is gone" without being the only thing that says it.
+ * The reason is shown verbatim as text, never as markup.
+ */
+.door-band {
+  background: var(--bg-sink);
+  border: 1px solid var(--amber);
+  border-radius: var(--radius-card);
+  color: var(--amber);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  margin: 0 0 0.5rem;
+  padding: 0.4rem 0.75rem;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.card-question {
+  font-size: 1rem;
+  margin: 0 0 0.4rem;
+  overflow-wrap: anywhere;
+}
+
+.card-facts {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin: 0 0 0.4rem;
+  overflow-wrap: anywhere;
+}
+
+.card-state {
+  color: var(--text);
+  font-size: 0.85rem;
+  margin: 0 0 0.3rem;
+  overflow-wrap: anywhere;
+}
+
+.card-small {
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin: 0 0 0.3rem;
+}
+
+.card-covered,
+.card-earlier,
+.card-elsewhere,
+.card-from {
+  color: var(--text);
+  font-size: 0.85rem;
+  margin: 0 0 0.3rem;
+  overflow-wrap: anywhere;
+}
+
+.card-meta {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  margin: 0.4rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.inbox-footer {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin: 1rem 0 0;
+}
