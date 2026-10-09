@@ -94,20 +94,20 @@ describe("event", () => {
     expect(built.sent()).toBe(0);
   });
 
-  it("refuses a 201 with an unusable body", async () => {
+  it("says it may have been recorded on a 201 with an unusable body", async () => {
     const built = harnessFor({ script: [reply(201, "{}")] });
     await expect(sendEvent(command(), built.deps)).rejects.toThrow(
-      "the server sent an unusable body",
+      "the server sent an unusable body; it may or may not have been recorded",
     );
     expect(built.out).toEqual([]);
   });
 
-  it("does not retry a write after the body may have been sent", async () => {
+  it("says it may have been recorded after a post-body network failure", async () => {
     const built = harnessFor({
       script: [network("socket hang up", false), reply(201, ACCEPTED)],
     });
     await expect(sendEvent(command(), built.deps)).rejects.toThrow(
-      "socket hang up; not recorded, ask in the terminal",
+      "socket hang up; it may or may not have been recorded",
     );
     expect(built.sent()).toBe(1);
   });
@@ -190,12 +190,15 @@ describe("event", () => {
     expect(built.out).toEqual([]);
   });
 
-  it("refuses a 500 without retrying", async () => {
-    const built = harnessFor({ script: [reply(500, "")] });
+  it("says a 500 may have been recorded rather than not recorded", async () => {
+    const built = harnessFor({
+      script: [reply(500, "")],
+    });
     await expect(sendEvent(command(), built.deps)).rejects.toThrow(
-      "500 Internal Server Error; not recorded, ask in the terminal",
+      "500 Internal Server Error; it may or may not have been recorded",
     );
     expect(built.sent()).toBe(1);
+    expect(built.waits).toEqual([]);
   });
 
   it("wants a project and a token before it sends anything", async () => {

@@ -87,16 +87,21 @@ export async function report(
           await deps.sleeper.sleep(decision.ms);
           continue;
         }
+        throw new Failure(
+          `${outcome.message}; not recorded, ask in the terminal`,
+        );
       }
       throw new Failure(
-        `${outcome.message}; not recorded, ask in the terminal`,
+        `${outcome.message}; it may or may not have been recorded: read the decision before writing again`,
       );
     }
     const { status, headers, body } = outcome.reply;
     if (status === 201) {
       const index = readStateEntryIndex(body);
       if (index === undefined) {
-        throw new Failure("the server sent an unusable body");
+        throw new Failure(
+          "the server sent an unusable body; it may or may not have been recorded: read the decision before writing again",
+        );
       }
       deps.out(
         `recorded ${project}/${command.id}: ${command.state}, reported, entry ${index}`,
@@ -136,6 +141,11 @@ export async function report(
       throttles += 1;
       await deps.sleeper.sleep(decision.ms);
       continue;
+    }
+    if (status >= 500) {
+      throw new Failure(
+        `${status} ${reasonPhrase(status)}; it may or may not have been recorded: read the decision before writing again`,
+      );
     }
     throw new Failure(
       `${status} ${reasonPhrase(status)}; not recorded, ask in the terminal`,
