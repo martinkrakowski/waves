@@ -285,3 +285,203 @@ export function inboxView(overrides: Partial<InboxView> = {}): InboxView {
     ...overrides,
   };
 }
+
+import { NOTICE_DECISIONS } from "../../../contract/__tests__/fixtures/notice-decisions.js";
+import type { NoticeFixture } from "../../../contract/__tests__/fixtures/notice-decisions.js";
+
+/** The names the registry uses for the fourteen fixtures' projects. */
+const INBOX_NAMES: Record<string, string> = {
+  "hexagen-monaco": "Hexagen Monaco",
+  "campaign-foundry": "Campaign Foundry",
+  "gate-lock": "Gate Lock",
+  fleet: "Fleet",
+  "client-portal": "Client Portal",
+  waves: "Waves",
+};
+
+/**
+ * Twelve days — the window the server uses to decide if a reported answer or a
+ * session-closed decision stays in the inbox. All fixture dates are within it at
+ * `INBOX_NOW_MS`, which is what this helper depends on.
+ */
+const INBOX_REPORTED_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+
+/**
+ * The group a head falls in at `nowMs`, by the rules in docs/waves-v1.md 5.1.2:
+ * `open` and `delegated` are waiting; an answer within the window is reported; a
+ * withdrawal or supersession within the window is closed; and everything older
+ * is history — which the server leaves out of the inbox entirely.
+ */
+function inboxGroup(
+  state: string,
+  at: string,
+  nowMs: number,
+): "waiting" | "reported" | "closed" | "history" {
+  if (state === "open" || state === "delegated") {
+    return "waiting";
+  }
+  const withinWindow = nowMs - Date.parse(at) <= INBOX_REPORTED_WINDOW_MS;
+  if (state === "approved" || state === "declined" || state === "answered") {
+    return withinWindow ? "reported" : "history";
+  }
+  return withinWindow ? "closed" : "history";
+}
+
+/**
+ * The current entry on a fixture's current revision, if it has one. A fixture's
+ * states each carry a `revision`; the one matching the latest revision number is
+ * current, and the last of those is the entry the server calls "current".
+ */
+function currentEntry(
+  fixture: NoticeFixture,
+): Record<string, unknown> | undefined {
+  const latestRevision = fixture.revisions.length;
+  const matching = fixture.states.filter((s) => {
+    const rev = (s as { revision?: number }).revision;
+    if (rev === latestRevision) {
+      return true;
+    }
+    return latestRevision === 1 && (rev === undefined || rev === 1);
+  });
+  return matching[matching.length - 1];
+}
+
+/**
+ * One head built from a fixture, by the rules in 5.1.2. This is NOT the server's
+ * own model — it hardcodes the hash, assumes every date is in-window, and only
+ * computes the fields the inbox view reads. The server's
+ * `http-notice-read.test.ts` is what checks that the real response is right;
+ * this helper only feeds a plausible one to the page.
+ */
+function headFromFixture(fixture: NoticeFixture, nowMs: number): Head {
+  const latest = fixture.revisions[fixture.revisions.length - 1] as Record<
+    string,
+    unknown
+  >;
+  const revision = fixture.revisions.length;
+  const hardToUndo = latest.hardToUndo as
+    { value: true | false | "partly"; reason?: string } | undefined;
+  const entry = currentEntry(fixture);
+  const state = entry ? (String(entry.state) as Head["state"]) : "open";
+  const source = entry
+    ? (entry.source as "session" | "reported" | undefined)
+    : undefined;
+  const at = entry
+    ? String(entry.at)
+    : String((latest as { raisedAt?: string }).raisedAt ?? NOW_ISO);
+  const group = inboxGroup(state, at, nowMs) as Head["group"];
+  return {
+    project: fixture.project,
+    id: fixture.id,
+    question: String(latest.question ?? "Question?"),
+    shape: String(
+      (latest as { shape?: string }).shape ?? "choice",
+    ) as Head["shape"],
+    door: hardToUndo
+      ? {
+          value: hardToUndo.value,
+          ...(hardToUndo.reason ? { reason: hardToUndo.reason } : {}),
+        }
+      : { value: false },
+    decider: String(
+      (latest as { decider?: string }).decider ?? "owner",
+    ) as Head["decider"],
+    revision,
+    revisions: fixture.revisions.length,
+    textSha256: "0".repeat(64),
+    entries: fixture.states.length,
+    state,
+    ...(source ? { source } : {}),
+    at,
+    group,
+    ...(latest.actElsewhere
+      ? {
+          actElsewhere: latest.actElsewhere as {
+            where: string;
+            what: string;
+          },
+        }
+      : {}),
+    from: undefined,
+  };
+}
+
+/**
+ * The inbox response the fourteen NOTICE_DECISIONS fixtures would produce, built
+ * by the rules in docs/waves-v1.md 5.1.2. Every project in `appliesTo` gets a
+ * copy of a raising project's instructions, marked `from` the raiser; the counts
+ * stay the raiser's own, as the server does. Decisions are sorted as the server
+ * sorts them: group, then one-way door, then receive time.
+ */
+export function inboxFromFixtures(): InboxView {
+  const nowMs = INBOX_NOW_MS;
+  const registry: string[] = [];
+  const ownHeads = new Map<string, Head[]>();
+
+  for (const fixture of NOTICE_DECISIONS) {
+    if (!ownHeads.has(fixture.project)) {
+      ownHeads.set(fixture.project, []);
+      registry.push(fixture.project);
+    }
+    ownHeads.get(fixture.project)!.push(headFromFixture(fixture, nowMs));
+  }
+
+  // Applied instructions: instructions from one project that applyTo another.
+  const projects: InboxProject[] = registry.map((id) => {
+    const own = ownHeads.get(id) ?? [];
+    const applied: Head[] = [];
+    for (const fixture of NOTICE_DECISIONS) {
+      const latest = fixture.revisions[fixture.revisions.length - 1] as Record<
+        string,
+        unknown
+      >;
+      if (latest.shape === "instruction") {
+        const appliesTo = latest.appliesTo as string[] | undefined;
+        if (appliesTo?.includes(id) && fixture.project !== id) {
+          applied.push({
+            ...headFromFixture(fixture, nowMs),
+            from: fixture.project,
+          });
+        }
+      }
+    }
+
+    // Merge own and applied, then sort by group, door, at (newest first).
+    const all = [...own, ...applied].sort((a, b) => {
+      const ga = a.group === "waiting" ? 0 : a.group === "reported" ? 1 : 2;
+      const gb = b.group === "waiting" ? 0 : b.group === "reported" ? 1 : 2;
+      if (ga !== gb) return ga - gb;
+      const da = a.door.value === true ? 0 : 1;
+      const db = b.door.value === true ? 0 : 1;
+      if (da !== db) return da - db;
+      return Date.parse(b.at) - Date.parse(a.at);
+    });
+
+    const counts = all.reduce(
+      (c, h) => {
+        if (h.project === id && h.from === undefined) {
+          // Only own decisions count.
+          if (h.group === "waiting") {
+            c.waiting += 1;
+            if (h.door.value === true) c.oneWay += 1;
+          } else if (h.group === "reported") {
+            c.reported += 1;
+          } else if (h.group === "closed") {
+            c.closed += 1;
+          }
+        }
+        return c;
+      },
+      { waiting: 0, oneWay: 0, reported: 0, closed: 0 },
+    );
+
+    return inboxProject({
+      id,
+      name: INBOX_NAMES[id] ?? id,
+      counts,
+      decisions: all,
+    });
+  });
+
+  return inboxView({ projects });
+}
