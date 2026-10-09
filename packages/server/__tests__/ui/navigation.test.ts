@@ -1965,8 +1965,9 @@ describe("the project-inbox route", () => {
           : path === "/api/v1/projects/alpha/decisions"
             ? { status: 200, body: inboxListing }
             : { status: 404 };
-    const gate = holding(handler, (path) =>
-      path === "/api/v1/projects/alpha/decisions",
+    const gate = holding(
+      handler,
+      (path) => path === "/api/v1/projects/alpha/decisions",
     );
     const { app } = harness({ pathname: "/p/alpha/inbox", fetchImpl: gate });
     app.start();
