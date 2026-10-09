@@ -108,6 +108,15 @@ function breadcrumb(route, all) {
   if (route.kind === "inbox") {
     return [internalLink(BRAND, "/"), text(" / "), here("Inbox")];
   }
+  if (route.kind === "project-inbox") {
+    return [
+      internalLink(BRAND, "/"),
+      text(" / "),
+      internalLink(route.project, `/p/${route.project}`),
+      text(" / "),
+      here("Inbox"),
+    ];
+  }
   // A page that is not one of ours still has the fleet above it, and with the
   // rail gone this is the only link that leads there.
   if (route.kind === "decision") {

@@ -14,6 +14,7 @@ import {
   inboxView,
   laneRow,
   projectCard,
+  projectInboxView,
   projectLanes,
   waveSummary,
 } from "./fixtures.js";
@@ -1851,6 +1852,103 @@ describe("the decision route", () => {
 
     expect(app.route).toStrictEqual({ kind: "projects" });
     expect(textsOf(root(), ".projects a")).toStrictEqual(["Alpha"]);
+    app.stop();
+  });
+});
+
+describe("the project-inbox route", () => {
+  /** A fetch stub that answers the rail's two lists and one project's decisions. */
+  function projectInboxFetch(body: unknown) {
+    return fetchStub((path) =>
+      path === "/api/v1/projects"
+        ? {
+            status: 200,
+            body: [projectCard(), projectCard({ id: "beta", name: "Beta" })],
+          }
+        : path === "/api/v1/attention"
+          ? { status: 200, body: attentionView() }
+          : path === "/api/v1/projects/alpha/decisions"
+            ? body === undefined
+              ? { status: 404 }
+              : { status: 200, body }
+            : { status: 404 },
+    );
+  }
+
+  it("boots on /p/alpha/inbox and draws the project inbox", async () => {
+    const fetchImpl = projectInboxFetch(projectInboxView());
+    const { app } = harness({ pathname: "/p/alpha/inbox", fetchImpl });
+    app.start();
+    await flush();
+
+    expect(app.route).toStrictEqual({
+      kind: "project-inbox",
+      project: "alpha",
+    });
+    expect(textsOf(root(), ".project-inbox h1")).toStrictEqual([
+      "Alpha · decisions",
+    ]);
+    // The rail still lists every project.
+    expect(textsOf(root(), ".projects a")).toStrictEqual(["Alpha", "Beta"]);
+    app.stop();
+  });
+
+  it("fetches the project's decisions alongside the rail's two lists", async () => {
+    const fetchImpl = projectInboxFetch(projectInboxView());
+    const { app } = harness({ pathname: "/p/alpha/inbox", fetchImpl });
+    app.start();
+    await flush();
+
+    expect(fetchImpl.calls).toStrictEqual([
+      "/api/v1/projects",
+      "/api/v1/attention",
+      "/api/v1/projects/alpha/decisions",
+    ]);
+    app.stop();
+  });
+
+  it("shows No such project for a 404", async () => {
+    const fetchImpl = projectInboxFetch(undefined);
+    const { app } = harness({ pathname: "/p/alpha/inbox", fetchImpl });
+    app.start();
+    await flush();
+
+    expect(app.route).toStrictEqual({
+      kind: "project-inbox",
+      project: "alpha",
+    });
+    expect(textsOf(root(), ".empty")).toStrictEqual(["No such project."]);
+    app.stop();
+  });
+
+  it("shows offline for a 200 with an unusable body", async () => {
+    const bad = {
+      ...projectInboxView(),
+      project: { id: "beta", name: "Beta" },
+    };
+    const fetchImpl = projectInboxFetch(bad);
+    const { app } = harness({ pathname: "/p/alpha/inbox", fetchImpl });
+    app.start();
+    await flush();
+
+    expect(app.route).toStrictEqual({
+      kind: "project-inbox",
+      project: "alpha",
+    });
+    expect(textsOf(root(), ".note")).toStrictEqual(["offline, retrying"]);
+    app.stop();
+  });
+
+  it("names the project in the breadcrumb and title", async () => {
+    const fetchImpl = projectInboxFetch(projectInboxView());
+    const { app } = harness({ pathname: "/p/alpha/inbox", fetchImpl });
+    app.start();
+    await flush();
+
+    expect(document.title).toBe("waves — alpha");
+    expect(textOf(root().querySelector(".crumbs") as Element)).toBe(
+      "waves / alpha / Inbox",
+    );
     app.stop();
   });
 });

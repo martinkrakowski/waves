@@ -274,7 +274,11 @@ function projectBlock(project, nowMs) {
       }),
       el("p", {
         attrs: { class: "inbox-counts" },
-        text: countLine(project.counts),
+        children: [
+          text(countLine(project.counts)),
+          text(" · "),
+          internalLink("this project's decisions", `/p/${project.id}/inbox`),
+        ],
       }),
       groupBlock(GROUP_HEAD.waiting, "inbox-waiting", project.waiting, nowMs),
       groupBlock(

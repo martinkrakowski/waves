@@ -47,16 +47,16 @@ describe("the fourteenth fixtures", () => {
     const lines = textsOf(host, ".inbox-counts");
     expect(lines).toHaveLength(6);
     expect(lines).toContain(
-      "1 waiting (1 one-way door) · 1 reported · 0 closed by a session",
+      "1 waiting (1 one-way door) · 1 reported · 0 closed by a session · this project's decisions",
     );
     expect(lines).toContain(
-      "3 waiting (1 one-way door) · 0 reported · 0 closed by a session",
+      "3 waiting (1 one-way door) · 0 reported · 0 closed by a session · this project's decisions",
     );
     expect(lines).toContain(
-      "2 waiting (0 one-way doors) · 0 reported · 0 closed by a session",
+      "2 waiting (0 one-way doors) · 0 reported · 0 closed by a session · this project's decisions",
     );
     expect(lines).toContain(
-      "2 waiting (1 one-way door) · 2 reported · 0 closed by a session",
+      "2 waiting (1 one-way door) · 2 reported · 0 closed by a session · this project's decisions",
     );
   });
 

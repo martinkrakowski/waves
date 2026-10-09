@@ -29,6 +29,11 @@ function decisionPath(projectId, decisionId) {
   return `${project}/decisions/${encodeURIComponent(decisionId)}`;
 }
 
+/** A project's own decisions, with counts: the project inbox page. */
+function projectDecisionsPath(projectId) {
+  return `/api/v1/projects/${encodeURIComponent(projectId)}/decisions`;
+}
+
 async function readJson(fetchImpl, path) {
   const response = await fetchImpl(path, { headers: JSON_HEADERS });
   if (response.status === 404) {
@@ -51,5 +56,7 @@ export function createApi(fetchImpl) {
     status: (projectId) => readJson(fetchImpl, statusPath(projectId)),
     decision: (projectId, decisionId) =>
       readJson(fetchImpl, decisionPath(projectId, decisionId)),
+    projectDecisions: (projectId) =>
+      readJson(fetchImpl, projectDecisionsPath(projectId)),
   };
 }

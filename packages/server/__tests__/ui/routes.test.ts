@@ -44,6 +44,26 @@ describe("routeOf", () => {
     });
   });
 
+  it("routes /p/<project>/inbox at one project's inbox", () => {
+    expect(routeOf("/p/alpha/inbox")).toStrictEqual({
+      kind: "project-inbox",
+      project: "alpha",
+    });
+  });
+
+  it("still treats inbox as a wave and as a decision id of their own", () => {
+    expect(routeOf("/p/alpha/w/inbox")).toStrictEqual({
+      kind: "project",
+      id: "alpha",
+      wave: "inbox",
+    });
+    expect(routeOf("/p/alpha/d/inbox")).toStrictEqual({
+      kind: "decision",
+      project: "alpha",
+      id: "inbox",
+    });
+  });
+
   it("refuses an id or a wave it would have to decode", () => {
     expect(routeOf("/p/a%20b")).toStrictEqual({ kind: "unknown" });
     expect(routeOf("/p/%zz")).toStrictEqual({ kind: "unknown" });
@@ -104,6 +124,7 @@ describe("pathFor", () => {
       "/p/alpha/w/wv1",
       "/p/alpha/w/w_v-1",
       "/p/alpha/d/d1",
+      "/p/alpha/inbox",
     ]) {
       const route = routeOf(pathname);
       const path =
@@ -111,7 +132,9 @@ describe("pathFor", () => {
           ? pathFor(route.id, route.wave)
           : route.kind === "decision"
             ? `/p/${route.project}/d/${route.id}`
-            : "/";
+            : route.kind === "project-inbox"
+              ? `/p/${route.project}/inbox`
+              : "/";
       expect(routeOf(path)).toStrictEqual(route);
     }
   });
