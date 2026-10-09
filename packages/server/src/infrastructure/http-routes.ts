@@ -1,12 +1,18 @@
-import { isProjectId, isWaveId } from "@hexagen-monaco/waves-contract";
+import {
+  isLaneId,
+  isProjectId,
+  isWaveId,
+} from "@hexagen-monaco/waves-contract";
 
 import { resolveStaticFile, type StaticFile } from "./http-static.js";
 
 export const HEALTH_PATH = "/healthz";
 export const READY_PATH = "/readyz";
 export const ATTENTION_PATH = "/api/v1/attention";
+export const INBOX_PATH = "/api/v1/inbox";
 export const API_PREFIX = "/api/v1/projects";
 export const MAX_URL_BYTES = 2048;
+export const MAX_NOTICE_EVENTS = 200;
 
 export type Route =
   | { readonly kind: "health" }
@@ -18,15 +24,28 @@ export type Route =
   | { readonly kind: "lanes"; readonly project: string }
   | { readonly kind: "status"; readonly project: string }
   | { readonly kind: "wave"; readonly project: string; readonly wave: string }
+  | {
+      readonly kind: "decision";
+      readonly project: string;
+      readonly id: string;
+    }
+  | {
+      readonly kind: "decisionStates";
+      readonly project: string;
+      readonly id: string;
+    }
+  | { readonly kind: "decisions"; readonly project: string }
+  | { readonly kind: "events"; readonly project: string }
+  | { readonly kind: "inbox" }
   | { readonly kind: "index" }
   | { readonly kind: "file"; readonly file: StaticFile }
   | { readonly kind: "missing" };
 
 /**
- * Which methods answer each path, and therefore what a 405 on it announces.
- * The three project writes — a push, a status, a wave delete — the project
+ * Which methods answer each path, and therefore what a 405 on it announces. The
+ * three project writes — a push, a status, a wave delete — the project
  * collection and the single project are the only ones a write is allowed on;
- * everything else is a read.
+ * everything else is a read. The notice routes carry their writes (PUT and POST) alongside the reads (GET and HEAD) they serve.
  */
 const ALLOWED: Readonly<Record<Route["kind"], string>> = {
   health: "GET, HEAD",
@@ -38,6 +57,11 @@ const ALLOWED: Readonly<Record<Route["kind"], string>> = {
   lanes: "GET, HEAD",
   status: "GET, HEAD, PUT",
   wave: "GET, HEAD, PUT, DELETE",
+  decision: "GET, HEAD, PUT",
+  decisionStates: "POST",
+  decisions: "GET, HEAD",
+  events: "GET, HEAD, POST",
+  inbox: "GET, HEAD",
   index: "GET, HEAD",
   file: "GET, HEAD",
   missing: "GET, HEAD",
@@ -48,7 +72,18 @@ export type WriteRoute =
   | { readonly kind: "putStatus"; readonly project: string }
   | { readonly kind: "drop"; readonly project: string; readonly wave: string }
   | { readonly kind: "register" }
-  | { readonly kind: "removeProject"; readonly project: string };
+  | { readonly kind: "removeProject"; readonly project: string }
+  | {
+      readonly kind: "raiseDecision";
+      readonly project: string;
+      readonly id: string;
+    }
+  | {
+      readonly kind: "postState";
+      readonly project: string;
+      readonly id: string;
+    }
+  | { readonly kind: "postEvent"; readonly project: string };
 
 export function allowOf(matched: Route): string {
   return ALLOWED[matched.kind];
@@ -71,7 +106,8 @@ export function isAdminWrite(
  * write that path accepts: a 405 is then the answer, carrying that path's own
  * `Allow`. Registering and removing a project are admin writes; pushing a wave,
  * writing a project's status and removing a wave are project writes, answered
- * with that project's own token.
+ * with that project's own token. The three notice writes — raising a decision,
+ * posting a state entry and posting an event — are project writes too.
  */
 export function writeRouteOf(
   matched: Route,
@@ -91,6 +127,15 @@ export function writeRouteOf(
   }
   if (method === "DELETE" && matched.kind === "wave") {
     return { kind: "drop", project: matched.project, wave: matched.wave };
+  }
+  if (method === "PUT" && matched.kind === "decision") {
+    return { kind: "raiseDecision", project: matched.project, id: matched.id };
+  }
+  if (method === "POST" && matched.kind === "decisionStates") {
+    return { kind: "postState", project: matched.project, id: matched.id };
+  }
+  if (method === "POST" && matched.kind === "events") {
+    return { kind: "postEvent", project: matched.project };
   }
   return undefined;
 }
@@ -131,6 +176,9 @@ export function route(pathname: string, root: string): Route {
   if (pathname === ATTENTION_PATH) {
     return { kind: "attention" };
   }
+  if (pathname === INBOX_PATH) {
+    return { kind: "inbox" };
+  }
   const parts = pathname.split("/");
   if (parts.slice(0, 4).join("/") === API_PREFIX) {
     if (parts.length === 4) {
@@ -149,6 +197,27 @@ export function route(pathname: string, root: string): Route {
       }
       if (parts.length === 6 && parts[5] === "status") {
         return { kind: "status", project };
+      }
+      if (parts.length === 6 && parts[5] === "decisions") {
+        return { kind: "decisions", project };
+      }
+      if (parts.length === 6 && parts[5] === "events") {
+        return { kind: "events", project };
+      }
+      if (
+        parts.length === 7 &&
+        parts[5] === "decisions" &&
+        isLaneId(String(parts[6]))
+      ) {
+        return { kind: "decision", project, id: String(parts[6]) };
+      }
+      if (
+        parts.length === 8 &&
+        parts[5] === "decisions" &&
+        isLaneId(String(parts[6])) &&
+        parts[7] === "states"
+      ) {
+        return { kind: "decisionStates", project, id: String(parts[6]) };
       }
       if (
         parts.length === 7 &&

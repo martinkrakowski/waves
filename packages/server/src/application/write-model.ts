@@ -8,6 +8,7 @@ import {
 } from "@hexagen-monaco/waves-contract";
 
 import type { StorePort, StoredStatus } from "./ports/store.js";
+import type { NoticeStorePort } from "./ports/notice-store.js";
 import type { Now } from "./read-model.js";
 
 /**
@@ -18,6 +19,7 @@ export const REGISTRATION_KEYS: readonly string[] = ["id", "name", "repo"];
 
 export interface WriteModelDeps {
   readonly store: StorePort<Project, StoredSnapshot>;
+  readonly noticeStore: NoticeStorePort;
   readonly now: Now;
   /** Mints a new project token. Injected: randomness is an adapter's. */
   readonly mintToken: () => string;
@@ -96,7 +98,7 @@ function projectIdOf(record: Record<string, unknown>): string | undefined {
 }
 
 export function createWriteModel(deps: WriteModelDeps) {
-  const { store, now, mintToken, digestHex } = deps;
+  const { store, noticeStore, now, mintToken, digestHex } = deps;
 
   function closed(body: unknown): Closed {
     const issues = closedIssues(body);
@@ -192,9 +194,18 @@ export function createWriteModel(deps: WriteModelDeps) {
           fresh.project,
           Number.POSITIVE_INFINITY,
         );
-        return outcome === "created"
-          ? { kind: "registered", id: fresh.project.id, token: fresh.token }
-          : { kind: "conflict" };
+        if (outcome === "created") {
+          // A project registered again after a delete must not inherit any
+          // decisions an earlier-authenticated notice write left behind: clear
+          // them the way `createProject` clears a stale status (design W60).
+          await noticeStore.deleteNotices(fresh.project.id);
+          return {
+            kind: "registered",
+            id: fresh.project.id,
+            token: fresh.token,
+          };
+        }
+        return { kind: "conflict" };
       }
       // An id the contract would refuse never reaches the store, so a body with
       // a malformed id is validated rather than looked up.
@@ -230,6 +241,7 @@ export function createWriteModel(deps: WriteModelDeps) {
       }
       const outcome = await store.createProject(built.project, ENROLL_CEILING);
       if (outcome === "created") {
+        await noticeStore.deleteNotices(built.project.id);
         return { kind: "registered", id: built.project.id, token: built.token };
       }
       return outcome === "exists" ? { kind: "conflict" } : { kind: "ceiling" };
@@ -237,7 +249,9 @@ export function createWriteModel(deps: WriteModelDeps) {
 
     /**
      * False when there was no such project. The store deletes silently, so the
-     * caller reads first: an unknown id is a 404, not a 204.
+     * caller reads first: an unknown id is a 404, not a 204. The project's
+     * notices go with it (design W60): the registry's own delete takes the
+     * waves and the status, and the notice store takes the decisions and events.
      */
     async deleteProject(id: string): Promise<boolean> {
       const stored = await store.getProject(id);
@@ -245,6 +259,7 @@ export function createWriteModel(deps: WriteModelDeps) {
         return false;
       }
       await store.deleteProject(id);
+      await noticeStore.deleteNotices(id);
       return true;
     },
   };

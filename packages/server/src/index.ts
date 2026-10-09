@@ -40,6 +40,10 @@ export type {
   StorePort,
   StoredStatus,
 } from "./application/ports/store.js";
+export {
+  createNoticeWriteModel,
+  type NoticeWriteModel,
+} from "./application/notice-write-model.js";
 export { createWriteModel, ENROLL_CEILING } from "./application/write-model.js";
 export type { Registration, WriteModel } from "./application/write-model.js";
 export {
@@ -49,7 +53,14 @@ export {
   sameToken,
 } from "./infrastructure/admin-token.js";
 export { FileStore } from "./infrastructure/file-store.js";
+export { FileNoticeStore } from "./infrastructure/file-notice-store.js";
+export {
+  eventReply,
+  raiseReply,
+  stateReply,
+} from "./infrastructure/notice-replies.js";
 export { digestsEqual, mintToken } from "./infrastructure/digest.js";
+export { sha256Hex } from "./infrastructure/sha256.js";
 export { createHttpServer } from "./infrastructure/http-server.js";
 export type { HttpServerDeps } from "./infrastructure/http-server.js";
 export { listen } from "./infrastructure/listen.js";

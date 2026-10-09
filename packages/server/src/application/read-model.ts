@@ -32,6 +32,8 @@ import {
   type StorePort,
   type StoredStatus,
 } from "./ports/store.js";
+import type { NoticeStorePort } from "./ports/notice-store.js";
+import { noticeCounts, type NoticeCounts } from "./notice-read-model.js";
 
 export type Now = () => number;
 
@@ -175,6 +177,12 @@ export interface ProjectSummary {
     readonly prsSkipped?: number;
     readonly backlogState?: BacklogState;
   };
+  /**
+   * The counts of this project's own decisions, for the fleet glance. Absent
+   * when the notice store is wired in (it is, in production); used only by the
+   * project summary, never summed with the wave counts.
+   */
+  readonly decisions?: NoticeCounts;
 }
 
 export interface WaveSummary extends SnapshotHead {
@@ -310,6 +318,7 @@ export interface ProjectLanesView {
 
 export interface ReadModelDeps {
   readonly store: StorePort<Project, StoredSnapshot>;
+  readonly noticeStore?: NoticeStorePort;
   readonly now: Now;
 }
 
@@ -671,7 +680,7 @@ function recentWave(
 }
 
 export function createReadModel(deps: ReadModelDeps): ReadModel {
-  const { store, now } = deps;
+  const { store, noticeStore, now } = deps;
 
   /**
    * The lanes each wave has already been parsed into, keyed by project and wave,
@@ -826,6 +835,10 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
         // One status read per project, beside the heads: the card shows two facts
         // about it, and a project that has pushed none has no key to show at all.
         const status = await summaryStatus(project.id);
+        const decisions =
+          noticeStore === undefined
+            ? undefined
+            : noticeCounts(await noticeStore.listDecisions(project.id), nowMs);
         summaries.push({
           id: project.id,
           name: project.name,
@@ -842,6 +855,7 @@ export function createReadModel(deps: ReadModelDeps): ReadModel {
               nowMs,
             ),
           recentWaves: await recentWaves(project.id, heads, nowMs),
+          ...(decisions === undefined ? {} : { decisions }),
           ...(status === undefined
             ? {}
             : { status: statusFacts(status, nowMs) }),

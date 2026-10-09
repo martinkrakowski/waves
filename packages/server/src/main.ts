@@ -9,9 +9,11 @@ import {
   type SecretToken,
 } from "./infrastructure/admin-token.js";
 import { FileStore } from "./infrastructure/file-store.js";
+import { FileNoticeStore } from "./infrastructure/file-notice-store.js";
 import { createHttpServer } from "./infrastructure/http-server.js";
 import { listen } from "./infrastructure/listen.js";
 import { readReadToken } from "./infrastructure/read-token.js";
+import { sha256Hex } from "./infrastructure/sha256.js";
 
 const SHUTDOWN_MS = 5000;
 const EXIT_INVALID_ENVIRONMENT = 2;
@@ -116,7 +118,9 @@ async function start(): Promise<number> {
 
   const server = createHttpServer({
     store: new FileStore(config.dataDir),
+    noticeStore: new FileNoticeStore(config.dataDir),
     now: () => Date.now(),
+    hashText: sha256Hex,
     publicDir: fileURLToPath(new URL("../public", import.meta.url)),
     readToken,
     adminToken: admin.kind === "enabled" ? admin.token : undefined,

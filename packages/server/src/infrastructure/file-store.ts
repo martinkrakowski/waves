@@ -1,14 +1,5 @@
-import { randomUUID } from "node:crypto";
 import type { Stats } from "node:fs";
-import {
-  lstat,
-  mkdir,
-  readFile,
-  readdir,
-  rename,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { lstat, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { Project, StoredSnapshot } from "@hexagen-monaco/waves-contract";
@@ -21,9 +12,13 @@ import type {
 } from "../application/ports/store.js";
 import { snapshotHead } from "../application/ports/store.js";
 import { assertIds } from "./ids.js";
+import {
+  assertRealDirectory,
+  errorCode,
+  writeAtomic,
+} from "./store-helpers.js";
 
 const DATA_DIR_MODE = 0o700;
-const FILE_MODE = 0o600;
 const PROJECTS_FILE = "projects.json";
 const SNAPSHOTS_DIR = "snapshots";
 const STATUS_DIR = "status";
@@ -36,25 +31,6 @@ function isSnapshotName(name: string): boolean {
 
 function isHeadName(name: string): boolean {
   return name.endsWith(`${HEAD_INFIX}${SNAPSHOT_SUFFIX}`);
-}
-
-function errorCode(error: unknown): string | undefined {
-  return (error as NodeJS.ErrnoException).code;
-}
-
-function assertRealDirectory(info: Stats, path: string): void {
-  if (info.isSymbolicLink()) {
-    throw new Error(`${path} is a symbolic link, not a directory`);
-  }
-  if (!info.isDirectory()) {
-    throw new Error(`${path} is not a directory`);
-  }
-  if (info.uid !== process.getuid!()) {
-    throw new Error(`${path} is not owned by this process`);
-  }
-  if ((info.mode & 0o077) !== 0) {
-    throw new Error(`${path} is accessible to other users`);
-  }
 }
 
 function serialiseProjects(projects: ReadonlyMap<string, Project>): string {
@@ -116,10 +92,7 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
       await this.#checkedDataDir(true);
       const projects = await this.#readProjects();
       projects.set(project.id, project);
-      await this.#writeAtomic(
-        this.#projectsPath(),
-        serialiseProjects(projects),
-      );
+      await writeAtomic(this.#projectsPath(), serialiseProjects(projects));
     });
   }
 
@@ -144,10 +117,7 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
         return "ceiling";
       }
       projects.set(project.id, project);
-      await this.#writeAtomic(
-        this.#projectsPath(),
-        serialiseProjects(projects),
-      );
+      await writeAtomic(this.#projectsPath(), serialiseProjects(projects));
       // A status written for an earlier project of the same id — a status write
       // that finished after that project was deleted — is not this project's.
       if (await this.#checkedStatusDir()) {
@@ -172,10 +142,7 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
       const statusDir = await this.#checkedStatusDir();
       const projects = await this.#readProjects();
       projects.delete(id);
-      await this.#writeAtomic(
-        this.#projectsPath(),
-        serialiseProjects(projects),
-      );
+      await writeAtomic(this.#projectsPath(), serialiseProjects(projects));
       await rm(this.#projectDir(id), { recursive: true, force: true });
       if (statusDir) {
         await rm(this.#statusPath(id), { force: true });
@@ -191,11 +158,11 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
       await this.#checkedDataDir(true);
       await this.#directoryForWrite(this.#snapshotsDir());
       await this.#directoryForWrite(this.#projectDir(project));
-      await this.#writeAtomic(
+      await writeAtomic(
         this.#snapshotPath(project, wave),
         JSON.stringify(snapshot, null, 2),
       );
-      await this.#writeAtomic(
+      await writeAtomic(
         this.#headPath(project, wave),
         JSON.stringify(snapshotHead(snapshot)),
       );
@@ -270,7 +237,7 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
       assertIds(project);
       await this.#checkedDataDir(true);
       await this.#directoryForWrite(this.#statusDir());
-      await this.#writeAtomic(
+      await writeAtomic(
         this.#statusPath(project),
         JSON.stringify(stored, null, 2),
       );
@@ -389,24 +356,6 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
       return new Map();
     }
     return new Map(Object.entries(JSON.parse(raw) as Record<string, Project>));
-  }
-
-  async #writeAtomic(target: string, payload: string): Promise<void> {
-    const temporary = `${target}.tmp-${process.pid}-${randomUUID()}`;
-    try {
-      await writeFile(temporary, payload, {
-        encoding: "utf8",
-        mode: FILE_MODE,
-      });
-      await rename(temporary, target);
-    } catch (error) {
-      try {
-        await rm(temporary, { force: true });
-      } catch {
-        void ignore();
-      }
-      throw error;
-    }
   }
 
   #projectsPath(): string {
