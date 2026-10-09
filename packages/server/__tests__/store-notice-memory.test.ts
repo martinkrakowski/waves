@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { MemoryStore } from "../src/index.js";
-import { storedEntry, storedRevision } from "./notice-contract.js";
+import { event, storedEntry, storedRevision } from "./notice-contract.js";
 
 const PROJECT = "alpha";
 
@@ -51,5 +51,27 @@ describe("MemoryStore notice methods", () => {
     expect(await s.appendEntry(PROJECT, "d1", storedEntry(0), 0, 5)).toBe(
       "conflict",
     );
+  });
+
+  it("lists no events for a project that has none", async () => {
+    const s = store();
+    expect(await s.listEvents(PROJECT, 10)).toEqual([]);
+  });
+
+  it("assigns unique ids even after dropping the oldest, same millisecond", async () => {
+    const s = store();
+    const at = "2026-10-08T13:00:00.000Z";
+    const ids: string[] = [];
+    for (let i = 0; i < 4; i += 1) {
+      const { id, dropped } = await s.appendEvent(
+        PROJECT,
+        { id: "", receivedAt: at, event: event() },
+        2,
+      );
+      ids.push(id);
+      expect(dropped).toBe(i > 1 ? 1 : 0);
+    }
+    expect(new Set(ids).size).toBe(4);
+    expect(ids).toEqual([`${at}-1`, `${at}-2`, `${at}-3`, `${at}-4`]);
   });
 });

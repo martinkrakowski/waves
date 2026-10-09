@@ -298,17 +298,15 @@ export function createNoticeWriteModel(deps: NoticeWriteModelDeps) {
       }
       const event = validated.value;
       const receivedAt = timestampOf(now());
-      const events = await noticeStore.listEvents(
-        project,
-        MAX_EVENTS_PER_PROJECT,
-      );
-      const id = `${receivedAt}-${events.length + 1}`;
+      // The store assigns the id inside its serialised append, where the count it
+      // reads cannot be stale, so a drop or a same-millisecond write cannot make
+      // two events share an id.
       const result = await noticeStore.appendEvent(
         project,
-        { id, receivedAt, event },
+        { id: "", receivedAt, event },
         MAX_EVENTS_PER_PROJECT,
       );
-      return { kind: "posted", id, dropped: result.dropped };
+      return { kind: "posted", id: result.id, dropped: result.dropped };
     },
   };
 }

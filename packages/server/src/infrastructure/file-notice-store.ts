@@ -14,6 +14,7 @@ import { assertIds, assertNoticeIds } from "./ids.js";
 import {
   assertRealDirectory,
   errorCode,
+  nextEventSequence,
   writeAtomic,
 } from "./store-helpers.js";
 
@@ -208,7 +209,7 @@ export class FileNoticeStore implements NoticeStorePort {
     project: string,
     stored: StoredEvent,
     keep: number,
-  ): Promise<{ dropped: number }> {
+  ): Promise<{ id: string; dropped: number }> {
     assertIds(project);
     return this.#serialised(async () => {
       await this.#checkedDataDir(true);
@@ -217,11 +218,12 @@ export class FileNoticeStore implements NoticeStorePort {
       const path = this.#eventsPath(project);
       const raw = await this.#readText(path);
       const current = readEvents(raw);
-      current.push(stored);
+      const id = `${stored.receivedAt}-${nextEventSequence(current)}`;
+      current.push({ ...stored, id });
       const dropped = Math.max(0, current.length - keep);
       const kept = current.slice(dropped);
       await writeAtomic(path, JSON.stringify(kept, null, 2));
-      return { dropped };
+      return { id, dropped };
     });
   }
 

@@ -107,13 +107,16 @@ export interface NoticeStorePort {
   ): Promise<AppendOutcome>;
   /**
    * Appends an event; when the project then holds more than `keep`, the oldest
-   * are dropped. Answers how many were dropped.
+   * are dropped. The store assigns the event's id inside its serialised append (a
+   * per-project sequence kept in the id, so it cannot collide after a drop or
+   * across same-millisecond writes) and answers that id, since the writer cannot
+   * pick a unique one from outside the store's queue.
    */
   appendEvent(
     project: string,
     stored: StoredEvent,
     keep: number,
-  ): Promise<{ dropped: number }>;
+  ): Promise<{ id: string; dropped: number }>;
   listEvents(project: string, limit: number): Promise<readonly StoredEvent[]>;
   /**
    * Removes every notice a project has: every decision and every event. A

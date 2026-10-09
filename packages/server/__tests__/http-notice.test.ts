@@ -511,3 +511,22 @@ describe("notice write framing", () => {
     },
   );
 });
+
+describe("unknown project reads", () => {
+  it("answers 404 where a registered project answers 200", async () => {
+    const { started } = await wired();
+
+    const registered = await fetch(
+      `${started.origin}/api/v1/projects/${PROJECT}/decisions`,
+    );
+    expect(registered.status).toBe(200);
+
+    for (const path of [
+      "/api/v1/projects/absent/decisions",
+      "/api/v1/projects/absent/decisions/absent",
+      "/api/v1/projects/absent/events",
+    ]) {
+      expect((await fetch(`${started.origin}${path}`)).status).toBe(404);
+    }
+  });
+});

@@ -2,10 +2,27 @@ import { randomUUID } from "node:crypto";
 import type { Stats } from "node:fs";
 import { rename, rm, writeFile } from "node:fs/promises";
 
+import type { StoredEvent } from "../application/ports/notice-store.js";
+
 export const FILE_MODE = 0o600;
 
 export function errorCode(error: unknown): string | undefined {
   return (error as NodeJS.ErrnoException).code;
+}
+
+/**
+ * The sequence the next appended event takes: one more than the latest stored
+ * event's, or 1 for an empty list. The sequence is kept in the id, so dropping
+ * the oldest event cannot free a sequence for a colliding id, even two events
+ * that arrive in the same millisecond. The store reads it from the last stored
+ * id inside a serialised append, where no other writer can interleave.
+ */
+export function nextEventSequence(events: readonly StoredEvent[]): number {
+  if (events.length === 0) {
+    return 1;
+  }
+  const last = events[events.length - 1]!.id;
+  return Number(last.slice(last.lastIndexOf("-") + 1)) + 1;
 }
 
 export function assertRealDirectory(info: Stats, path: string): void {

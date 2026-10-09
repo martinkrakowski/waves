@@ -16,6 +16,7 @@ import {
   type StoredRevision,
 } from "../application/ports/notice-store.js";
 import { assertIds, assertNoticeIds } from "./ids.js";
+import { nextEventSequence } from "./store-helpers.js";
 
 export class MemoryStore
   implements StorePort<Project, StoredSnapshot>, NoticeStorePort
@@ -235,13 +236,14 @@ export class MemoryStore
     project: string,
     stored: StoredEvent,
     keep: number,
-  ): Promise<{ dropped: number }> {
+  ): Promise<{ id: string; dropped: number }> {
     assertIds(project);
     const current = this.#events.get(project) ?? [];
-    const next = [...current, structuredClone(stored)];
+    const id = `${stored.receivedAt}-${nextEventSequence(current)}`;
+    const next = [...current, { ...structuredClone(stored), id }];
     const dropped = Math.max(0, next.length - keep);
     this.#events.set(project, next.slice(dropped));
-    return { dropped };
+    return { id, dropped };
   }
 
   async listEvents(
