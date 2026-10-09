@@ -268,13 +268,19 @@ export function createNoticeWriteModel(deps: NoticeWriteModelDeps) {
         return { kind: "notFound" };
       }
       if (outcome === "conflict") {
-        // The count moved between the read and the store's own compare.
+        // The count moved between the read and the store's own compare; re-read
+        // to answer with what is stored now.
+        const again = await noticeStore.getDecision(project, id);
+        if (again === undefined) {
+          return { kind: "notFound" };
+        }
+        const againCurrent = again.revisions[again.revisions.length - 1]!;
         return {
           kind: "conflict",
           error: STALE_ERROR,
-          revision: currentRevision,
-          textSha256: currentHash,
-          entries: currentEntries,
+          revision: againCurrent.revision,
+          textSha256: againCurrent.textSha256,
+          entries: again.entries.length,
         };
       }
       return { kind: "posted", index: currentEntries };

@@ -457,10 +457,49 @@ describe("postState", () => {
     ).toEqual({
       kind: "conflict",
       error: "the state entry is out of date",
-      revision: 1,
-      textSha256: BINDING_HASH,
+      revision: 2,
+      textSha256: "0".repeat(64),
       entries: 0,
     });
+  });
+
+  it("reports notFound if the decision vanishes after a store conflict", async () => {
+    let read = 0;
+    const stub: NoticeStorePort = {
+      getDecision: () => {
+        if (read === 0) {
+          read += 1;
+          return Promise.resolve({
+            project: PROJECT,
+            id: ID,
+            revisions: [
+              {
+                revision: 1,
+                textSha256: BINDING_HASH,
+                receivedAt: RECEIVED,
+                decision: BODY,
+              },
+            ],
+            entries: [],
+          });
+        }
+        return Promise.resolve(undefined);
+      },
+      listDecisions: () => Promise.resolve([]),
+      appendRevision: () => Promise.resolve("stored"),
+      appendEntry: () => Promise.resolve("conflict"),
+      appendEvent: () => Promise.resolve({ id: "e0", dropped: 0 }),
+      listEvents: () => Promise.resolve([]),
+      deleteNotices: () => Promise.resolve(),
+    };
+    const m = createNoticeWriteModel({
+      noticeStore: stub,
+      now: () => NOW_MS,
+      hashText: sha256Hex,
+    });
+    expect(
+      await m.postState(PROJECT, ID, stateEntry({ expectedEntries: 0 })),
+    ).toEqual({ kind: "notFound" });
   });
 
   it("refuses past the session-entry cap, naming it", async () => {
