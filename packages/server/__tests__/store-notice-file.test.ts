@@ -232,7 +232,7 @@ describe("FileNoticeStore", () => {
           {
             id: `e${at}`,
             receivedAt: `2026-10-08T13:00:0${at}Z`,
-            event: event({ topic: `t${at}` }),
+            event: event({ topic: ["alpha", "beta", "gamma"][at] }),
           },
           2,
         );
@@ -1203,6 +1203,83 @@ describe("corrupted notice files", () => {
       ).rejects.toThrow();
       expect(readFileSync(join(dataDir, "events", "alpha.json"), "utf8")).toBe(
         contents,
+      );
+    } finally {
+      await dispose();
+    }
+  });
+
+  it.each([
+    ["null", "[null]"],
+    ["a number", "[42]"],
+    ["a string", '["x"]'],
+    [
+      "an object missing an id",
+      JSON.stringify([{ receivedAt: "2026-10-08T13:00:00Z", event: event() }]),
+    ],
+    [
+      "an object with a non-string id",
+      JSON.stringify([
+        { id: 7, receivedAt: "2026-10-08T13:00:00Z", event: event() },
+      ]),
+    ],
+    [
+      "an object missing receivedAt",
+      JSON.stringify([{ id: "e0", event: event() }]),
+    ],
+    [
+      "an object with a non-string receivedAt",
+      JSON.stringify([{ id: "e0", receivedAt: 7, event: event() }]),
+    ],
+    [
+      "an object with a non-object event",
+      JSON.stringify([
+        { id: "e0", receivedAt: "2026-10-08T13:00:00Z", event: "x" },
+      ]),
+    ],
+    [
+      "an object with a malformed event",
+      JSON.stringify([
+        {
+          id: "e0",
+          receivedAt: "2026-10-08T13:00:00Z",
+          event: { schema: "x" },
+        },
+      ]),
+    ],
+    [
+      "an object whose event names another project",
+      JSON.stringify([
+        {
+          id: "e0",
+          receivedAt: "2026-10-08T13:00:00Z",
+          event: event({ project: "beta" }),
+        },
+      ]),
+    ],
+  ])("listEvents reads %s as no events", async (_label, raw) => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      writeEventsFile(dataDir, "alpha", raw);
+      expect(await store.listEvents("alpha", 10)).toEqual([]);
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("refuses an append to an events file with an invalid member", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      writeEventsFile(dataDir, "alpha", "[null]");
+      await expect(
+        store.appendEvent(
+          "alpha",
+          { id: "e0", receivedAt: "2026-10-08T13:00:00Z", event: event() },
+          2000,
+        ),
+      ).rejects.toThrow();
+      expect(readFileSync(join(dataDir, "events", "alpha.json"), "utf8")).toBe(
+        "[null]",
       );
     } finally {
       await dispose();

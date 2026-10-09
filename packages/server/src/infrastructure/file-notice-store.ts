@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   isLaneId,
   validateDecision,
+  validateEvent,
   validateStateEntry,
 } from "@hexagen-monaco/waves-contract";
 
@@ -158,13 +159,15 @@ function readDecision(
 }
 
 /**
- * One stored events list, parsed and shape-checked: an array. Throws a store
- * error when the file exists but is not a JSON array (truncated or wrong shape),
- * so an append to an invalid file fails and leaves the file untouched; a missing
- * file is an empty list so a new one can start. `listEvents` catches the throw
- * and answers no events.
+ * One stored events list, parsed and shape-checked: an array whose every member
+ * is an object with a string `id` and `receivedAt` and an `event` that passes
+ * the contract's `validateEvent` and carries `project`. Throws a store error
+ * when the file exists but is not a JSON array or holds a member that fails the
+ * check, so an append to an invalid file fails and leaves the file untouched; a
+ * missing file is an empty list so a new one can start. `listEvents` catches
+ * the throw and answers no events.
  */
-function readEvents(raw: string | undefined): StoredEvent[] {
+function readEvents(raw: string | undefined, project: string): StoredEvent[] {
   if (raw === undefined) {
     return [];
   }
@@ -176,6 +179,19 @@ function readEvents(raw: string | undefined): StoredEvent[] {
   }
   if (!Array.isArray(parsed)) {
     throw new Error("events file is not an array");
+  }
+  for (const member of parsed) {
+    if (typeof member !== "object" || member === null) {
+      throw new Error("events file has an invalid member");
+    }
+    const m = member as Record<string, unknown>;
+    if (typeof m.id !== "string" || typeof m.receivedAt !== "string") {
+      throw new Error("events file has an invalid member");
+    }
+    const validated = validateEvent(m.event);
+    if (!validated.ok || validated.value.project !== project) {
+      throw new Error("events file has an invalid member");
+    }
   }
   return parsed as StoredEvent[];
 }
@@ -324,7 +340,7 @@ export class FileNoticeStore implements NoticeStorePort {
       await this.#directoryForWrite(eventsDir);
       const path = this.#eventsPath(project);
       const raw = await this.#readText(path);
-      const current = readEvents(raw);
+      const current = readEvents(raw, project);
       const id = `${stored.receivedAt}-${nextEventSequence(current)}`;
       current.push({ ...stored, id });
       const dropped = Math.max(0, current.length - keep);
@@ -345,7 +361,7 @@ export class FileNoticeStore implements NoticeStorePort {
     const raw = await this.#readText(this.#eventsPath(project));
     let events: StoredEvent[];
     try {
-      events = readEvents(raw);
+      events = readEvents(raw, project);
     } catch {
       events = [];
     }
