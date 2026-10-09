@@ -2,7 +2,7 @@ import type { Stats } from "node:fs";
 import { lstat, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
-import { validateDecision } from "@hexagen-monaco/waves-contract";
+import { isLaneId, validateDecision } from "@hexagen-monaco/waves-contract";
 
 import type {
   AppendOutcome,
@@ -32,8 +32,17 @@ function ignore(): undefined {
   return undefined;
 }
 
+/**
+ * The id of a decision snapshot file: its file name without the `.json` suffix.
+ * The store only ever lists files whose stem is a lane id, so this is always a
+ * valid id when it is produced from a name that passed `isDecisionName`.
+ */
+function decisionId(name: string): string {
+  return name.slice(0, -SNAPSHOT_SUFFIX.length);
+}
+
 function isDecisionName(name: string): boolean {
-  return name.endsWith(SNAPSHOT_SUFFIX);
+  return name.endsWith(SNAPSHOT_SUFFIX) && isLaneId(decisionId(name));
 }
 
 /**
@@ -179,13 +188,10 @@ export class FileNoticeStore implements NoticeStorePort {
     const names = await this.#decisionNames(dir);
     const decisions: StoredDecision[] = [];
     for (const name of names) {
+      const id = decisionId(name);
       const raw = await this.#readText(join(dir, name));
       if (raw !== undefined) {
-        const decision = readDecision(
-          raw,
-          project,
-          name.slice(0, -SNAPSHOT_SUFFIX.length),
-        );
+        const decision = readDecision(raw, project, id);
         if (decision !== undefined) {
           decisions.push(decision);
         }

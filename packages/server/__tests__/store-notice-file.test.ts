@@ -897,6 +897,24 @@ describe("corrupted notice files", () => {
     }
   });
 
+  it("never opens a decision file whose id is not a lane id", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.appendRevision("alpha", "d1", storedRevision(1), 0, 3);
+      // A directory named "bad id.json" whose stem is not a lane id: if the
+      // listing read it, readFile would throw EISDIR. The filter must drop it
+      // before any file is opened.
+      mkdirSync(join(dataDir, "decisions", "alpha", "bad id.json"), {
+        recursive: true,
+        mode: 0o700,
+      });
+      const listed = await store.listDecisions("alpha");
+      expect(listed.map((d) => d.id)).toEqual(["d1"]);
+    } finally {
+      await dispose();
+    }
+  });
+
   it("answers conflict when appending an entry to an unreadable decision", async () => {
     const { store, dataDir, dispose } = harness();
     try {
