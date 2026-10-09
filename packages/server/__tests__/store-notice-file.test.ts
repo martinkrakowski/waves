@@ -3,6 +3,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   statSync,
   symlinkSync,
   writeFileSync,
@@ -1060,20 +1061,42 @@ describe("corrupted notice files", () => {
     }
   });
 
-  it("treats an unreadable events file as no events on append", async () => {
+  it("refuses an append to an invalid events file and leaves it untouched", async () => {
     const { store, dataDir, dispose } = harness();
     try {
-      writeEventsFile(dataDir, "alpha", "{ broken");
-      expect(
-        await store.appendEvent(
+      const contents = "{ broken";
+      writeEventsFile(dataDir, "alpha", contents);
+      await expect(
+        store.appendEvent(
           "alpha",
           { id: "e0", receivedAt: "2026-10-08T13:00:00Z", event: event() },
           2000,
         ),
-      ).toEqual({ id: "2026-10-08T13:00:00Z-1", dropped: 0 });
-      const listed = await store.listEvents("alpha", 10);
-      expect(listed).toHaveLength(1);
-      expect(listed[0]?.event).toEqual(event());
+      ).rejects.toThrow();
+      expect(readFileSync(join(dataDir, "events", "alpha.json"), "utf8")).toBe(
+        contents,
+      );
+      expect(await store.listEvents("alpha", 10)).toEqual([]);
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("refuses an append to a non-array events file and leaves it untouched", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      const contents = JSON.stringify({ not: "an array" });
+      writeEventsFile(dataDir, "alpha", contents);
+      await expect(
+        store.appendEvent(
+          "alpha",
+          { id: "e0", receivedAt: "2026-10-08T13:00:00Z", event: event() },
+          2000,
+        ),
+      ).rejects.toThrow();
+      expect(readFileSync(join(dataDir, "events", "alpha.json"), "utf8")).toBe(
+        contents,
+      );
     } finally {
       await dispose();
     }

@@ -116,7 +116,13 @@ function readDecision(
   return obj as unknown as StoredDecision;
 }
 
-/** One stored events list, parsed and shape-checked: an array, or none. */
+/**
+ * One stored events list, parsed and shape-checked: an array. Throws a store
+ * error when the file exists but is not a JSON array (truncated or wrong shape),
+ * so an append to an invalid file fails and leaves the file untouched; a missing
+ * file is an empty list so a new one can start. `listEvents` catches the throw
+ * and answers no events.
+ */
 function readEvents(raw: string | undefined): StoredEvent[] {
   if (raw === undefined) {
     return [];
@@ -125,9 +131,12 @@ function readEvents(raw: string | undefined): StoredEvent[] {
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return [];
+    throw new Error("events file is not valid JSON");
   }
-  return Array.isArray(parsed) ? (parsed as StoredEvent[]) : [];
+  if (!Array.isArray(parsed)) {
+    throw new Error("events file is not an array");
+  }
+  return parsed as StoredEvent[];
 }
 
 /**
@@ -293,8 +302,13 @@ export class FileNoticeStore implements NoticeStorePort {
     await this.#checkedDataDir(false);
     await this.#assertEventsDir();
     const raw = await this.#readText(this.#eventsPath(project));
-    const events = readEvents(raw).reverse();
-    return events.slice(0, limit);
+    let events: StoredEvent[];
+    try {
+      events = readEvents(raw);
+    } catch {
+      events = [];
+    }
+    return events.reverse().slice(0, limit);
   }
 
   async deleteNotices(project: string): Promise<void> {
