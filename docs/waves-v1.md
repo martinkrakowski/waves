@@ -576,7 +576,8 @@ These constants are exported so the server and client read the same numbers
 | `MAX_EVENTS_PER_PROJECT`           | 2000  |
 | `MAX_REVISIONS_PER_DECISION`       | 20    |
 | `MAX_SESSION_ENTRIES_PER_DECISION` | 50    |
-| \n## 3. Errors                     |
+
+## 3. Errors
 
 A failure is a list of issues, each exactly `{ path, message }`
 (`ValidationIssue`, `packages/contract/src/domain/validation.ts:1`). `path` is
