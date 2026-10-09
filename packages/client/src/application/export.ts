@@ -76,6 +76,12 @@ export async function exportDecisions(
     if (record === undefined) {
       throw new Failure("the server sent an unusable body");
     }
+    // A record whose head does not name the decision that was fetched is not the
+    // one asked for: a half-printed table is worse than none, so the run aborts
+    // with exit 1 and empty stdout.
+    if (record.head.id !== head.id) {
+      throw new Failure("the server sent an unusable body");
+    }
     // A head that was an answer on the list can stop being one while it is
     // fetched, so the check is done again on the fresh record: a question that
     // is still open is left out, never half-printed.

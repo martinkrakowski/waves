@@ -350,6 +350,57 @@ describe("decisions export", () => {
     expect(built.out).toEqual([]);
   });
 
+  it("refuses a record whose head id is not the one requested", async () => {
+    // The list names d1, but the record returned for it carries d2's head: the
+    // response is not what was asked for, so it is unusable.
+    const heads = JSON.stringify({
+      project: PROJECT,
+      counts: { approved: 1 },
+      decisions: [
+        {
+          id: "d1",
+          question: "What should we do?",
+          state: "approved",
+          source: "reported",
+          at: "2026-10-08T10:00:00Z",
+          revision: 1,
+          textSha256: SHA,
+          entries: 1,
+        },
+      ],
+    });
+    const swapped = JSON.stringify({
+      head: {
+        id: "d2",
+        question: "What should we do?",
+        state: "approved",
+        source: "reported",
+        at: "2026-10-08T10:00:00Z",
+        revision: 1,
+        textSha256: SHA,
+      },
+      entries: [
+        {
+          state: "approved",
+          source: "reported",
+          at: "2026-10-08T10:00:00Z",
+          receivedAt: "2026-10-08T10:00:01Z",
+          words: "go with B",
+          option: "b",
+          revision: 1,
+          textSha256: SHA,
+        },
+      ],
+    });
+    const built = harnessFor({
+      script: [reply(200, heads), reply(200, swapped)],
+    });
+    await expect(exportDecisions(command(), built.deps)).rejects.toThrow(
+      "the server sent an unusable body",
+    );
+    expect(built.out).toEqual([]);
+  });
+
   it("prints None. when no decision is a reported answer", async () => {
     const built = harnessFor({ script: [reply(200, HEADS_NONE)] });
 
