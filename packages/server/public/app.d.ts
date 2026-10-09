@@ -10,6 +10,10 @@ export type Route =
     }
   | { readonly kind: "inbox" }
   | {
+      readonly kind: "project-inbox";
+      readonly project: string;
+    }
+  | {
       readonly kind: "decision";
       readonly project: string;
       readonly id: string;

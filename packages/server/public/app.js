@@ -1,6 +1,7 @@
 import { drawableAttention } from "./attention.js";
 import { drawableDecision } from "./decision.js";
 import { drawableInbox } from "./inbox.js";
+import { drawableProjectInbox } from "./project-inbox.js";
 import { createApi } from "./api.js";
 import { digestOf } from "./digest.js";
 import { el } from "./dom.js";
@@ -14,6 +15,7 @@ import { renderDrawer } from "./views/drawer.js";
 import { renderFleet } from "./views/fleet.js";
 import { inboxModel } from "./views/inbox-model.js";
 import { renderInbox } from "./views/inbox.js";
+import { renderProjectInbox } from "./views/project-inbox.js";
 import { decisionModel } from "./views/decision-model.js";
 import { renderDecision } from "./views/decision.js";
 import { rowIdOf } from "./views/fleet-rows.js";
@@ -38,6 +40,8 @@ const LOADING = "Loading…";
 const PROJECT_PATH = /^\/p\/([^/]+)(\/w\/([^/]+))?$/;
 /** `/p/<project>/d/<decision>`: one decision's page. */
 const DECISION_PATH = /^\/p\/([^/]+)\/d\/([^/]+)$/;
+/** `/p/<project>/inbox`: one project's inbox page, fixed word not an id. */
+const PROJECT_INBOX_PATH = /^\/p\/([^/]+)\/inbox$/;
 
 /** The tags a reader is already typing into, where a `/` is a `/`. */
 const TYPING = ["INPUT", "SELECT", "TEXTAREA"];
@@ -51,6 +55,14 @@ export function routeOf(pathname) {
   }
   if (!pathname.startsWith(PROJECT_PREFIX)) {
     return { kind: "unknown" };
+  }
+  const projectInbox = PROJECT_INBOX_PATH.exec(pathname);
+  if (projectInbox !== null) {
+    const project = projectInbox[1];
+    if (!isProjectId(project)) {
+      return { kind: "unknown" };
+    }
+    return { kind: "project-inbox", project };
   }
   const parts = PROJECT_PATH.exec(pathname);
   if (parts !== null) {
@@ -84,6 +96,18 @@ function ownPath(url) {
     return undefined;
   }
   return url;
+}
+
+/**
+ * The project's display name from the projects listing the app already loaded,
+ * or the project id when the listing has no such project: the listing is the
+ * page that has the name, and the project inbox page never asks for one of its
+ * own. The decision page does the same, falling back to the id it was opened
+ * for.
+ */
+function projectName(projects, projectId) {
+  const found = projects.find((project) => project.id === projectId);
+  return found === undefined ? projectId : found.name;
 }
 
 export function createApp(deps) {
@@ -244,6 +268,24 @@ export function createApp(deps) {
   }
 
   /**
+   * One project's decisions and counts, as the project inbox page draws. A 404 is
+   * "no such project" rather than a failure: the reader asked for a specific
+   * project, and the page says it is absent rather than offline. A response the
+   * page cannot read — including one for another project — is a failed load: a
+   * dead-end page is worse than no page.
+   */
+  async function loadProjectInbox(project) {
+    const view = await api.projectDecisions(project);
+    if (view === undefined) {
+      return undefined;
+    }
+    if (!drawableProjectInbox(view, project)) {
+      throw new Error("the project inbox is not a project inbox");
+    }
+    return view;
+  }
+
+  /**
    * One decision's whole record, with its head, revisions and entries. A 404 is
    * "no such decision" rather than a failure: the reader asked for a specific
    * decision, and the page says it is absent rather than offline. A response the
@@ -355,6 +397,31 @@ export function createApp(deps) {
         decision,
       };
     }
+    if (at.kind === "project-inbox") {
+      const [projects, attention, projectInbox] = await Promise.all([
+        loadProjects(),
+        loadAttention(),
+        loadProjectInbox(at.project),
+      ]);
+      if (mine !== generation) {
+        return undefined;
+      }
+      if (projectInbox === undefined) {
+        return {
+          kind: "missing",
+          project: at.project,
+          projects,
+          attention,
+        };
+      }
+      return {
+        kind: "project-inbox",
+        project: at.project,
+        projects,
+        attention,
+        inbox: projectInbox,
+      };
+    }
     // Four calls in one Promise.all, in the order the page needs them: the menu's
     // two, then every lane of every wave of the project the route names, then
     // what that project last said about itself. The first three are one subject:
@@ -432,6 +499,13 @@ export function createApp(deps) {
     }
     if (data.kind === "inbox") {
       return renderInbox(inboxModel(data.inbox), clock());
+    }
+    if (data.kind === "project-inbox") {
+      return renderProjectInbox(
+        data.inbox,
+        clock(),
+        projectName(data.projects, data.project),
+      );
     }
     if (data.kind === "decision") {
       return renderDecision(decisionModel(data.decision));
@@ -899,7 +973,7 @@ export function createApp(deps) {
     doc.title =
       route.kind === "project"
         ? `waves — ${route.id}`
-        : route.kind === "decision"
+        : route.kind === "decision" || route.kind === "project-inbox"
           ? `waves — ${route.project}`
           : "waves";
     if (root === null) {

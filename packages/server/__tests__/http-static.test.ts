@@ -31,6 +31,9 @@ describe("the placeholder page", () => {
       "/p/alpha",
       "/p/alpha/w/wv1",
       "/p/alpha/d/d1",
+      "/p/alpha/inbox",
+      "/p/alpha/w/inbox",
+      "/p/alpha/d/inbox",
     ]) {
       const response = await fetch(`${started.origin}${path}`);
 

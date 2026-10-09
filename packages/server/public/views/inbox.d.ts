@@ -14,6 +14,16 @@ export declare const DECIDER_WORD: {
   readonly delegated: string;
 };
 
+/** The line at the foot of the page, saying what the page is for. */
+export declare const FOOTER: string;
+
+/** The three group headings, in the order the page draws them. */
+export declare const GROUP_HEAD: {
+  readonly waiting: string;
+  readonly reported: string;
+  readonly closed: string;
+};
+
 /** The door band text for a head, or `undefined` when the door is `false`. */
 export declare function doorBand(head: Head): string | undefined;
 
@@ -22,6 +32,17 @@ export declare function stateNodes(head: Head): HTMLElement[];
 
 /** The "an earlier text was answered" note, or undefined when the head has none. */
 export declare function earlierAnswerNode(head: Head): HTMLElement | undefined;
+
+/** One decision card, built from a checked head. */
+export declare function card(head: Head, nowMs: number): HTMLElement;
+
+/** One group of cards under its heading, or nothing when the group is empty. */
+export declare function groupBlock(
+  label: string,
+  cls: string,
+  heads: readonly Head[],
+  nowMs: number,
+): HTMLElement | undefined;
 
 export declare function renderInbox(
   model: InboxModel,
