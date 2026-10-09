@@ -424,6 +424,15 @@ const INVALID: readonly (readonly [string, unknown])[] = [
     },
   ],
   [
+    "an entry whose textSha256 does not match its revision",
+    {
+      ...decisionResponse(),
+      entries: [
+        { ...decisionEntry(), textSha256: "b".repeat(64) },
+      ],
+    },
+  ],
+  [
     "an entry whose revision is not among the revisions",
     {
       ...decisionResponse(),

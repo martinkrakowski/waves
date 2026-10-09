@@ -178,7 +178,7 @@ function storedRevision(rev, project, id) {
  * against the revision numbers the head carries, so an entry for a revision
  * that is not among them is refused rather than drawn as history it is not.
  */
-function storedEntry(entry, revisionNumbers) {
+function storedEntry(entry, revisionNumbers, revisionHashes) {
   return (
     entry !== null &&
     typeof entry === "object" &&
@@ -189,6 +189,7 @@ function storedEntry(entry, revisionNumbers) {
     count(entry.revision) &&
     revisionNumbers.has(entry.revision) &&
     typeof entry.textSha256 === "string" &&
+    entry.textSha256 === revisionHashes.get(entry.revision) &&
     typeof entry.by === "string" &&
     time(entry.at) &&
     (entry.words === undefined || typeof entry.words === "string") &&
@@ -269,18 +270,20 @@ export function drawableDecision(view, project, id) {
     return false;
   }
   const nums = new Set();
+  const hashes = new Map();
   for (let i = 0; i < revisions.length; i++) {
     const rev = revisions[i];
     if (!storedRevision(rev, project, id) || rev.revision !== i + 1) {
       return false;
     }
     nums.add(rev.revision);
+    hashes.set(rev.revision, rev.textSha256);
   }
   const entries = view.entries;
   if (!Array.isArray(entries)) {
     return false;
   }
-  if (!entries.every((entry) => storedEntry(entry, nums))) {
+  if (!entries.every((entry) => storedEntry(entry, nums, hashes))) {
     return false;
   }
   const last = revisions[revisions.length - 1];
