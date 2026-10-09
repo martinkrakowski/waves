@@ -3,6 +3,14 @@ name: PR-Agent correctness review
 # One advisory correctness reviewer over the whole repository. NOT A MERGE GATE: a green check
 # here is not a review, and nothing requires it.
 #
+# It runs two PR-Agent tools over the same diff with the same model:
+# - /improve posts line comments with a suggested patch. A second model call scores every
+#   suggestion and one that scores 0 is dropped. That step judges the patch, so it was seen to
+#   throw away a real defect whose suggested fix was incomplete, and one whose fix "changed
+#   existing behaviour" (a size cap that failed open).
+# - /review posts its findings with no scoring step, up to a fixed number. It is here so that a
+#   defect /improve's scorer drops is still posted.
+#
 # Trigger: `pull_request`, never `pull_request_target`. This repository is public. On a pull
 # request from a fork, `pull_request` runs with a read-only token and WITHOUT repository secrets,
 # so a fork's code or prompt text can never reach the model key. The job is also skipped for
@@ -49,8 +57,8 @@ jobs:
           # a Grok model through OpenRouter.
           config.model: "openrouter/openai/gpt-6.1-sol"
           config.fallback_models: '["openrouter/anthropic/claude-haiku-4.5"]'
-          # The ceiling: at most 4 calls, each with at most 70,000 prompt tokens and 8,000
-          # completion tokens, and 10 minutes per call inside the job's 20.
+          # The ceiling: at most 4 calls for /improve and 1 for /review, each with at most 70,000
+          # prompt tokens and 8,000 completion tokens, and 10 minutes per call inside the job's 20.
           config.custom_model_max_tokens: "128000"
           config.max_model_tokens: "70000"
           openrouter.max_tokens: "8000"
@@ -61,8 +69,46 @@ jobs:
           # model calls and their time are read from this job's log instead.
           config.output_run_details: "true"
           config.output_run_cost: "true"
+          # /review: findings only. No effort estimate, no test check, no labels (labels would
+          # need a wider token), no ticket lookup. Each finding is a line comment.
           pr_reviewer.require_ticket_analysis_review: "false"
-          github_action_config.auto_review: "false"
+          pr_reviewer.require_estimate_effort_to_review: "false"
+          pr_reviewer.require_tests_review: "false"
+          pr_reviewer.require_security_review: "true"
+          pr_reviewer.enable_review_labels_security: "false"
+          pr_reviewer.enable_review_labels_effort: "false"
+          pr_reviewer.inline_key_issues: "true"
+          # The default is 3. A change that touches a route and the store can break more than
+          # three of the rules below at once (the proof file broke six), and what is over the
+          # number is dropped silently. 8 leaves room without inviting filler.
+          pr_reviewer.num_max_findings: "8"
+          pr_reviewer.extra_instructions: |
+            You are the correctness reviewer for waves, a small status service: projects push
+            versioned documents with a bearer token, one server stores them as files and serves a
+            read-only page. Report defects only, each with a concrete failure: the request,
+            document or state, and the wrong result. Do not praise, summarise or advise on style.
+
+            Rules of this codebase. A change that breaks one is a finding even when the pull
+            request text, a type, a comment or an optional parameter presents it as intended:
+            - A write is answered by exactly one kind of token, a project's token writes only
+              that project's documents, and a request with no token is refused. Secrets are
+              compared in constant time.
+            - An id used as a path segment is checked against its pattern first; no `..`, no
+              slash, no followed symlink. A write to the store is a temporary file renamed into
+              place, or it did not happen.
+            - A limit, cap or bound that is unset, zero, negative or not a number REFUSES. It
+              never means "no limit". Sizes are counted in bytes.
+            - Input that fails validation is refused, never repaired or defaulted.
+            - An answer to a decision binds only the exact text it was given for, and nothing is
+              removed from a decision's history.
+            - A test must fail if the behaviour its name states were removed.
+            - No secret in a log line, an error, a URL, a response, a fixture or an example, and
+              TLS verification is never weakened.
+
+            Report a real defect even when you cannot write its complete fix: say what is wrong
+            and what a fix must do. Do not raise style, naming, the import layer rule, or a defect
+            that lies entirely in code the diff does not touch.
+          github_action_config.auto_review: "true"
           github_action_config.auto_describe: "false"
           github_action_config.auto_improve: "true"
           github_action_config.pr_actions: '["opened", "reopened", "ready_for_review"]'
@@ -169,10 +215,12 @@ jobs:
 
       # PR-Agent can exit 0 without having produced a review: it posts a failure notice, or, when
       # it cannot parse the model's answer, posts nothing at all. A green check must not claim
-      # work that never happened, so this step fails unless this run left at least one comment
-      # and none of them is a failure notice. A red check here blocks nothing: no rule requires
-      # this job.
-      - name: Fail if the review did not actually run
+      # work that never happened, so this step fails unless EACH tool left its own output in this
+      # run: /improve a line comment that holds "Suggestion:" or its "PR Code Suggestions"
+      # comment, /review its "PR Reviewer Guide" comment (created or updated). One tool's comment
+      # never stands in for the other's. A red check here blocks nothing: no rule requires this
+      # job.
+      - name: Fail if either review did not actually run
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -181,12 +229,14 @@ jobs:
         run: |
           set -euo pipefail
           gh api --paginate --slurp --method GET "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" > "$RUNNER_TEMP/issue.json"
-          gh api --paginate --slurp --method GET "repos/${GITHUB_REPOSITORY}/pulls/${PR}/comments" > "$RUNNER_TEMP/review.json"
-          MINE='[.[][] | select(.user.login == "github-actions[bot]") | select(.created_at >= $since)]'
-          failed=$(jq --arg since "$STARTED_AT" "$MINE | map(select(.body | test(\"Failed to generate\"))) | length" "$RUNNER_TEMP/issue.json")
-          posted_issue=$(jq --arg since "$STARTED_AT" "$MINE | length" "$RUNNER_TEMP/issue.json")
-          posted_review=$(jq --arg since "$STARTED_AT" "$MINE | length" "$RUNNER_TEMP/review.json")
-          for n in "$failed" "$posted_issue" "$posted_review"; do
+          gh api --paginate --slurp --method GET "repos/${GITHUB_REPOSITORY}/pulls/${PR}/comments" > "$RUNNER_TEMP/line.json"
+          MINE='[.[][] | select(.user.login == "github-actions[bot]") | select(.updated_at >= $since)]'
+          count() { jq --arg since "$STARTED_AT" "$MINE | map(select(.body | test(\"$1\"))) | length" "$2"; }
+          failed=$(count "Failed to generate" "$RUNNER_TEMP/issue.json")
+          improve_lines=$(count "Suggestion:" "$RUNNER_TEMP/line.json")
+          improve_summary=$(count "PR Code Suggestions" "$RUNNER_TEMP/issue.json")
+          review=$(count "PR Reviewer Guide" "$RUNNER_TEMP/issue.json")
+          for n in "$failed" "$improve_lines" "$improve_summary" "$review"; do
             case "$n" in
               ''|*[!0-9]*)
                 echo "Expected an integer from the comment scan, got: $n"
@@ -194,12 +244,18 @@ jobs:
                 ;;
             esac
           done
+          echo "/improve: $improve_lines line comment(s), $improve_summary summary comment(s). /review: $review comment(s). Failure notices: $failed."
+          status=0
           if [ "$failed" -gt 0 ]; then
             echo "PR-Agent reported it could not generate a review."
-            exit 1
+            status=1
           fi
-          if [ $((posted_issue + posted_review)) -eq 0 ]; then
-            echo "PR-Agent left no comment in this run: it did not review this pull request."
-            exit 1
+          if [ $((improve_lines + improve_summary)) -eq 0 ]; then
+            echo "/improve left nothing in this run: it did not review this pull request."
+            status=1
           fi
-          echo "This run left $posted_issue comment(s) and $posted_review line comment(s)."
+          if [ "$review" -eq 0 ]; then
+            echo "/review left nothing in this run: it did not review this pull request."
+            status=1
+          fi
+          exit "$status"
