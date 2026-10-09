@@ -29,6 +29,27 @@ function harness(): {
   };
 }
 
+function writeDecisionFile(
+  dataDir: string,
+  project: string,
+  id: string,
+  contents: string,
+): void {
+  const dir = join(dataDir, "decisions", project);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  writeFileSync(join(dir, `${id}.json`), contents, { mode: 0o600 });
+}
+
+function writeEventsFile(
+  dataDir: string,
+  project: string,
+  contents: string,
+): void {
+  const dir = join(dataDir, "events");
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  writeFileSync(join(dir, `${project}.json`), contents, { mode: 0o600 });
+}
+
 describe("FileNoticeStore", () => {
   afterEach(() => {
     // No per-test harness here; each test owns its own dispose.
@@ -537,6 +558,166 @@ describe("FileNoticeStore edge cases", () => {
       await store.appendRevision("alpha", "d1", storedRevision(1), 0, 3);
       const listed = await store.listDecisions("alpha");
       expect(listed.map((decision) => decision.id)).toEqual(["d1", "d2"]);
+    } finally {
+      await dispose();
+    }
+  });
+});
+
+describe("corrupted notice files", () => {
+  const validDecision = (id: string) =>
+    JSON.stringify({
+      project: "alpha",
+      id,
+      revisions: [
+        {
+          revision: 1,
+          textSha256: "0".repeat(64),
+          receivedAt: "2026-10-08T12:00:00Z",
+          decision: {},
+        },
+      ],
+      entries: [],
+    });
+
+  it.each([
+    ["truncated json", "{"],
+    ["null", "null"],
+    ["a non-object", '"x"'],
+    ["an array", "[1]"],
+    [
+      "missing project",
+      JSON.stringify({ id: "d1", revisions: [{}], entries: [] }),
+    ],
+    [
+      "missing id",
+      JSON.stringify({ project: "alpha", revisions: [{}], entries: [] }),
+    ],
+    [
+      "missing revisions",
+      JSON.stringify({ project: "alpha", id: "d1", entries: [] }),
+    ],
+    [
+      "empty revisions",
+      JSON.stringify({
+        project: "alpha",
+        id: "d1",
+        revisions: [],
+        entries: [],
+      }),
+    ],
+    [
+      "entries not an array",
+      JSON.stringify({
+        project: "alpha",
+        id: "d1",
+        revisions: [{}],
+        entries: "no",
+      }),
+    ],
+  ])("getDecision reads %s as undefined", async (_label, raw) => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      writeDecisionFile(dataDir, "alpha", "d1", raw);
+      expect(await store.getDecision("alpha", "d1")).toBeUndefined();
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("getDecision reads a valid file as its decision", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      writeDecisionFile(dataDir, "alpha", "d1", validDecision("d1"));
+      const read = await store.getDecision("alpha", "d1");
+      expect(read?.project).toBe("alpha");
+      expect(read?.id).toBe("d1");
+      expect(read?.revisions).toHaveLength(1);
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("skips a malformed decision file in listDecisions", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.appendRevision("alpha", "good", storedRevision(1), 0, 3);
+      writeDecisionFile(dataDir, "alpha", "bad", "{ broken");
+      const listed = await store.listDecisions("alpha");
+      expect(listed.map((d) => d.id)).toEqual(["good"]);
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("answers conflict when appending an entry to an unreadable decision", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      writeDecisionFile(dataDir, "alpha", "d1", "{ broken");
+      const outcome = await store.appendEntry(
+        "alpha",
+        "d1",
+        storedEntry(0),
+        0,
+        1,
+      );
+      expect(outcome).toBe("conflict");
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("answers conflict when revising an unreadable decision", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      writeDecisionFile(dataDir, "alpha", "d1", "{ broken");
+      const outcome = await store.appendRevision(
+        "alpha",
+        "d1",
+        storedRevision(2),
+        1,
+        3,
+      );
+      expect(outcome).toBe("conflict");
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("reads an unparseable events file as no events", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      writeEventsFile(dataDir, "alpha", "{ broken");
+      expect(await store.listEvents("alpha", 10)).toEqual([]);
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("reads a non-array events file as no events", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      writeEventsFile(dataDir, "alpha", JSON.stringify({ not: "an array" }));
+      expect(await store.listEvents("alpha", 10)).toEqual([]);
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("treats an unreadable events file as no events on append", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      writeEventsFile(dataDir, "alpha", "{ broken");
+      expect(
+        await store.appendEvent(
+          "alpha",
+          { id: "e0", receivedAt: "2026-10-08T13:00:00Z", event: event() },
+          2000,
+        ),
+      ).toEqual({ dropped: 0 });
+      const listed = await store.listEvents("alpha", 10);
+      expect(listed).toHaveLength(1);
+      expect(listed[0]?.event).toEqual(event());
     } finally {
       await dispose();
     }

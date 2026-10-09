@@ -31,6 +31,51 @@ function isDecisionName(name: string): boolean {
 }
 
 /**
+ * One stored decision, parsed and shape-checked, or undefined when the file is
+ * gone, truncated or not a decision (a `project`/`id` strings, a non-empty
+ * `revisions` array and an `entries` array). A bad file is never thrown on: it
+ * is treated as absent so the inbox keeps listing the good decisions alongside
+ * it, reads report no decision, and a write against it is a conflict.
+ */
+function readDecision(raw: string): StoredDecision | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+  if (parsed === null || typeof parsed !== "object") {
+    return undefined;
+  }
+  const obj = parsed as Record<string, unknown>;
+  const revisions = obj.revisions;
+  if (
+    typeof obj.project !== "string" ||
+    typeof obj.id !== "string" ||
+    !Array.isArray(revisions) ||
+    revisions.length === 0 ||
+    !Array.isArray(obj.entries)
+  ) {
+    return undefined;
+  }
+  return obj as unknown as StoredDecision;
+}
+
+/** One stored events list, parsed and shape-checked: an array, or none. */
+function readEvents(raw: string | undefined): StoredEvent[] {
+  if (raw === undefined) {
+    return [];
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  return Array.isArray(parsed) ? (parsed as StoredEvent[]) : [];
+}
+
+/**
  * Writes the notice files of a decision and the events of a project under one
  * data directory — `decisions/<project>/<id>.json` (one file per decision,
  * written atomically) and `events/<project>.json` (one per project). It reuses
@@ -58,7 +103,7 @@ export class FileNoticeStore implements NoticeStorePort {
     if (raw === undefined) {
       return undefined;
     }
-    return JSON.parse(raw) as StoredDecision;
+    return readDecision(raw);
   }
 
   async listDecisions(project: string): Promise<readonly StoredDecision[]> {
@@ -71,7 +116,10 @@ export class FileNoticeStore implements NoticeStorePort {
     for (const name of names) {
       const raw = await this.#readText(join(dir, name));
       if (raw !== undefined) {
-        decisions.push(JSON.parse(raw) as StoredDecision);
+        const decision = readDecision(raw);
+        if (decision !== undefined) {
+          decisions.push(decision);
+        }
       }
     }
     return decisions;
@@ -113,8 +161,8 @@ export class FileNoticeStore implements NoticeStorePort {
         );
         return "stored";
       }
-      const stored = JSON.parse(raw) as StoredDecision;
-      if (stored.revisions.length !== expectRevisions) {
+      const stored = readDecision(raw);
+      if (stored === undefined || stored.revisions.length !== expectRevisions) {
         return "conflict";
       }
       stored.revisions.push(revision);
@@ -142,8 +190,9 @@ export class FileNoticeStore implements NoticeStorePort {
       if (raw === undefined) {
         return "missing";
       }
-      const stored = JSON.parse(raw) as StoredDecision;
+      const stored = readDecision(raw);
       if (
+        stored === undefined ||
         stored.entries.length !== expectEntries ||
         stored.revisions.length !== expectRevisions
       ) {
@@ -167,8 +216,7 @@ export class FileNoticeStore implements NoticeStorePort {
       await this.#directoryForWrite(eventsDir);
       const path = this.#eventsPath(project);
       const raw = await this.#readText(path);
-      const current: StoredEvent[] =
-        raw === undefined ? [] : (JSON.parse(raw) as StoredEvent[]);
+      const current = readEvents(raw);
       current.push(stored);
       const dropped = Math.max(0, current.length - keep);
       const kept = current.slice(dropped);
@@ -185,10 +233,7 @@ export class FileNoticeStore implements NoticeStorePort {
     await this.#checkedDataDir(false);
     await this.#assertEventsDir();
     const raw = await this.#readText(this.#eventsPath(project));
-    if (raw === undefined) {
-      return [];
-    }
-    const events = (JSON.parse(raw) as StoredEvent[]).reverse();
+    const events = readEvents(raw).reverse();
     return events.slice(0, limit);
   }
 
