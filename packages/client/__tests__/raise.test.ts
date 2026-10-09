@@ -195,6 +195,16 @@ describe("raise", () => {
     expect(built.sent()).toBe(0);
   });
 
+  it("propagates a non-usage error reading the input", async () => {
+    const built = harnessFor({ stdin: "" });
+    const deps = {
+      ...built.deps,
+      input: { read: async () => Promise.reject(new Error("EPIPE")) },
+    };
+    await expect(raise(command(), deps)).rejects.toThrow("EPIPE");
+    expect(built.sent()).toBe(0);
+  });
+
   it("refuses a document the contract will not take, and sends nothing", async () => {
     // A choice with one option fails the shape rule.
     const bad = JSON.stringify({

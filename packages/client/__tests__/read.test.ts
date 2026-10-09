@@ -105,6 +105,44 @@ describe("read", () => {
     expect(built.out).toEqual([]);
   });
 
+  it("refuses a record whose revisions are not an array", async () => {
+    const built = harness({
+      script: [
+        reply(
+          200,
+          JSON.stringify({
+            head: { id: "d1" },
+            revisions: "not an array",
+            entries: [],
+          }),
+        ),
+      ],
+    });
+    await expect(readDecision(command(), built.deps)).rejects.toThrow(
+      "the server sent an unusable body",
+    );
+    expect(built.out).toEqual([]);
+  });
+
+  it("refuses a record whose entries are not an array", async () => {
+    const built = harness({
+      script: [
+        reply(
+          200,
+          JSON.stringify({
+            head: { id: "d1" },
+            revisions: [],
+            entries: "not an array",
+          }),
+        ),
+      ],
+    });
+    await expect(readDecision(command(), built.deps)).rejects.toThrow(
+      "the server sent an unusable body",
+    );
+    expect(built.out).toEqual([]);
+  });
+
   it("reads a record too large for a write, but within the GET cap", async () => {
     const word = "x".repeat(2000);
     const entry = {
