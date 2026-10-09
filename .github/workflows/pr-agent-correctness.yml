@@ -19,7 +19,6 @@ on:
 permissions:
   contents: read
   pull-requests: write
-  issues: write
 
 concurrency:
   group: pr-agent-correctness-${{ github.event.pull_request.number }}
