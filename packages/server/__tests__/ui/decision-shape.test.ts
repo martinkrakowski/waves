@@ -328,6 +328,36 @@ const INVALID: readonly (readonly [string, unknown])[] = [
     },
   ],
   [
+    "evidence with an empty https: href",
+    {
+      ...decisionResponse(),
+      revisions: [
+        {
+          ...storedRevision(),
+          decision: {
+            ...decisionRevision(),
+            evidence: [{ label: "x", href: "https://" }],
+          },
+        },
+      ],
+    },
+  ],
+  [
+    "evidence with a username in the href",
+    {
+      ...decisionResponse(),
+      revisions: [
+        {
+          ...storedRevision(),
+          decision: {
+            ...decisionRevision(),
+            evidence: [{ label: "x", href: "https://user:pw@example.com/" }],
+          },
+        },
+      ],
+    },
+  ],
+  [
     "evidence with an http: href",
     {
       ...decisionResponse(),

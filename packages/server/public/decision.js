@@ -29,6 +29,7 @@ import {
   time,
 } from "./inbox.js";
 import { isProjectId, isWaveId } from "./patterns.js";
+import { httpsUrl } from "./dom.js";
 
 /** "waves-notice/v1", the only schema a decision revision carries. */
 const NOTICE_SCHEMA = "waves-notice/v1";
@@ -63,14 +64,14 @@ function optionEntry(option) {
   );
 }
 
-/** One evidence link: a label and an `https://` href, nothing else. */
+/** One evidence link: a label and an href the renderer would turn into a link. */
 function evidenceEntry(link) {
   return (
     link !== null &&
     typeof link === "object" &&
     typeof link.label === "string" &&
     typeof link.href === "string" &&
-    link.href.startsWith("https://")
+    httpsUrl(link.href) !== undefined
   );
 }
 
