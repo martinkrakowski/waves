@@ -10,6 +10,7 @@ import {
   readServerError,
   readStateEntryIndex,
   readStaleReply,
+  readEventId,
   readToken,
   reasonPhrase,
   safeText,
@@ -313,6 +314,23 @@ describe("readStateEntryIndex", () => {
     expect(readStateEntryIndex("{}")).toBeUndefined();
     expect(readStateEntryIndex('{"index":"x"}')).toBeUndefined();
     expect(readStateEntryIndex('{"index":1.5}')).toBeUndefined();
+  });
+});
+
+describe("readEventId", () => {
+  it("reads the id an event 201 answers with", () => {
+    expect(readEventId('{"id":"evt-1","dropped":false}')).toBe("evt-1");
+  });
+
+  it("refuses anything that is not a string id", () => {
+    expect(readEventId("not json")).toBeUndefined();
+    expect(readEventId("[1]")).toBeUndefined();
+    expect(readEventId("{}")).toBeUndefined();
+    expect(readEventId('{"id":7}')).toBeUndefined();
+  });
+
+  it("makes an id safe to print", () => {
+    expect(readEventId(JSON.stringify({ id: `${CLEAR}evt` }))).toBe("evt");
   });
 });
 

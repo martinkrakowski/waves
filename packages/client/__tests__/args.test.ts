@@ -914,3 +914,42 @@ describe("decision", () => {
     );
   });
 });
+
+describe("event", () => {
+  it("reads a topic, a text and an optional detail", () => {
+    expect(
+      commandOf(["event", "--topic", "relay", "--text", "Round 4 sent"]),
+    ).toEqual({
+      kind: "event",
+      topic: "relay",
+      text: "Round 4 sent",
+    });
+    expect(
+      commandOf([
+        "event",
+        "--topic",
+        "policy",
+        "--text",
+        "changed the rate limit",
+        "--detail",
+        "to 5 per minute",
+      ]),
+    ).toEqual({
+      kind: "event",
+      topic: "policy",
+      text: "changed the rate limit",
+      detail: "to 5 per minute",
+    });
+  });
+
+  it("wants a topic and a text", () => {
+    expect(errorOf(["event"])).toBe("give --topic");
+    expect(errorOf(["event", "--topic", "relay"])).toBe("give --text");
+    expect(errorOf(["event", "--topic", "relay", "--text", "x", "extra"])).toBe(
+      "event takes no positional arguments",
+    );
+    expect(
+      errorOf(["event", "--topic", "relay", "--text", "x", "--wave", "w"]),
+    ).toBe("--wave is not an event option");
+  });
+});

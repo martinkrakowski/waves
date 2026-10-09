@@ -121,6 +121,12 @@ export type Command =
       readonly kind: "decision";
       readonly action: "raise";
       readonly source: InputSource;
+    }
+  | {
+      readonly kind: "event";
+      readonly topic: string;
+      readonly text: string;
+      readonly detail?: string;
     };
 
 export type ParseResult =
@@ -196,6 +202,7 @@ const VALUE_FLAGS = [
   "--superseded-by",
   "--since",
   "--topic",
+  "--text",
   "--detail",
 ] as const;
 
@@ -254,6 +261,7 @@ const DECISION_STATE_FLAGS: readonly string[] = [
   "--words",
   "--by",
 ];
+const EVENT_FLAGS: readonly string[] = ["--topic", "--text", "--detail"];
 
 const REPORT_STATES = ["approved", "declined", "answered"] as const;
 const STATE_STATES = ["delegated", "withdrawn", "superseded"] as const;
@@ -287,7 +295,8 @@ export function parseArgv(argv: readonly string[]): ParseResult {
     head !== "status" &&
     head !== "sync" &&
     head !== "delete" &&
-    head !== "decision"
+    head !== "decision" &&
+    head !== "event"
   ) {
     return { ok: false, error: `unknown command ${head}` };
   }
@@ -313,7 +322,10 @@ export function parseArgv(argv: readonly string[]): ParseResult {
   if (head === "delete") {
     return readDelete(tokens);
   }
-  return readDecision(tokens);
+  if (head === "decision") {
+    return readDecision(tokens);
+  }
+  return readEvent(tokens);
 }
 
 function tokenize(argv: readonly string[]): Tokens | string {
@@ -788,6 +800,33 @@ function readIntegerFlag(tokens: Tokens, flag: string): number | string {
   return Number(raw);
 }
 
+function readEvent(tokens: Tokens): ParseResult {
+  const unused = firstUnused(tokens, EVENT_FLAGS);
+  if (unused !== undefined) {
+    return { ok: false, error: `${unused} is not an event option` };
+  }
+  if (tokens.positionals.length !== 0) {
+    return { ok: false, error: "event takes no positional arguments" };
+  }
+  const topic = tokens.values.get("--topic");
+  if (topic === undefined) {
+    return { ok: false, error: "give --topic" };
+  }
+  const text = tokens.values.get("--text");
+  if (text === undefined) {
+    return { ok: false, error: "give --text" };
+  }
+  return {
+    ok: true,
+    command: {
+      kind: "event",
+      topic,
+      text,
+      detail: tokens.values.get("--detail"),
+    },
+  };
+}
+
 export function commandName(command: Command): string {
   switch (command.kind) {
     case "help":
@@ -806,5 +845,7 @@ export function commandName(command: Command): string {
       return `${WAVES} sync`;
     case "decision":
       return `${WAVES} decision ${command.action}`;
+    case "event":
+      return `${WAVES} event`;
   }
 }

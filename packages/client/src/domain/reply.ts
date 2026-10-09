@@ -254,6 +254,16 @@ export function labelIssueLines(
   });
 }
 
+/** The `id` an event 201 answers with, or `undefined` when absent. */
+export function readEventId(body: string): string | undefined {
+  const parsed = parseObject(body);
+  if (parsed === undefined) {
+    return undefined;
+  }
+  const id = own(parsed, "id");
+  return typeof id === "string" ? safeText(id) : undefined;
+}
+
 /** The `index` a state entry 201 answers with, or `undefined` when absent. */
 export function readStateEntryIndex(body: string): number | undefined {
   const parsed = parseObject(body);
