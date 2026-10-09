@@ -1,6 +1,6 @@
 {
   "name": "@hexagen-monaco/waves-client",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "The waves CLI: register a project or a list of them, then push its wave snapshots and its status, and delete a wave.",
   "type": "module",
   "license": "MIT",
