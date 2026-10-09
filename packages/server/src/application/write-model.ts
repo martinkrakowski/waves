@@ -194,9 +194,18 @@ export function createWriteModel(deps: WriteModelDeps) {
           fresh.project,
           Number.POSITIVE_INFINITY,
         );
-        return outcome === "created"
-          ? { kind: "registered", id: fresh.project.id, token: fresh.token }
-          : { kind: "conflict" };
+        if (outcome === "created") {
+          // A project registered again after a delete must not inherit any
+          // decisions an earlier-authenticated notice write left behind: clear
+          // them the way `createProject` clears a stale status (design W60).
+          await noticeStore.deleteNotices(fresh.project.id);
+          return {
+            kind: "registered",
+            id: fresh.project.id,
+            token: fresh.token,
+          };
+        }
+        return { kind: "conflict" };
       }
       // An id the contract would refuse never reaches the store, so a body with
       // a malformed id is validated rather than looked up.
@@ -232,6 +241,7 @@ export function createWriteModel(deps: WriteModelDeps) {
       }
       const outcome = await store.createProject(built.project, ENROLL_CEILING);
       if (outcome === "created") {
+        await noticeStore.deleteNotices(built.project.id);
         return { kind: "registered", id: built.project.id, token: built.token };
       }
       return outcome === "exists" ? { kind: "conflict" } : { kind: "ceiling" };
