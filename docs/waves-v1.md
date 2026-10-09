@@ -1099,7 +1099,7 @@ history with one entry per word.
 `…/query.js:93-104`; `renderFleet`, `packages/server/public/views/fleet.js:418-436`;
 `fleetHandlers`, `packages/server/public/app.js:354-367`)
 
-#### 5.1.4 `/inbox`
+#### 5.1.5 `/inbox`
 
 `GET /inbox` is the page the owner reads: one block per project, each holding
 the decisions `GET /api/v1/inbox` answers with — those in the `waiting`,
