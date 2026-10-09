@@ -66,6 +66,15 @@ describe("changesBetween", () => {
     ).toStrictEqual(["door"]);
   });
 
+  it("reports a shape change as a changed field", () => {
+    expect(
+      changesBetween(
+        decisionRevision({ shape: "choice" }),
+        decisionRevision({ shape: "action" }),
+      ),
+    ).toStrictEqual(["shape"]);
+  });
+
   it("reports act-elsewhere that was added and applies-to that changed", () => {
     expect(
       changesBetween(

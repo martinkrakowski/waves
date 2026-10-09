@@ -18,6 +18,7 @@
  * elsewhere. Each is named in the word the page uses, not the field name.
  */
 const CHANGE_FIELDS = [
+  ["shape", "shape"],
   ["question", "question"],
   ["options", "options"],
   ["recommended", "recommendation"],

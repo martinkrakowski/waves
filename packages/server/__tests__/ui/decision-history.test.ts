@@ -155,6 +155,37 @@ describe("historyBlock", () => {
     );
   });
 
+  it("reports a shape change in the history", () => {
+    const OTHER_HASH = "b".repeat(64);
+    const host = drawHistory(
+      decisionModel(
+        decisionResponse({
+          head: inboxHead({ revision: 2, revisions: 2, entries: 1 }),
+          revisions: [
+            storedRevision({ revision: 1, textSha256: HASH }),
+            storedRevision({
+              revision: 2,
+              textSha256: OTHER_HASH,
+              decision: decisionRevision({ shape: "action" }),
+              receivedAt: "2026-10-09T12:00:00Z",
+            }),
+          ],
+          entries: [
+            decisionEntry({
+              revision: 1,
+              textSha256: HASH,
+              state: "approved",
+              source: "reported",
+            }),
+          ],
+        }),
+      ),
+    );
+    expect(textsOf(host, ".history-event")).toContain(
+      "Revision 2 on 2026-10-09 at 12:00 UTC: shape changed. The wording an answer was given to is no longer current.",
+    );
+  });
+
   it("renders a superseded entry as a link to the decision page", () => {
     const host = drawHistory(
       decisionModel(
