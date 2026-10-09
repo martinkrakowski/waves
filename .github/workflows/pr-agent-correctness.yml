@@ -1,0 +1,173 @@
+name: PR-Agent correctness review
+
+# One advisory correctness reviewer over the whole repository. NOT A MERGE GATE: a green check
+# here is not a review, and nothing requires it.
+#
+# Trigger: `pull_request`, never `pull_request_target`. This repository is public. On a pull
+# request from a fork, `pull_request` runs with a read-only token and WITHOUT repository secrets,
+# so a fork's code or prompt text can never reach the model key. The job is also skipped for
+# forks outright (see `if:` below), so a fork's pull request gets no bot review instead of a
+# failed run.
+#
+# No `synchronize`: one review per pull request lifecycle. Re-reviewing every push costs a call
+# each time and its findings decay. Reopen the pull request to ask for another.
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: pr-agent-correctness-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  correctness:
+    name: PR-Agent correctness review
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.sender.type != 'Bot'
+      && github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Stamp run start
+        id: started
+        run: echo "at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: PR-Agent
+        uses: docker://pragent/pr-agent@sha256:31b9aac6ab067bada9a0c1b001d30ebc500ea4487e00a93c18c59b9ef5fa66db # 0.47.0-github_action
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENROUTER__KEY: ${{ secrets.OPENROUTER_KEY }}
+          config.restricted_mode: "true"
+          config.model: "openrouter/openai/gpt-6.1-sol"
+          config.fallback_models: '["openrouter/anthropic/claude-haiku-4.5"]'
+          # The ceiling: at most 3 calls, each with at most 60,000 prompt tokens and 8,000
+          # completion tokens, and 5 minutes per call inside the job's 15.
+          config.custom_model_max_tokens: "128000"
+          config.max_model_tokens: "60000"
+          openrouter.max_tokens: "8000"
+          config.ai_timeout: "300"
+          config.repo_context_files: '["AGENTS.md"]'
+          config.repo_context_max_lines: "400"
+          # Model, tokens and estimated cost are appended to the comment, so the cost of every
+          # review is on the pull request it reviewed.
+          config.output_run_details: "true"
+          config.output_run_cost: "true"
+          pr_reviewer.require_ticket_analysis_review: "false"
+          github_action_config.auto_review: "false"
+          github_action_config.auto_describe: "false"
+          github_action_config.auto_improve: "true"
+          github_action_config.pr_actions: '["opened", "reopened", "ready_for_review"]'
+          pr_code_suggestions.focus_only_on_problems: "true"
+          pr_code_suggestions.committable_code_suggestions: "true"
+          pr_code_suggestions.publish_output_no_suggestions: "false"
+          pr_code_suggestions.num_code_suggestions_per_chunk: "5"
+          pr_code_suggestions.max_number_of_calls: "3"
+          pr_code_suggestions.parallel_calls: "true"
+          pr_code_suggestions.suggestions_score_threshold: "0"
+          pr_code_suggestions.extra_instructions: |
+            You are the correctness reviewer for waves, a small status service: projects push
+            versioned documents with a bearer token, one server stores them as files and serves a
+            read-only page. A TypeScript monorepo of three packages: a pure contract (validators
+            and rules, no I/O), a server (domain, application, infrastructure), and a client CLI.
+
+            Find defects; do not summarise. Assume the changed code is wrong and look for the input
+            that proves it. Every finding MUST carry a concrete failure scenario: the request,
+            document or state, and the wrong result. "This could be fragile" is not a finding. You
+            see the diff and a little context around it; you cannot open other files.
+
+            Hunt these classes first, in this order.
+
+            1. Which token may do what. Every write route is answered by exactly one kind of
+               token: a project's own token for that project's documents, the admin token for
+               registering and removing projects, the enrollment token only for creating a project
+               that does not exist. Look for: a route that checks a token is valid but not that it
+               is THIS project's; the project taken from the body where the path decides; a new
+               route that skips the rate limiter or the body cap the neighbouring routes use; a
+               read route that ignores the optional viewer token; a comparison of secrets that is
+               not constant-time; a 401, 403 or 404 that tells a caller which projects exist.
+            2. The store. Documents are files under one data directory. Look for: an id used as a
+               path segment before its pattern was checked; a path joined from input that can hold
+               `..` or a slash; `stat` where `lstat` is needed, or a symlink followed; a write that
+               is not temp-file-then-rename; a file or directory created without its mode; a read,
+               compare, write sequence that is not serialised, so two requests both pass the
+               compare; one corrupt file that makes a whole listing fail; a delete that leaves a
+               sibling directory behind.
+            3. What the contract promises. Documents are closed objects: an unknown key is refused,
+               and a version of the schema means the same bytes to every reader. Look for a change
+               that breaks this silently: a validator that repairs input instead of refusing it; a
+               bound, pattern or enum widened or narrowed with no version change; an optional key
+               made required; a field added to a response a strict reader would now refuse; a
+               canonical text or hash input whose key order, key set or escaping can differ
+               between two callers.
+            4. The state of a decision. An answer applies to one exact text. Look for: an entry on
+               an earlier revision treated as the current state; a state write accepted without
+               its revision, text hash and expected entry count all matching the stored ones; an
+               answer state accepted from a source that is only a session's own claim; a
+               withdrawal or a later entry that hides an earlier answer instead of showing both; a
+               count or a list that lets a decision disappear without the owner having seen it.
+            5. Input that fails open. A missing, empty, null, non-string, duplicated or oversized
+               value that is treated as allowed, as zero, or as "no restriction"; a parse whose
+               failure is caught and read as success; a default that grants; a limit computed from
+               a number the caller sent.
+            6. A test that asserts less than its name. A test that would still pass if the
+               behaviour it names were removed; an assertion on a mock's own return value; a
+               negative case missing beside the positive one; a new branch in the diff with no
+               test that reaches it; a fixture that cannot produce the state the test claims.
+            7. A secret that travels. A token, key or digest in a log line, an error message, a URL,
+               a response body, a test fixture or an example.
+            8. The deploy manifests and scripts. A container that runs as root or with a writable
+               root filesystem where it did not before; a secret written into a manifest, an image
+               or a script's output; TLS verification weakened; a probe, a resource limit or a
+               volume ownership change that would make the next rollout hang or lose the data
+               directory.
+            9. A wrong value. A comparison, branch, default or ordering that is wrong for an input
+               the diff makes reachable; a second code path updated while its twin is not; a clock,
+               an id, a revision or a count read at the wrong time.
+
+            Do not raise:
+            - Style, naming, comment wording, formatting, or import order. A linter owns them.
+            - The layer rule (what `domain/` and `application/` may import). ESLint enforces it.
+            - A defect whose cause lies entirely in code the diff does not touch.
+            - Validation for a state the types or an earlier check in the same path already rule
+              out.
+            - A symbol reported missing when it may live outside the lines you were given. Say
+              which line you would need to see instead.
+            - Performance, unless the diff makes an unbounded loop, read or buffer reachable from a
+              request.
+            - Behaviour the pull request text records as a deliberate decision, unless the diff
+              contradicts it.
+            - A fix that only turns a loud failure into a quiet one.
+
+            Prefer one real defect to five plausible ones. Do not acknowledge, praise or summarise.
+
+      # PR-Agent can exit 0 without having produced a review. A green check must not claim work
+      # that never happened.
+      - name: Fail if the review did not actually run
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          STARTED_AT: ${{ steps.started.outputs.at }}
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp --method GET "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" > "$RUNNER_TEMP/pages.json"
+          FILTER='[.[][] | select(.user.login == "github-actions[bot]") | select(.created_at >= $since) | select(.body | test("Failed to generate"))] | length'
+          failed=$(jq --arg since "$STARTED_AT" "$FILTER" "$RUNNER_TEMP/pages.json")
+          case "$failed" in
+            ''|*[!0-9]*)
+              echo "Expected a single integer from the comment scan, got: $failed"
+              exit 1
+              ;;
+          esac
+          if [ "$failed" -gt 0 ]; then
+            echo "PR-Agent reported it could not generate a review."
+            exit 1
+          fi
+          echo "No PR-Agent failure notice from this run."
