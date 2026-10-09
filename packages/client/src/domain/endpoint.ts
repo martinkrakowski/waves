@@ -1,3 +1,5 @@
+import { isLaneId, isProjectId } from "@hexagen-monaco/waves-contract";
+
 import { isValidId } from "./id.js";
 
 export const API_PREFIX = "/api/v1/projects";
@@ -148,6 +150,12 @@ export function statusPath(project: string): string {
 
 /** The URL of one decision, the route a `raise` PUTs and a `read` GETs. */
 export function decisionPath(project: string, id: string): string {
+  if (!isProjectId(project)) {
+    throw new Error(`invalid project id: ${JSON.stringify(project)}`);
+  }
+  if (!isLaneId(id)) {
+    throw new Error(`invalid decision id: ${JSON.stringify(id)}`);
+  }
   return `${API_PREFIX}/${encodeURIComponent(project)}/decisions/${encodeURIComponent(id)}`;
 }
 

@@ -1,3 +1,5 @@
+import { isLaneId } from "@hexagen-monaco/waves-contract";
+
 import { isRecord, own } from "./object.js";
 import { parseObject } from "./reply.js";
 
@@ -29,9 +31,13 @@ export interface DecisionRecord {
 }
 
 /**
- * Reads the heads of a project's decisions from the list response. A value that
- * is not the right shape is skipped: an unparseable body, a non-array of heads,
- * or one head with a wrong field type. The caller sees only what it can use.
+ * Reads the heads of a project's decisions from the list response.
+ *
+ * A head that belongs to another project (carries a `from`) is skipped: a list
+ * that mixes this project's heads with another's is still usable. But a value
+ * that is not otherwise a valid head, or whose `id` is not a lane id, makes the
+ * whole response unusable — `None.` is never printed for a response the server
+ * could not mean to send for this project.
  */
 export function readHeads(body: string): readonly HeadInfo[] | undefined {
   const parsed = parseObject(body);
@@ -44,21 +50,28 @@ export function readHeads(body: string): readonly HeadInfo[] | undefined {
   }
   const heads: HeadInfo[] = [];
   for (const value of decisions) {
-    const head = readHead(value);
-    if (head !== undefined) {
-      heads.push(head);
+    // A head that carries a `from` belongs to another project: it is exported by
+    // that project, never this one, so it is skipped rather than refused, and a
+    // list that mixes this project's heads with another's is still usable.
+    if (isRecord(value) && own(value, "from") !== undefined) {
+      continue;
     }
+    const head = readHead(value);
+    if (head === undefined) {
+      continue;
+    }
+    // An id that is not a lane id is not a safe path segment: `..` would survive
+    // encodeURIComponent and be normalised away, so the response is unusable.
+    if (!isLaneId(head.id)) {
+      return undefined;
+    }
+    heads.push(head);
   }
   return heads;
 }
 
 function readHead(value: unknown): HeadInfo | undefined {
   if (!isRecord(value)) {
-    return undefined;
-  }
-  // A head that carries a `from` belongs to another project: it is exported by
-  // that project, and it is never this one.
-  if (own(value, "from") !== undefined) {
     return undefined;
   }
   const id = own(value, "id");

@@ -1000,6 +1000,82 @@ describe("decision", () => {
       ]),
     ).toBe("--wave is not a decision option");
   });
+
+  it("refuses a decision id that is not a lane id, before anything is sent", () => {
+    expect(errorOf(["decision", "read", ".."])).toBe(".. is not a decision id");
+    expect(
+      errorOf([
+        "decision",
+        "report",
+        "../x",
+        "--state",
+        "approved",
+        "--words",
+        "yes",
+        "--revision",
+        "1",
+        "--text-sha256",
+        SHA,
+        "--entries",
+        "0",
+      ]),
+    ).toBe("../x is not a decision id");
+    expect(
+      errorOf([
+        "decision",
+        "state",
+        "a/b",
+        "--state",
+        "withdrawn",
+        "--revision",
+        "1",
+        "--text-sha256",
+        SHA,
+        "--entries",
+        "0",
+      ]),
+    ).toBe("a/b is not a decision id");
+  });
+
+  it("refuses --superseded-by when it is not a lane id", () => {
+    expect(
+      errorOf([
+        "decision",
+        "state",
+        "d1",
+        "--state",
+        "superseded",
+        "--revision",
+        "1",
+        "--text-sha256",
+        SHA,
+        "--entries",
+        "0",
+        "--superseded-by",
+        "..",
+      ]),
+    ).toBe(".. is not a decision id");
+    // A valid superseded-by id parses.
+    const parsed = commandOf([
+      "decision",
+      "state",
+      "d1",
+      "--state",
+      "superseded",
+      "--revision",
+      "1",
+      "--text-sha256",
+      SHA,
+      "--entries",
+      "0",
+      "--superseded-by",
+      "d2",
+    ]) as Extract<
+      Command,
+      { readonly kind: "decision"; readonly action: "state" }
+    >;
+    expect(parsed.supersededBy).toBe("d2");
+  });
 });
 
 describe("event", () => {

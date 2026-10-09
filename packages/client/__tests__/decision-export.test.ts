@@ -60,6 +60,23 @@ describe("readHeads", () => {
     expect(readHeads('{"decisions":"x"}')).toBeUndefined();
   });
 
+  it("refuses a list whose head has an id that is not a lane id", () => {
+    const body = JSON.stringify({
+      decisions: [
+        {
+          id: "..",
+          question: "q",
+          state: "approved",
+          source: "reported",
+          at: "2026-10-08T10:00:00Z",
+          revision: 1,
+          textSha256: "a".repeat(64),
+        },
+      ],
+    });
+    expect(readHeads(body)).toBeUndefined();
+  });
+
   it("skips heads that belong to another project via a from key", () => {
     const bodies = JSON.stringify({
       decisions: [

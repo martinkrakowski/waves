@@ -1,4 +1,8 @@
-import { isProjectId, isWaveId } from "@hexagen-monaco/waves-contract";
+import {
+  isLaneId,
+  isProjectId,
+  isWaveId,
+} from "@hexagen-monaco/waves-contract";
 
 import { flagIssues, readProjectRequest } from "./project-request.js";
 
@@ -687,6 +691,9 @@ function readDecisionRead(tokens: Tokens): ParseResult {
   if (id === undefined || tokens.positionals.length !== 2) {
     return { ok: false, error: "read takes exactly one id" };
   }
+  if (!isLaneId(id)) {
+    return { ok: false, error: `${id} is not a decision id` };
+  }
   return {
     ok: true,
     command: { kind: "decision", action: "read", id },
@@ -701,6 +708,9 @@ function readDecisionReport(tokens: Tokens): ParseResult {
   const id = tokens.positionals[1];
   if (id === undefined || tokens.positionals.length !== 2) {
     return { ok: false, error: "report takes exactly one id" };
+  }
+  if (!isLaneId(id)) {
+    return { ok: false, error: `${id} is not a decision id` };
   }
   const state = tokens.values.get("--state");
   if (state === undefined) {
@@ -754,6 +764,13 @@ function readDecisionState(tokens: Tokens): ParseResult {
   if (id === undefined || tokens.positionals.length !== 2) {
     return { ok: false, error: "state takes exactly one id" };
   }
+  if (!isLaneId(id)) {
+    return { ok: false, error: `${id} is not a decision id` };
+  }
+  const supersededBy = tokens.values.get("--superseded-by");
+  if (supersededBy !== undefined && !isLaneId(supersededBy)) {
+    return { ok: false, error: `${supersededBy} is not a decision id` };
+  }
   const state = tokens.values.get("--state");
   if (state === undefined) {
     return { ok: false, error: "give --state" };
@@ -792,7 +809,7 @@ function readDecisionState(tokens: Tokens): ParseResult {
       textSha256,
       entries,
       reason: tokens.values.get("--reason"),
-      supersededBy: tokens.values.get("--superseded-by"),
+      supersededBy,
       option: tokens.values.get("--option"),
       words: tokens.values.get("--words"),
       by: tokens.values.get("--by"),

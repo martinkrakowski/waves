@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  decisionPath,
+  decisionStatesPath,
   insecureWarning,
   isHostName,
   isHttpsUrl,
@@ -131,6 +133,28 @@ describe("paths", () => {
       "/api/v1/projects/waves-demo/waves/wv5",
     );
     expect(statusPath("waves-demo")).toBe("/api/v1/projects/waves-demo/status");
+  });
+
+  it("encodes an id and a project that is already valid", () => {
+    expect(decisionPath("waves-demo", "d1")).toBe(
+      "/api/v1/projects/waves-demo/decisions/d1",
+    );
+    expect(decisionStatesPath("waves-demo", "d1")).toBe(
+      "/api/v1/projects/waves-demo/decisions/d1/states",
+    );
+  });
+
+  it("throws before a bad project or id becomes a path segment", () => {
+    expect(() => decisionPath("Waves Demo", "d1")).toThrow(
+      "invalid project id",
+    );
+    expect(() => decisionPath("waves-demo", "..")).toThrow(
+      "invalid decision id",
+    );
+    // decisionStatesPath is built on decisionPath, so it checks too.
+    expect(() => decisionStatesPath("waves-demo", "..")).toThrow(
+      "invalid decision id",
+    );
   });
 
   it("names an insecure origin for a write and for a read", () => {
