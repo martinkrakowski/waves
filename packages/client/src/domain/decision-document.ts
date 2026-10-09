@@ -64,7 +64,7 @@ export function completeDecision(
   if (typeof givenProject === "string" && givenProject !== context.project) {
     return {
       ok: false,
-      reason: `project ${givenProject} is not ${context.project}`,
+      reason: "the document names another project than WAVES_PROJECT",
     };
   }
   const document: Record<string, unknown> = { ...input };

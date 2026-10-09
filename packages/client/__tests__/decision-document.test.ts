@@ -70,7 +70,7 @@ describe("completeDecision", () => {
     );
     expect(result).toEqual({
       ok: false,
-      reason: `project someone-else is not ${PROJECT}`,
+      reason: "the document names another project than WAVES_PROJECT",
     });
   });
 

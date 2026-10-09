@@ -142,7 +142,7 @@ describe("raise", () => {
 
     expect(await raise(command(), built.deps)).toBe(2);
     expect(built.err).toEqual([
-      "waves decision raise: project someone-else is not waves-demo",
+      "waves decision raise: the document names another project than WAVES_PROJECT",
       "waves decision raise: not raised; fix the document, or ask in the terminal",
     ]);
     expect(built.sent()).toBe(0);
