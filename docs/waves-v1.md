@@ -506,6 +506,9 @@ Whether the revision, the hash, the entry count and the revision count are curre
 the server's check (lane I2), not this function's: `appendEntry` compares all of
 them inside the store's serialised read-compare-write and answers `409` with the
 current three when any differs (`packages/server/src/application/ports/notice-store.ts:101`).
+When the store answers `conflict` the write model re-reads the decision and
+returns that re-read's revision, hash and entry count in the `409`
+(`packages/server/src/application/notice-write-model.ts:273`).
 A `textSha256` of any 64 hex characters is accepted here; the server recomputes it from
 the revision via `decisionBindingText`.
 
@@ -532,6 +535,10 @@ stored event's sequence plus one inside the serialised append — so dropping th
 oldest event cannot free an id for a colliding new one, and two events in the
 same millisecond cannot share one; the writer answers the id the store returns
 (`nextEventSequence`, `packages/server/src/infrastructure/store-helpers.ts:20`).
+The events of a project are one append-only array in `events/<project>.json`;
+an append to a file that exists but is not a JSON array is refused and the file
+is left untouched, never replaced with only the new event
+(`readEvents`, `packages/server/src/infrastructure/file-notice-store.ts:127`).
 
 ### Worked example
 
@@ -576,6 +583,10 @@ These constants are exported so the server and client read the same numbers
 | `MAX_EVENTS_PER_PROJECT`           | 2000  |
 | `MAX_REVISIONS_PER_DECISION`       | 20    |
 | `MAX_SESSION_ENTRIES_PER_DECISION` | 50    |
+
+A `ceiling`, `keep` or `limit` that is unset, zero, negative, NaN or otherwise not a
+positive safe integer is refused before the store acts: each call checks it or throws a
+`RangeError` (`assertPositiveBound`, `packages/server/src/infrastructure/store-helpers.ts:19`).
 
 ## 3. Errors
 
