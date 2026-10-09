@@ -189,7 +189,7 @@ describe("raise", () => {
       stdin: MINIMAL_DECISION,
     });
     await expect(raise(command(), built.deps)).rejects.toThrow(
-      "waves decision raise: the server sent an unusable body",
+      "the server sent an unusable body",
     );
     expect(built.out).toEqual([]);
   });

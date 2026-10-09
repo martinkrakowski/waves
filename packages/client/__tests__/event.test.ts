@@ -170,6 +170,15 @@ describe("event", () => {
     expect(built.waits).toEqual([]);
   });
 
+  it("refuses a 409 with the server's error", async () => {
+    const built = harnessFor({
+      script: [reply(409, '{"error":"the server has no events route"}')],
+    });
+    expect(await sendEvent(command(), built.deps)).toBe(1);
+    expect(built.err).toEqual(["the server has no events route"]);
+    expect(built.out).toEqual([]);
+  });
+
   it("refuses a 500 without retrying", async () => {
     const built = harnessFor({ script: [reply(500, "")] });
     await expect(sendEvent(command(), built.deps)).rejects.toThrow(

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import type { Command } from "../src/domain/args.js";
 
-import { USAGE, parseArgv } from "../src/domain/args.js";
+import { USAGE, commandName, parseArgv } from "../src/domain/args.js";
 
 function errorOf(argv: readonly string[]): string {
   const parsed = parseArgv(argv);
@@ -890,6 +891,73 @@ describe("decision", () => {
     ).toBe("state takes exactly one id");
   });
 
+  it("wants every required flag for state", () => {
+    expect(errorOf(["decision", "state", "d1"])).toBe("give --state");
+    expect(
+      errorOf([
+        "decision",
+        "state",
+        "d1",
+        "--state",
+        "withdrawn",
+      ]),
+    ).toBe("give --revision");
+    expect(
+      errorOf([
+        "decision",
+        "state",
+        "d1",
+        "--state",
+        "withdrawn",
+        "--revision",
+        "1",
+      ]),
+    ).toBe("give --text-sha256");
+    expect(
+      errorOf([
+        "decision",
+        "state",
+        "d1",
+        "--state",
+        "withdrawn",
+        "--revision",
+        "1",
+        "--text-sha256",
+        SHA,
+      ]),
+    ).toBe("give --entries");
+    expect(
+      errorOf([
+        "decision",
+        "state",
+        "d1",
+        "--state",
+        "withdrawn",
+        "--revision",
+        "abc",
+        "--text-sha256",
+        SHA,
+        "--entries",
+        "0",
+      ]),
+    ).toBe("--revision must be an integer");
+    expect(
+      errorOf([
+        "decision",
+        "state",
+        "d1",
+        "--state",
+        "withdrawn",
+        "--revision",
+        "1",
+        "--text-sha256",
+        SHA,
+        "--entries",
+        "abc",
+      ]),
+    ).toBe("--entries must be an integer");
+  });
+
   it("wants a source and a sub-command", () => {
     expect(errorOf(["decision"])).toBe(
       "decision takes a sub-command: raise, read, report or state",
@@ -914,6 +982,29 @@ describe("decision", () => {
     expect(errorOf(["decision", "foo"])).toBe(
       "unknown decision sub-command foo",
     );
+  });
+
+  it("refuses flags raise and state do not take", () => {
+    expect(
+      errorOf(["decision", "raise", "--file", "-", "--wave", "wv5"]),
+    ).toBe("--wave is not a decision option");
+    expect(
+      errorOf([
+        "decision",
+        "state",
+        "d1",
+        "--state",
+        "withdrawn",
+        "--wave",
+        "wv5",
+        "--revision",
+        "1",
+        "--text-sha256",
+        SHA,
+        "--entries",
+        "0",
+      ]),
+    ).toBe("--wave is not a decision option");
   });
 });
 
@@ -979,6 +1070,9 @@ describe("decisions", () => {
     expect(errorOf(["decisions", "export", "--since", "2026-02-30"])).toBe(
       "--since must be a real date",
     );
+    expect(errorOf(["decisions", "export", "--since", "2026-13-45"])).toBe(
+      "--since must be a real date",
+    );
   });
 
   it("wants the export sub-command and takes no others", () => {
@@ -987,6 +1081,55 @@ describe("decisions", () => {
     );
     expect(errorOf(["decisions", "export", "extra"])).toBe(
       "export takes no arguments",
+    );
+    expect(errorOf(["decisions", "foo"])).toBe(
+      "unknown decisions sub-command foo",
+    );
+    expect(errorOf(["decisions", "export", "--wave", "w"])).toBe(
+      "--wave is not a decisions option",
+    );
+  });
+});
+
+describe("commandName", () => {
+  it("names each command, with the sub-action for decision and decisions", () => {
+    const name = (cmd: Partial<Command>): string => commandName(cmd as Command);
+    expect(name({ kind: "help" })).toBe("waves");
+    expect(
+      name({
+        kind: "register-all",
+        credential: { role: "admin", source: { kind: "stdin" } },
+        projects: undefined,
+        verbose: false,
+      }),
+    ).toBe("waves register-all");
+    expect(
+      name({
+        kind: "push",
+        wave: "w",
+        source: { kind: "stdin" },
+        intervalSeconds: null,
+        includeTails: false,
+      }),
+    ).toBe("waves push");
+    expect(
+      name({
+        kind: "status",
+        source: { kind: "stdin" },
+        intervalSeconds: null,
+      }),
+    ).toBe("waves status");
+    expect(name({ kind: "delete", wave: "w" })).toBe("waves delete");
+    expect(name({ kind: "sync", check: false })).toBe("waves sync");
+    expect(
+      name({ kind: "decision", action: "raise", source: { kind: "stdin" } }),
+    ).toBe("waves decision raise");
+    expect(name({ kind: "decision", action: "read", id: "d1" })).toBe(
+      "waves decision read",
+    );
+    expect(name({ kind: "event", topic: "t", text: "x" })).toBe("waves event");
+    expect(name({ kind: "decisions", action: "export", since: null })).toBe(
+      "waves decisions export",
     );
   });
 });

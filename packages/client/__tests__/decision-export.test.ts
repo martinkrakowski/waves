@@ -101,6 +101,73 @@ describe("readRecord", () => {
     expect(readRecord("{}")).toBeUndefined();
     expect(readRecord('{"head":"x"}')).toBeUndefined();
   });
+
+  it("returns no current entry when entries is not an array", () => {
+    const body = JSON.stringify({
+      head: {
+        id: "d1",
+        question: "q",
+        state: "approved",
+        source: "reported",
+        at: "2026-10-08T00:00:00Z",
+        revision: 1,
+        textSha256: "current",
+      },
+      entries: "not an array",
+    });
+    const record = readRecord(body);
+    expect(record?.head.id).toBe("d1");
+    expect(record?.entry).toBeUndefined();
+  });
+
+  it("ignores a words field that is not a string", () => {
+    const body = JSON.stringify({
+      head: {
+        id: "d1",
+        question: "q",
+        state: "approved",
+        source: "reported",
+        at: "2026-10-08T00:00:00Z",
+        revision: 1,
+        textSha256: "sha",
+      },
+      entries: [
+        {
+          state: "approved",
+          source: "reported",
+          textSha256: "sha",
+          words: 7,
+          option: "a",
+        },
+      ],
+    });
+    const record = readRecord(body);
+    expect(record?.entry?.words).toBeUndefined();
+  });
+
+  it("returns no current entry when none match the hash", () => {
+    const body = JSON.stringify({
+      head: {
+        id: "d1",
+        question: "q",
+        state: "approved",
+        source: "reported",
+        at: "2026-10-08T00:00:00Z",
+        revision: 1,
+        textSha256: "current",
+      },
+      entries: [
+        {
+          state: "approved",
+          source: "reported",
+          textSha256: "old",
+        },
+        "not an entry",
+      ],
+    });
+    const record = readRecord(body);
+    expect(record?.entry).toBeUndefined();
+  });
 });
 
 describe("isReportedAnswer", () => {
@@ -193,6 +260,13 @@ describe("formatRow", () => {
       receivedAt: "2026-10-08T12:00:00Z",
     };
     expect(formatRow(noAtHead, entry)).toContain("2026-10-08T12:00:00Z");
+  });
+
+  it("uses an empty time when neither head nor entry has one", () => {
+    const noAtHead: HeadInfo = { ...head, at: undefined };
+    expect(formatRow(noAtHead, undefined)).toContain(
+      "|  | revision 1, textSha256 abc",
+    );
   });
 });
 

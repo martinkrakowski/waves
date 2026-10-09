@@ -96,7 +96,7 @@ export async function raise(
     if (status === 200) {
       const reply = readRaiseReply(body);
       if (reply === undefined) {
-        throw new Failure(`${LABEL}: the server sent an unusable body`);
+        throw new Failure("the server sent an unusable body");
       }
       deps.out(
         `raised ${project}/${document.id}: revision ${reply.revision} (${reply.created ? "new" : "unchanged"}), textSha256 ${reply.textSha256}, entries ${reply.entries}`,

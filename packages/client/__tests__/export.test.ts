@@ -192,6 +192,26 @@ describe("decisions export", () => {
     expect(built.out).toEqual([]);
   });
 
+  it("reports a network failure on a decision fetch", async () => {
+    const built = harnessFor({
+      script: [reply(200, HEADS), network("socket hang up")],
+    });
+    await expect(exportDecisions(command(), built.deps)).rejects.toThrow(
+      "socket hang up",
+    );
+    expect(built.out).toEqual([]);
+  });
+
+  it("refuses an unusable body on a decision fetch", async () => {
+    const built = harnessFor({
+      script: [reply(200, HEADS), reply(200, "not json")],
+    });
+    await expect(exportDecisions(command(), built.deps)).rejects.toThrow(
+      "the server sent an unusable body",
+    );
+    expect(built.out).toEqual([]);
+  });
+
   it("fails on the heads list, before any decision is fetched", async () => {
     const built = harnessFor({ script: [reply(401, "")] });
     await expect(exportDecisions(command(), built.deps)).rejects.toThrow(
