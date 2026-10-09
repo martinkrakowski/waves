@@ -41,6 +41,8 @@ describe("parseArgv", () => {
       "status",
       "sync",
       "decision",
+      "event",
+      "decisions",
     ]) {
       expect(USAGE).toContain(`waves ${command}`);
     }
