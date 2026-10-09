@@ -113,6 +113,12 @@ describe("decisionState", () => {
 });
 
 describe("earlierAnswer", () => {
+  it("has none for a decision with no revision", () => {
+    expect(
+      earlierAnswer({ project: "p", id: "d", revisions: [], entries: [] }),
+    ).toBeUndefined();
+  });
+
   it("is the last answer on a text that is not the current one", () => {
     const d = {
       project: "p",

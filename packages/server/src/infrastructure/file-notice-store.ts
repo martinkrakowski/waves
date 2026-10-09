@@ -74,7 +74,7 @@ export class FileNoticeStore implements NoticeStorePort {
         decisions.push(JSON.parse(raw) as StoredDecision);
       }
     }
-    return decisions.sort(byDecisionId);
+    return decisions;
   }
 
   async appendRevision(
@@ -185,7 +185,7 @@ export class FileNoticeStore implements NoticeStorePort {
       return [];
     }
     const events = (JSON.parse(raw) as StoredEvent[]).reverse();
-    return limit < 0 ? events : events.slice(0, limit);
+    return events.slice(0, limit);
   }
 
   async deleteNotices(project: string): Promise<void> {
@@ -310,8 +310,4 @@ export class FileNoticeStore implements NoticeStorePort {
   #eventsPath(project: string): string {
     return join(this.#eventsDir(), `${project}${SNAPSHOT_SUFFIX}`);
   }
-}
-
-function byDecisionId(a: StoredDecision, b: StoredDecision): number {
-  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }

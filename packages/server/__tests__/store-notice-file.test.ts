@@ -466,4 +466,43 @@ describe("FileNoticeStore edge cases", () => {
       await dispose();
     }
   });
+
+  it("reads nothing from a data directory that does not exist yet", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await rm(dataDir, { recursive: true, force: true });
+      expect(await store.getDecision("alpha", "d1")).toBeUndefined();
+      expect(await store.listDecisions("alpha")).toEqual([]);
+      expect(await store.listEvents("alpha", 10)).toEqual([]);
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("skips a decision file that is gone by the time it is read", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.appendRevision("alpha", "d1", storedRevision(1), 0, 3);
+      symlinkSync(
+        join(dataDir, "nowhere.json"),
+        join(dataDir, "decisions", "alpha", "ghost.json"),
+      );
+      const listed = await store.listDecisions("alpha");
+      expect(listed.map((decision) => decision.id)).toEqual(["d1"]);
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("lists decisions in id order", async () => {
+    const { store, dispose } = harness();
+    try {
+      await store.appendRevision("alpha", "d2", storedRevision(1), 0, 3);
+      await store.appendRevision("alpha", "d1", storedRevision(1), 0, 3);
+      const listed = await store.listDecisions("alpha");
+      expect(listed.map((decision) => decision.id)).toEqual(["d1", "d2"]);
+    } finally {
+      await dispose();
+    }
+  });
 });

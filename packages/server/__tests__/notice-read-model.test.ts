@@ -1,0 +1,118 @@
+import { describe, expect, it } from "vitest";
+
+import { createNoticeReadModel } from "../src/application/notice-read-model.js";
+import { MemoryStore } from "../src/infrastructure/memory-store.js";
+import {
+  decisionRevision,
+  storedEntry,
+  storedRevision,
+} from "./notice-contract.js";
+
+const NOW = Date.parse("2026-10-20T00:00:00Z");
+const RECENT = "2026-10-19T00:00:00.000Z";
+const OLD = "2026-10-01T00:00:00.000Z";
+
+async function harness() {
+  const store = new MemoryStore();
+  await store.putProject({
+    id: "alpha",
+    name: "Alpha",
+    tokenSha256: "0".repeat(64),
+    registeredAt: "2026-10-01T00:00:00Z",
+  });
+  const model = createNoticeReadModel({
+    store,
+    noticeStore: store,
+    now: () => NOW,
+  });
+  return { store, model };
+}
+
+describe("the notice read model", () => {
+  it("counts a decision whose answer has aged out in no group", async () => {
+    const { store, model } = await harness();
+    await store.appendRevision("alpha", "old", storedRevision(1), 0, 10);
+    await store.appendEntry("alpha", "old", storedEntry(0, {}, OLD), 0);
+    await store.appendRevision("alpha", "new", storedRevision(1), 0, 10);
+
+    expect(await model.counts("alpha")).toEqual({
+      waiting: 1,
+      oneWay: 0,
+      reported: 0,
+      closed: 0,
+    });
+    const heads = await model.decisions("alpha");
+    expect(heads.map((head) => [head.id, head.group])).toEqual([
+      ["new", "waiting"],
+      ["old", "history"],
+    ]);
+  });
+
+  it("shows a covered answer with only the fields its entry holds", async () => {
+    const { store, model } = await harness();
+    await store.appendRevision("alpha", "d1", storedRevision(1), 0, 10);
+    await store.appendEntry(
+      "alpha",
+      "d1",
+      storedEntry(0, { words: undefined, option: "a" }, RECENT),
+      0,
+    );
+    await store.appendEntry(
+      "alpha",
+      "d1",
+      storedEntry(
+        1,
+        {
+          state: "withdrawn",
+          source: "session",
+          words: undefined,
+          reason: "gone",
+        },
+        RECENT,
+      ),
+      1,
+    );
+
+    const [head] = await model.decisions("alpha");
+    expect(head?.group).toBe("closed");
+    expect(head?.coveredAnswer).toEqual({
+      state: "approved",
+      source: "reported",
+      at: RECENT,
+      by: "owner",
+      option: "a",
+    });
+  });
+
+  it("orders heads of one group and one door by their time, oldest first", async () => {
+    const { store, model } = await harness();
+    const later = { ...storedRevision(1), receivedAt: "2026-10-09T00:00:00Z" };
+    const earlier = {
+      ...storedRevision(1),
+      receivedAt: "2026-10-08T00:00:00Z",
+    };
+    await store.appendRevision("alpha", "a-later", later, 0, 10);
+    await store.appendRevision("alpha", "b-earlier", earlier, 0, 10);
+    await store.appendRevision("alpha", "c-earlier", earlier, 0, 10);
+    await store.appendRevision(
+      "alpha",
+      "d-door",
+      storedRevision(
+        1,
+        decisionRevision("d-door", "alpha", {
+          hardToUndo: { value: true, reason: "cannot be undone" },
+        }),
+      ),
+      0,
+      10,
+    );
+
+    const heads = await model.decisions("alpha");
+    expect(heads.map((head) => head.id)).toEqual([
+      "d-door",
+      "b-earlier",
+      "c-earlier",
+      "a-later",
+    ]);
+  });
+});
