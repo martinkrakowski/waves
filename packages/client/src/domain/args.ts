@@ -105,6 +105,20 @@ export type Command =
     }
   | {
       readonly kind: "decision";
+      readonly action: "state";
+      readonly id: string;
+      readonly state: string;
+      readonly revision: number;
+      readonly textSha256: string;
+      readonly entries: number;
+      readonly reason?: string;
+      readonly supersededBy?: string;
+      readonly option?: string;
+      readonly words?: string;
+      readonly by?: string;
+    }
+  | {
+      readonly kind: "decision";
       readonly action: "raise";
       readonly source: InputSource;
     };
@@ -229,8 +243,20 @@ const DECISION_REPORT_FLAGS: readonly string[] = [
   "--option",
   "--by",
 ];
+const DECISION_STATE_FLAGS: readonly string[] = [
+  "--state",
+  "--revision",
+  "--text-sha256",
+  "--entries",
+  "--reason",
+  "--superseded-by",
+  "--option",
+  "--words",
+  "--by",
+];
 
 const REPORT_STATES = ["approved", "declined", "answered"] as const;
+const STATE_STATES = ["delegated", "withdrawn", "superseded"] as const;
 const FLAG_INTEGER = /^\d+$/;
 
 const MIN_INTERVAL_SECONDS = 1;
@@ -608,6 +634,9 @@ function readDecision(tokens: Tokens): ParseResult {
   if (action === "report") {
     return readDecisionReport(tokens);
   }
+  if (action === "state") {
+    return readDecisionState(tokens);
+  }
   return { ok: false, error: `unknown decision sub-command ${action}` };
 }
 
@@ -688,6 +717,61 @@ function readDecisionReport(tokens: Tokens): ParseResult {
       textSha256,
       entries,
       option: tokens.values.get("--option"),
+      by: tokens.values.get("--by"),
+    },
+  };
+}
+
+function readDecisionState(tokens: Tokens): ParseResult {
+  const unused = firstUnused(tokens, DECISION_STATE_FLAGS);
+  if (unused !== undefined) {
+    return { ok: false, error: `${unused} is not a decision option` };
+  }
+  const id = tokens.positionals[1];
+  if (id === undefined || tokens.positionals.length !== 2) {
+    return { ok: false, error: "state takes exactly one id" };
+  }
+  const state = tokens.values.get("--state");
+  if (state === undefined) {
+    return { ok: false, error: "give --state" };
+  }
+  // The three answer states belong to report, not state: naming one of them
+  // here is a steer rather than an argument.
+  if ((REPORT_STATES as readonly string[]).includes(state)) {
+    return { ok: false, error: "use: waves decision report" };
+  }
+  if (!(STATE_STATES as readonly string[]).includes(state)) {
+    return {
+      ok: false,
+      error: `--state must be one of ${STATE_STATES.join(", ")}`,
+    };
+  }
+  const revision = readIntegerFlag(tokens, "--revision");
+  if (typeof revision === "string") {
+    return { ok: false, error: revision };
+  }
+  const textSha256 = tokens.values.get("--text-sha256");
+  if (textSha256 === undefined) {
+    return { ok: false, error: "give --text-sha256" };
+  }
+  const entries = readIntegerFlag(tokens, "--entries");
+  if (typeof entries === "string") {
+    return { ok: false, error: entries };
+  }
+  return {
+    ok: true,
+    command: {
+      kind: "decision",
+      action: "state",
+      id,
+      state,
+      revision,
+      textSha256,
+      entries,
+      reason: tokens.values.get("--reason"),
+      supersededBy: tokens.values.get("--superseded-by"),
+      option: tokens.values.get("--option"),
+      words: tokens.values.get("--words"),
       by: tokens.values.get("--by"),
     },
   };

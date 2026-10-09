@@ -11,8 +11,10 @@ import { FileRefusal, type CliDeps, type UseCaseDeps } from "./ports.js";
 import { push } from "./push.js";
 import { readDecision } from "./read.js";
 import { raise } from "./raise.js";
+import { report } from "./report.js";
 import { register } from "./register.js";
 import { registerAll } from "./register-all.js";
+import { state } from "./state.js";
 import { sendStatus } from "./status.js";
 import { checkSync, sync } from "./sync.js";
 
@@ -72,6 +74,10 @@ export async function run(
           return await raise(parsed.command, useCase);
         case "read":
           return await readDecision(parsed.command, useCase);
+        case "report":
+          return await report(parsed.command, useCase);
+        case "state":
+          return await state(parsed.command, useCase);
       }
     }
     return await remove(parsed.command, useCase);

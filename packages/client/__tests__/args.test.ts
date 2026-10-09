@@ -788,6 +788,106 @@ describe("decision", () => {
     ).toBe("--wave is not a decision option");
   });
 
+  it("reads a state with its required flags", () => {
+    expect(
+      commandOf([
+        "decision",
+        "state",
+        "d1",
+        "--state",
+        "withdrawn",
+        "--reason",
+        "fixed another way",
+        "--revision",
+        "1",
+        "--text-sha256",
+        SHA,
+        "--entries",
+        "0",
+      ]),
+    ).toEqual({
+      kind: "decision",
+      action: "state",
+      id: "d1",
+      state: "withdrawn",
+      revision: 1,
+      textSha256: SHA,
+      entries: 0,
+      reason: "fixed another way",
+    });
+  });
+
+  it("refuses an answer state for state, pointing at report", () => {
+    for (const answer of ["approved", "declined", "answered"]) {
+      expect(
+        errorOf([
+          "decision",
+          "state",
+          "d1",
+          "--state",
+          answer,
+          "--revision",
+          "1",
+          "--text-sha256",
+          SHA,
+          "--entries",
+          "0",
+        ]),
+      ).toBe("use: waves decision report");
+    }
+  });
+
+  it("refuses a --state outside the three session states", () => {
+    expect(
+      errorOf([
+        "decision",
+        "state",
+        "d1",
+        "--state",
+        "open",
+        "--revision",
+        "1",
+        "--text-sha256",
+        SHA,
+        "--entries",
+        "0",
+      ]),
+    ).toBe("--state must be one of delegated, withdrawn, superseded");
+  });
+
+  it("wants an id for state", () => {
+    expect(
+      errorOf([
+        "decision",
+        "state",
+        "--state",
+        "withdrawn",
+        "--revision",
+        "1",
+        "--text-sha256",
+        SHA,
+        "--entries",
+        "0",
+      ]),
+    ).toBe("state takes exactly one id");
+    expect(
+      errorOf([
+        "decision",
+        "state",
+        "d1",
+        "extra",
+        "--state",
+        "withdrawn",
+        "--revision",
+        "1",
+        "--text-sha256",
+        SHA,
+        "--entries",
+        "0",
+      ]),
+    ).toBe("state takes exactly one id");
+  });
+
   it("wants a source and a sub-command", () => {
     expect(errorOf(["decision"])).toBe(
       "decision takes a sub-command: raise, read, report or state",
