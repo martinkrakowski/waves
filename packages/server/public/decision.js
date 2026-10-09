@@ -113,6 +113,8 @@ function decisionRevision(decision, project, id) {
     typeof decision.question === "string" &&
     Array.isArray(decision.options) &&
     decision.options.every(optionEntry) &&
+    new Set(decision.options.map((o) => o.key)).size ===
+      decision.options.length &&
     (decision.recommended === undefined ||
       (decision.recommended !== null &&
         typeof decision.recommended === "object" &&

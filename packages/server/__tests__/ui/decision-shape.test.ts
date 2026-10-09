@@ -94,6 +94,24 @@ const INVALID: readonly (readonly [string, unknown])[] = [
     },
   ],
   ["an empty revisions array", { ...decisionResponse(), revisions: [] }],
+  [
+    "a revision with duplicate option keys",
+    {
+      ...decisionResponse(),
+      revisions: [
+        {
+          ...storedRevision(),
+          decision: {
+            ...decisionRevision(),
+            options: [
+              { key: "a", text: "Yes", cost: "C1" },
+              { key: "a", text: "No", cost: "C2" },
+            ],
+          },
+        },
+      ],
+    },
+  ],
   ["entries that are not a list", { ...decisionResponse(), entries: "no" }],
   [
     "revisions whose first number is not 1",
