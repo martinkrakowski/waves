@@ -11,6 +11,18 @@ export function errorCode(error: unknown): string | undefined {
 }
 
 /**
+ * Throws a `RangeError` unless `value` is a positive safe integer, so an unset,
+ * zero, negative, NaN or non-integer bound refuses the request rather than
+ * silently failing to bind (`slice` with `NaN` returns an empty list, a negative
+ * `limit` keeps the wrong elements, and so on). Named for the caller's message.
+ */
+export function assertPositiveBound(value: number, name: string): void {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new RangeError(`${name} must be a positive integer, got ${value}`);
+  }
+}
+
+/**
  * The sequence the next appended event takes: one more than the latest stored
  * event's, or 1 for an empty list. The sequence is kept in the id, so dropping
  * the oldest event cannot free a sequence for a colliding id, even two events

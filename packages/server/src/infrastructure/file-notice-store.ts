@@ -14,6 +14,7 @@ import type {
 } from "../application/ports/notice-store.js";
 import { assertIds, assertNoticeIds } from "./ids.js";
 import {
+  assertPositiveBound,
   assertRealDirectory,
   errorCode,
   nextEventSequence,
@@ -201,6 +202,7 @@ export class FileNoticeStore implements NoticeStorePort {
     ceiling: number,
   ): Promise<AppendOutcome> {
     assertNoticeIds(project, id);
+    assertPositiveBound(ceiling, "ceiling");
     return this.#serialised(async () => {
       await this.#checkedDataDir(true);
       await this.#directoryForWrite(this.#decisionsDir());
@@ -278,6 +280,7 @@ export class FileNoticeStore implements NoticeStorePort {
     keep: number,
   ): Promise<{ id: string; dropped: number }> {
     assertIds(project);
+    assertPositiveBound(keep, "keep");
     return this.#serialised(async () => {
       await this.#checkedDataDir(true);
       const eventsDir = this.#eventsDir();
@@ -299,6 +302,7 @@ export class FileNoticeStore implements NoticeStorePort {
     limit: number,
   ): Promise<readonly StoredEvent[]> {
     assertIds(project);
+    assertPositiveBound(limit, "limit");
     await this.#checkedDataDir(false);
     await this.#assertEventsDir();
     const raw = await this.#readText(this.#eventsPath(project));

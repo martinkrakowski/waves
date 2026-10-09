@@ -1102,3 +1102,55 @@ describe("corrupted notice files", () => {
     }
   });
 });
+
+describe("FileNoticeStore bounds", () => {
+  it.each([
+    ["NaN", NaN],
+    ["zero", 0],
+    ["negative", -1],
+    ["non-integer", 1.5],
+  ])("appendRevision refuses a %s ceiling", async (_label, bad) => {
+    const { store, dispose } = harness();
+    try {
+      await expect(
+        store.appendRevision("alpha", "d1", storedRevision(1, "d1"), 0, bad),
+      ).rejects.toThrow(RangeError);
+    } finally {
+      await dispose();
+    }
+  });
+
+  it.each([
+    ["NaN", NaN],
+    ["zero", 0],
+    ["negative", -1],
+    ["non-integer", 1.5],
+  ])("appendEvent refuses a %s keep", async (_label, bad) => {
+    const { store, dispose } = harness();
+    try {
+      await expect(
+        store.appendEvent(
+          "alpha",
+          { id: "e0", receivedAt: "2026-10-08T13:00:00Z", event: event() },
+          bad,
+        ),
+      ).rejects.toThrow(RangeError);
+    } finally {
+      await dispose();
+    }
+  });
+
+  it.each([
+    ["NaN", NaN],
+    ["zero", 0],
+    ["negative", -1],
+    ["non-integer", 1.5],
+  ])("listEvents refuses a %s limit", async (_label, bad) => {
+    const { store, dispose } = harness();
+    try {
+      await expect(store.listEvents("alpha", bad)).rejects.toThrow(RangeError);
+    } finally {
+      await dispose();
+    }
+  });
+});

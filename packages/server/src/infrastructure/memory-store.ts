@@ -16,7 +16,7 @@ import {
   type StoredRevision,
 } from "../application/ports/notice-store.js";
 import { assertIds, assertNoticeIds } from "./ids.js";
-import { nextEventSequence } from "./store-helpers.js";
+import { nextEventSequence, assertPositiveBound } from "./store-helpers.js";
 
 export class MemoryStore
   implements StorePort<Project, StoredSnapshot>, NoticeStorePort
@@ -182,6 +182,7 @@ export class MemoryStore
     ceiling: number,
   ): Promise<AppendOutcome> {
     assertNoticeIds(project, id);
+    assertPositiveBound(ceiling, "ceiling");
     const decisions =
       this.#decisions.get(project) ?? new Map<string, StoredDecision>();
     const existing = decisions.get(id);
@@ -238,6 +239,7 @@ export class MemoryStore
     keep: number,
   ): Promise<{ id: string; dropped: number }> {
     assertIds(project);
+    assertPositiveBound(keep, "keep");
     const current = this.#events.get(project) ?? [];
     const id = `${stored.receivedAt}-${nextEventSequence(current)}`;
     const next = [...current, { ...structuredClone(stored), id }];
@@ -251,6 +253,7 @@ export class MemoryStore
     limit: number,
   ): Promise<readonly StoredEvent[]> {
     assertIds(project);
+    assertPositiveBound(limit, "limit");
     const events = this.#events.get(project);
     if (events === undefined) {
       return [];
