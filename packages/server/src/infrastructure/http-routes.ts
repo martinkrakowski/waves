@@ -9,8 +9,10 @@ import { resolveStaticFile, type StaticFile } from "./http-static.js";
 export const HEALTH_PATH = "/healthz";
 export const READY_PATH = "/readyz";
 export const ATTENTION_PATH = "/api/v1/attention";
+export const INBOX_PATH = "/api/v1/inbox";
 export const API_PREFIX = "/api/v1/projects";
 export const MAX_URL_BYTES = 2048;
+export const MAX_NOTICE_EVENTS = 200;
 
 export type Route =
   | { readonly kind: "health" }
@@ -32,7 +34,9 @@ export type Route =
       readonly project: string;
       readonly id: string;
     }
+  | { readonly kind: "decisions"; readonly project: string }
   | { readonly kind: "events"; readonly project: string }
+  | { readonly kind: "inbox" }
   | { readonly kind: "index" }
   | { readonly kind: "file"; readonly file: StaticFile }
   | { readonly kind: "missing" };
@@ -41,8 +45,7 @@ export type Route =
  * Which methods answer each path, and therefore what a 405 on it announces. The
  * three project writes — a push, a status, a wave delete — the project
  * collection and the single project are the only ones a write is allowed on;
- * everything else is a read. The notice writes are `PUT` and `POST` only; their
- * `GET` routes come later (lane I2, part B).
+ * everything else is a read. The notice routes carry their writes (PUT and POST) alongside the reads (GET and HEAD) they serve.
  */
 const ALLOWED: Readonly<Record<Route["kind"], string>> = {
   health: "GET, HEAD",
@@ -54,9 +57,11 @@ const ALLOWED: Readonly<Record<Route["kind"], string>> = {
   lanes: "GET, HEAD",
   status: "GET, HEAD, PUT",
   wave: "GET, HEAD, PUT, DELETE",
-  decision: "PUT",
+  decision: "GET, HEAD, PUT",
   decisionStates: "POST",
-  events: "POST",
+  decisions: "GET, HEAD",
+  events: "GET, HEAD, POST",
+  inbox: "GET, HEAD",
   index: "GET, HEAD",
   file: "GET, HEAD",
   missing: "GET, HEAD",
@@ -171,6 +176,9 @@ export function route(pathname: string, root: string): Route {
   if (pathname === ATTENTION_PATH) {
     return { kind: "attention" };
   }
+  if (pathname === INBOX_PATH) {
+    return { kind: "inbox" };
+  }
   const parts = pathname.split("/");
   if (parts.slice(0, 4).join("/") === API_PREFIX) {
     if (parts.length === 4) {
@@ -189,6 +197,9 @@ export function route(pathname: string, root: string): Route {
       }
       if (parts.length === 6 && parts[5] === "status") {
         return { kind: "status", project };
+      }
+      if (parts.length === 6 && parts[5] === "decisions") {
+        return { kind: "decisions", project };
       }
       if (parts.length === 6 && parts[5] === "events") {
         return { kind: "events", project };
