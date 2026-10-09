@@ -17,6 +17,7 @@
 import {
   actElsewhere,
   answer,
+  ANSWER_STATES,
   count,
   door,
   GROUPS,
@@ -176,7 +177,19 @@ function storedEntry(entry, revisionNumbers) {
     (entry.words === undefined || typeof entry.words === "string") &&
     (entry.option === undefined || typeof entry.option === "string") &&
     (entry.reason === undefined || typeof entry.reason === "string") &&
-    (entry.supersededBy === undefined || isWaveId(entry.supersededBy))
+    (entry.supersededBy === undefined || isWaveId(entry.supersededBy)) &&
+    // `delegated` records who the session delegated to: option or words.
+    (entry.state !== "delegated" ||
+      entry.option !== undefined ||
+      entry.words !== undefined) &&
+    // `withdrawn` carries the session's reason.
+    (entry.state !== "withdrawn" || entry.reason !== undefined) &&
+    // `superseded` names the decision it was replaced by.
+    (entry.state !== "superseded" || entry.supersededBy !== undefined) &&
+    // An answer is only `reported` with words — never a bare session claim.
+    (ANSWER_STATES.includes(entry.state)
+      ? entry.source === "reported" && entry.words !== undefined
+      : true)
   );
 }
 

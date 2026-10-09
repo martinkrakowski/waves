@@ -420,10 +420,46 @@ const INVALID: readonly (readonly [string, unknown])[] = [
     },
   ],
   [
-    "an entry whose option is not a string",
+    "an entry whose words is not a string",
     {
       ...decisionResponse(),
-      entries: [{ ...decisionEntry(), option: 42 }],
+      entries: [{ ...decisionEntry(), words: 42 }],
+    },
+  ],
+  [
+    "a delegated entry with neither option nor words",
+    {
+      ...decisionResponse(),
+      entries: [
+        { ...decisionEntry(), state: "delegated", option: undefined, words: undefined },
+      ],
+    },
+  ],
+  [
+    "a withdrawn entry with no reason",
+    {
+      ...decisionResponse(),
+      entries: [
+        { ...decisionEntry(), state: "withdrawn", source: "session", reason: undefined },
+      ],
+    },
+  ],
+  [
+    "a superseded entry with no supersededBy",
+    {
+      ...decisionResponse(),
+      entries: [
+        { ...decisionEntry(), state: "superseded", source: "session", supersededBy: undefined },
+      ],
+    },
+  ],
+  [
+    "an approved entry with source session",
+    {
+      ...decisionResponse(),
+      entries: [
+        { ...decisionEntry(), state: "approved", source: "session" },
+      ],
     },
   ],
   [

@@ -54,7 +54,7 @@ export function time(value) {
 }
 
 /** Three states that are an answer; every other state is not one. */
-const ANSWER_STATES = ["approved", "declined", "answered"];
+export const ANSWER_STATES = ["approved", "declined", "answered"];
 
 /**
  * An answer on a head: the answer a withdrawal covers, or the answer given to an

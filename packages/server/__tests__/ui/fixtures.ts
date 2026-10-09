@@ -351,6 +351,7 @@ export function decisionEntry(
     textSha256: HASH,
     by: "owner",
     at: "2026-10-08T13:00:00Z",
+    words: "yes",
     ...overrides,
   } as StoredEntry;
 }
