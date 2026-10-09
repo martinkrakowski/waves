@@ -46,9 +46,12 @@ defect, whatever the change calls itself.
 - A write is answered by exactly one kind of token. A request with no token is refused, and a
   project's token writes only that project's documents.
 - A write to the store is a temporary file renamed into place, or it did not happen.
-- Input that fails validation is refused. It is never repaired or given a default.
+- Input that fails validation is refused. It is never repaired or given a default. The client
+  completing a small decision document (filling in keys it leaves out, before validation, and
+  never overwriting one it has) is not a repair.
 - An answer to a decision binds only the exact text it was given for, and nothing is removed
-  from a decision's history.
+  from a decision's history while its project exists. Deleting a project, which only the admin
+  token can do, removes its decisions and events with it.
 
 ## Rules
 

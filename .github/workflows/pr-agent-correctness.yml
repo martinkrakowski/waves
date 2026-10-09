@@ -98,9 +98,14 @@ jobs:
               place, or it did not happen.
             - A limit, cap or bound that is unset, zero, negative or not a number REFUSES. It
               never means "no limit". Sizes are counted in bytes.
-            - Input that fails validation is refused, never repaired or defaulted.
+            - Input that fails validation is refused, never repaired or defaulted. One thing
+              is not a repair: the client's `completeDecision` fills in keys a small decision
+              document leaves out (schema, kind, project, shape, time, empty lists) BEFORE the
+              validator runs, and never overwrites a key the document has. That is the design.
             - An answer to a decision binds only the exact text it was given for, and nothing is
-              removed from a decision's history.
+              removed from a decision's history while its project exists. Deleting a project
+              (an admin action) removes its decisions and events: that is a design decision,
+              not a defect.
             - A test must fail if the behaviour its name states were removed.
             - No real credential, and no value that could be one, in a log line, an error, a URL,
               a response, a fixture or an example. A documented placeholder in a test (a fixed,
