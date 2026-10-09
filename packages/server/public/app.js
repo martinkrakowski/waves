@@ -515,8 +515,9 @@ export function createApp(deps) {
     if (data.kind === "project-inbox") {
       return renderProjectInbox(
         data.inbox,
-        clock(),
         projectName(data.projects, data.project),
+        [],
+        clock(),
       );
     }
     if (data.kind === "decision") {
