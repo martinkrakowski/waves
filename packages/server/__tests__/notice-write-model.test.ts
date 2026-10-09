@@ -513,14 +513,15 @@ describe("postState", () => {
       await m.postState(PROJECT, "capped", stateEntry({ expectedEntries: at }));
     }
     expect(
-      (
-        await m.postState(
-          PROJECT,
-          "capped",
-          stateEntry({ expectedEntries: MAX_SESSION_ENTRIES_PER_DECISION }),
-        )
-      ).kind,
-    ).toBe("conflict");
+      await m.postState(
+        PROJECT,
+        "capped",
+        stateEntry({ expectedEntries: MAX_SESSION_ENTRIES_PER_DECISION }),
+      ),
+    ).toMatchObject({
+      kind: "conflict",
+      error: `at most ${MAX_SESSION_ENTRIES_PER_DECISION} session entries per decision`,
+    });
   });
 });
 
