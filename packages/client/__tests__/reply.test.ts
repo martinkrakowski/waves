@@ -3,8 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_SERVER_TEXT,
   issueLines,
+  labelIssueLines,
   readIssues,
+  readRaiseReply,
   readReceivedAt,
+  readServerError,
   readToken,
   reasonPhrase,
   safeText,
@@ -228,5 +231,71 @@ describe("the body of a success", () => {
     expect(readReceivedAt(JSON.stringify({ receivedAt: `${CLEAR}2026` }))).toBe(
       "2026",
     );
+  });
+});
+
+describe("readRaiseReply", () => {
+  it("reads a valid raise reply", () => {
+    expect(
+      readRaiseReply(
+        '{"revision":1,"textSha256":"abc","created":true,"entries":0}',
+      ),
+    ).toEqual({ revision: 1, textSha256: "abc", created: true, entries: 0 });
+  });
+
+  it("refuses a body with the wrong field types", () => {
+    expect(
+      readRaiseReply(
+        '{"revision":"x","textSha256":"abc","created":true,"entries":0}',
+      ),
+    ).toBeUndefined();
+    expect(
+      readRaiseReply(
+        '{"revision":1,"textSha256":"abc","created":"yes","entries":0}',
+      ),
+    ).toBeUndefined();
+    expect(
+      readRaiseReply(
+        '{"revision":1,"textSha256":"abc","created":true,"entries":"x"}',
+      ),
+    ).toBeUndefined();
+    expect(
+      readRaiseReply(
+        '{"revision":1.5,"textSha256":"abc","created":true,"entries":0}',
+      ),
+    ).toBeUndefined();
+  });
+
+  it("refuses a body that is not an object or that is missing fields", () => {
+    expect(readRaiseReply("not json")).toBeUndefined();
+    expect(readRaiseReply("[1,2]")).toBeUndefined();
+    expect(readRaiseReply('{"revision":1}')).toBeUndefined();
+  });
+});
+
+describe("readServerError", () => {
+  it("reads the error the server sends on a 409", () => {
+    expect(readServerError('{"error":"too many decisions"}')).toBe(
+      "too many decisions",
+    );
+  });
+
+  it("returns nothing when the body carried no error", () => {
+    expect(readServerError("{}")).toBe("");
+    expect(readServerError("not json")).toBe("");
+  });
+});
+
+describe("labelIssueLines", () => {
+  it("prefixes each issue with the label and the JSON pointer", () => {
+    expect(
+      labelIssueLines("waves decision raise", [
+        { path: "/schema", message: "expected waves-notice/v1" },
+        { path: "", message: "root problem" },
+      ]),
+    ).toEqual([
+      "waves decision raise: /schema: expected waves-notice/v1",
+      "waves decision raise: /: root problem",
+    ]);
   });
 });

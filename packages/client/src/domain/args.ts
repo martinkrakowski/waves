@@ -14,6 +14,12 @@ export const USAGE = [
   "  waves status (--file <path> | --stdin) [--interval <1-300>]",
   "  waves delete --wave <wave>",
   "  waves sync [--check]",
+  "  waves decision raise --file <path|->",
+  "  waves decision read <id>",
+  "  waves decision report <id> --state ... --words <text> --revision <n> --text-sha256 <hex> --entries <k> [--option <key>] [--by <text>]",
+  "  waves decision state <id> --state ... --revision <n> --text-sha256 <hex> --entries <k> [--reason <text>] [--superseded-by <id>] [--option <key>] [--words <text>] [--by <text>]",
+  "  waves event --topic <topic> --text <text> [--detail <text>]",
+  "  waves decisions export [--since <YYYY-MM-DD>]",
   "",
   `WAVES_URL is required. WAVES_PROJECT names the project a push, a status or`,
   "a delete belongs to. The project token is read from the file",
@@ -78,7 +84,12 @@ export type Command =
       /** Read the configuration and print the period, starting nothing. */
       readonly check: boolean;
     }
-  | { readonly kind: "delete"; readonly wave: string };
+  | { readonly kind: "delete"; readonly wave: string }
+  | {
+      readonly kind: "decision";
+      readonly action: "raise";
+      readonly source: InputSource;
+    };
 
 export type ParseResult =
   | { readonly ok: true; readonly command: Command }
@@ -177,6 +188,8 @@ const STATUS_FLAGS: readonly string[] = ["--file", "--stdin", "--interval"];
 /** `sync` is configured by a file, so `--check` is the only flag it takes. */
 const SYNC_FLAGS: readonly string[] = [CHECK];
 
+const DECISION_RAISE_FLAGS: readonly string[] = ["--file", "--stdin"];
+
 const MIN_INTERVAL_SECONDS = 1;
 const MAX_INTERVAL_SECONDS = 300;
 const INTEGER = /^\d{1,3}$/;
@@ -204,7 +217,8 @@ export function parseArgv(argv: readonly string[]): ParseResult {
     head !== "push" &&
     head !== "status" &&
     head !== "sync" &&
-    head !== "delete"
+    head !== "delete" &&
+    head !== "decision"
   ) {
     return { ok: false, error: `unknown command ${head}` };
   }
@@ -227,7 +241,10 @@ export function parseArgv(argv: readonly string[]): ParseResult {
   if (head === "sync") {
     return readSync(tokens);
   }
-  return readDelete(tokens);
+  if (head === "delete") {
+    return readDelete(tokens);
+  }
+  return readDecision(tokens);
 }
 
 function tokenize(argv: readonly string[]): Tokens | string {
@@ -510,6 +527,9 @@ function readInputSource(tokens: Tokens): InputSource | string {
   if (path === undefined) {
     return fromStdin ? { kind: "stdin" } : "give --file or --stdin";
   }
+  if (path === "-") {
+    return { kind: "stdin" };
+  }
   return { kind: "file", path };
 }
 
@@ -528,12 +548,52 @@ function readInterval(raw: string | undefined): number | null | string {
   return seconds;
 }
 
-export const COMMAND_NAME: Readonly<Record<Command["kind"], string>> = {
-  help: WAVES,
-  register: `${WAVES} register`,
-  "register-all": `${WAVES} register-all`,
-  push: `${WAVES} push`,
-  status: `${WAVES} status`,
-  delete: `${WAVES} delete`,
-  sync: `${WAVES} sync`,
-};
+function readDecision(tokens: Tokens): ParseResult {
+  const action = tokens.positionals[0];
+  if (action === undefined) {
+    return {
+      ok: false,
+      error: "decision takes a sub-command: raise, read, report or state",
+    };
+  }
+  if (action === "raise") {
+    return readDecisionRaise(tokens);
+  }
+  return { ok: false, error: `unknown decision sub-command ${action}` };
+}
+
+function readDecisionRaise(tokens: Tokens): ParseResult {
+  const unused = firstUnused(tokens, DECISION_RAISE_FLAGS);
+  if (unused !== undefined) {
+    return { ok: false, error: `${unused} is not a decision option` };
+  }
+  if (tokens.positionals.length !== 1) {
+    return { ok: false, error: "raise takes no arguments" };
+  }
+  const source = readInputSource(tokens);
+  if (typeof source === "string") {
+    return { ok: false, error: source };
+  }
+  return { ok: true, command: { kind: "decision", action: "raise", source } };
+}
+
+export function commandName(command: Command): string {
+  switch (command.kind) {
+    case "help":
+      return WAVES;
+    case "register":
+      return `${WAVES} register`;
+    case "register-all":
+      return `${WAVES} register-all`;
+    case "push":
+      return `${WAVES} push`;
+    case "status":
+      return `${WAVES} status`;
+    case "delete":
+      return `${WAVES} delete`;
+    case "sync":
+      return `${WAVES} sync`;
+    case "decision":
+      return `${WAVES} decision ${command.action}`;
+  }
+}

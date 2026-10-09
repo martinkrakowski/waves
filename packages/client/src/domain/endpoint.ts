@@ -146,6 +146,26 @@ export function statusPath(project: string): string {
   return `${API_PREFIX}/${encodeURIComponent(project)}/status`;
 }
 
+/** The URL of one decision, the route a `raise` PUTs and a `read` GETs. */
+export function decisionPath(project: string, id: string): string {
+  return `${API_PREFIX}/${encodeURIComponent(project)}/decisions/${encodeURIComponent(id)}`;
+}
+
+/** `POST` for one project's state entries on one decision. */
+export function decisionStatesPath(project: string, id: string): string {
+  return `${decisionPath(project, id)}/states`;
+}
+
+/** `POST` for one project's events. */
+export function eventsPath(project: string): string {
+  return `${API_PREFIX}/${encodeURIComponent(project)}/events`;
+}
+
+/** The heads of every decision in one project. */
+export function projectDecisionsPath(project: string): string {
+  return `${API_PREFIX}/${encodeURIComponent(project)}/decisions`;
+}
+
 /** The line printed before every request to an insecurely allowed host. */
 export function insecureWarning(origin: string): string {
   return `waves: ${origin} is plain http, so the token travels in clear text`;

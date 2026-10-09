@@ -40,6 +40,7 @@ describe("parseArgv", () => {
       "push",
       "status",
       "sync",
+      "decision",
     ]) {
       expect(USAGE).toContain(`waves ${command}`);
     }
@@ -527,6 +528,48 @@ describe("options", () => {
   it("refuses an option it has never heard of", () => {
     expect(errorOf(["push", "--wave", "wv5", "--stdin", "--quiet"])).toBe(
       "unknown option --quiet",
+    );
+  });
+});
+
+describe("decision", () => {
+  it("reads a raise from a file or from stdin", () => {
+    expect(commandOf(["decision", "raise", "--file", "decision.json"])).toEqual(
+      {
+        kind: "decision",
+        action: "raise",
+        source: { kind: "file", path: "decision.json" },
+      },
+    );
+    expect(commandOf(["decision", "raise", "--stdin"])).toEqual({
+      kind: "decision",
+      action: "raise",
+      source: { kind: "stdin" },
+    });
+    // --file - is stdin, the same as --stdin.
+    expect(commandOf(["decision", "raise", "--file", "-"])).toEqual({
+      kind: "decision",
+      action: "raise",
+      source: { kind: "stdin" },
+    });
+  });
+
+  it("wants a source and a sub-command", () => {
+    expect(errorOf(["decision"])).toBe(
+      "decision takes a sub-command: raise, read, report or state",
+    );
+    expect(errorOf(["decision", "raise"])).toBe("give --file or --stdin");
+    expect(errorOf(["decision", "raise", "--file", "x", "--stdin"])).toBe(
+      "give only one of --file and --stdin",
+    );
+    expect(errorOf(["decision", "raise", "--file", "x", "extra"])).toBe(
+      "raise takes no arguments",
+    );
+  });
+
+  it("refuses an unknown decision sub-command", () => {
+    expect(errorOf(["decision", "foo"])).toBe(
+      "unknown decision sub-command foo",
     );
   });
 });

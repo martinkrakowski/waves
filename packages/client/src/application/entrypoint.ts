@@ -1,4 +1,4 @@
-import { COMMAND_NAME, USAGE, parseArgv } from "../domain/args.js";
+import { commandName, USAGE, parseArgv } from "../domain/args.js";
 import { remove } from "./delete.js";
 import {
   EXIT_FAILURE,
@@ -9,6 +9,7 @@ import {
 } from "./errors.js";
 import { FileRefusal, type CliDeps, type UseCaseDeps } from "./ports.js";
 import { push } from "./push.js";
+import { raise } from "./raise.js";
 import { register } from "./register.js";
 import { registerAll } from "./register-all.js";
 import { sendStatus } from "./status.js";
@@ -44,7 +45,7 @@ export async function run(
     io.out(USAGE);
     return EXIT_OK;
   }
-  const label = COMMAND_NAME[parsed.command.kind];
+  const label = commandName(parsed.command);
   const useCase: UseCaseDeps = { ...deps, out: io.out, err: io.err };
   try {
     if (parsed.command.kind === "register") {
@@ -60,9 +61,12 @@ export async function run(
       return await sendStatus(parsed.command, useCase);
     }
     if (parsed.command.kind === "sync") {
-      return parsed.command.check
+      return (await parsed.command.check)
         ? await checkSync(useCase)
         : await sync(useCase);
+    }
+    if (parsed.command.kind === "decision") {
+      return await raise(parsed.command, useCase);
     }
     return await remove(parsed.command, useCase);
   } catch (error) {
