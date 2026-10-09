@@ -1,6 +1,6 @@
 import type { Command } from "../domain/args.js";
 import { decisionPath } from "../domain/endpoint.js";
-import { reasonPhrase } from "../domain/reply.js";
+import { readDecisionRecord, reasonPhrase } from "../domain/reply.js";
 import { EXIT_OK, Failure } from "./errors.js";
 import type { UseCaseDeps } from "./ports.js";
 import { openSession, readProject, transportFor } from "./session.js";
@@ -40,7 +40,11 @@ export async function readDecision(
   }
   const { status, body } = outcome.reply;
   if (status === 200) {
-    deps.out(body);
+    const record = readDecisionRecord(body, command.id);
+    if (record === undefined) {
+      throw new Failure("the server sent an unusable body");
+    }
+    deps.out(record);
     return EXIT_OK;
   }
   if (status === 404) {

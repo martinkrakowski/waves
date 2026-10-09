@@ -15,11 +15,17 @@ function command(id = "d1"): ReadCommand {
   return { kind: "decision", action: "read", id };
 }
 
+function record(id = "d1"): string {
+  return JSON.stringify({
+    head: { project: PROJECT, id, question: "What should we do?" },
+    revisions: [],
+    entries: [],
+  });
+}
+
 describe("read", () => {
   it("prints the record the server answered and exits 0", async () => {
-    const body = JSON.stringify({
-      head: { project: PROJECT, id: "d1", question: "What should we do?" },
-    });
+    const body = record();
     const built = harness({ script: [reply(200, body)] });
 
     expect(await readDecision(command(), built.deps)).toBe(0);
@@ -29,7 +35,7 @@ describe("read", () => {
   });
 
   it("sends a GET with no token, on the decision route", async () => {
-    const built = harness({ script: [reply(200, "{}")] });
+    const built = harness({ script: [reply(200, record())] });
 
     await readDecision(command(), built.deps);
 
@@ -47,6 +53,7 @@ describe("read", () => {
           200,
           JSON.stringify({
             head: { id: "d1", state: "approved", source: "reported" },
+            revisions: [],
             entries: [{ state: "approved", words: "yes" }],
           }),
         ),
@@ -55,6 +62,40 @@ describe("read", () => {
 
     expect(await readDecision(command(), built.deps)).toBe(0);
     // Exit 0 means the record was read; it says nothing about the answer.
+  });
+
+  it("refuses a 200 body that is HTML", async () => {
+    const built = harness({
+      script: [reply(200, "<html>is this a decision?</html>")],
+    });
+    await expect(readDecision(command(), built.deps)).rejects.toThrow(
+      "the server sent an unusable body",
+    );
+    expect(built.out).toEqual([]);
+  });
+
+  it("refuses a 200 body that is empty", async () => {
+    const built = harness({ script: [reply(200, "")] });
+    await expect(readDecision(command(), built.deps)).rejects.toThrow(
+      "the server sent an unusable body",
+    );
+    expect(built.out).toEqual([]);
+  });
+
+  it("refuses a 200 body that is an empty object", async () => {
+    const built = harness({ script: [reply(200, "{}")] });
+    await expect(readDecision(command(), built.deps)).rejects.toThrow(
+      "the server sent an unusable body",
+    );
+    expect(built.out).toEqual([]);
+  });
+
+  it("refuses a 200 record for another decision's id", async () => {
+    const built = harness({ script: [reply(200, record("d999"))] });
+    await expect(readDecision(command(), built.deps)).rejects.toThrow(
+      "the server sent an unusable body",
+    );
+    expect(built.out).toEqual([]);
   });
 
   it("reports a decision that is not there", async () => {

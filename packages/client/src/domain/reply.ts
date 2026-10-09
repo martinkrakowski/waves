@@ -308,6 +308,35 @@ export function readStaleReply(body: string): StaleReply | undefined {
   return { revision, textSha256, entries };
 }
 
+/**
+ * The body of a `GET .../decisions/<id>`: an object holding the head's `id`,
+ * plus `revisions` and `entries` arrays the caller prints verbatim. `undefined`
+ * when the body is not one — a body read.ts cannot trust to name the decision,
+ * it refuses rather than echo. The matched `id` is the one the request named.
+ */
+export function readDecisionRecord(
+  body: string,
+  id: string,
+): string | undefined {
+  const parsed = parseObject(body);
+  if (parsed === undefined) {
+    return undefined;
+  }
+  const head = own(parsed, "head");
+  if (!isRecord(head)) {
+    return undefined;
+  }
+  if (own(head, "id") !== id) {
+    return undefined;
+  }
+  const revisions = own(parsed, "revisions");
+  const entries = own(parsed, "entries");
+  if (!Array.isArray(revisions) || !Array.isArray(entries)) {
+    return undefined;
+  }
+  return body;
+}
+
 export function parseObject(body: string): Record<string, unknown> | undefined {
   let parsed: unknown;
   try {
