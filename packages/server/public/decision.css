@@ -29,39 +29,9 @@
   overflow-wrap: anywhere;
 }
 
-/* Shared with the inbox: the door band, the state, the act-elsewhere line. */
-.door-band {
-  background: var(--bg-sink);
-  border: 1px solid var(--amber);
-  border-radius: var(--radius-card);
-  color: var(--amber);
-  font-family: var(--mono);
-  font-size: 0.8rem;
-  margin: 0 0 0.5rem;
-  padding: 0.4rem 0.75rem;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-}
-
-.card-state {
-  color: var(--text);
-  font-size: 0.85rem;
-  margin: 0 0 0.3rem;
-  overflow-wrap: anywhere;
-}
-
-.card-small {
-  color: var(--muted);
-  font-size: 0.78rem;
-  margin: 0 0 0.3rem;
-}
-
-.card-elsewhere {
-  color: var(--text);
-  font-size: 0.85rem;
-  margin: 0 0 0.5rem;
-  overflow-wrap: anywhere;
-}
+/* The door band, state and act-elsewhere lines are defined once in
+   inbox.css, the first stylesheet to load; this file only adds the rules
+   that are specific to the decision page. */
 
 .decision-options h2,
 .decision-commits h2,
