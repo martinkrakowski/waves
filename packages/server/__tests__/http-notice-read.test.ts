@@ -318,10 +318,11 @@ describe("rule 1: a reported answer leaves the decision in the inbox", () => {
       clk.pass,
     );
 
-    const before = (await fetch(`${started.origin}/api/v1/projects`).then((r) =>
-      r.json(),
-    )) as Array<{ id: string; decisions: CountBody }>;
-    expect(before.find((p) => p.id === "fleet")!.decisions).toEqual({
+    const beforeRes = await fetch(`${started.origin}/api/v1/inbox`);
+    const before = (await beforeRes.json()) as {
+      projects: Array<{ id: string; counts: CountBody }>;
+    };
+    expect(before.projects.find((p) => p.id === "fleet")!.counts).toEqual({
       waiting: 1,
       oneWay: 0,
       reported: 0,
@@ -567,5 +568,120 @@ describe("notice read routes", () => {
       (await fetch(`${started.origin}/api/v1/projects/fleet/decisions/absent`))
         .status,
     ).toBe(404);
+  });
+});
+
+describe("notice counts", () => {
+  it("counts a reported answer in reported, not waiting", async () => {
+    const clk = clock();
+    const started = await startHarness({
+      adminToken: ADMIN_TOKEN,
+      now: clk.now,
+    });
+    const tokens = await registerAll(started, clk.pass);
+    const token = tokens.fleet!;
+    const { textSha256 } = await putDecision(
+      started,
+      token,
+      "fleet",
+      "d1",
+      decision("fleet", "d1"),
+      clk.pass,
+    );
+    await postState(
+      started,
+      token,
+      "fleet",
+      "d1",
+      {
+        state: "approved",
+        source: "reported",
+        revision: 1,
+        textSha256,
+        expectedEntries: 0,
+        by: "owner",
+        at: "2026-10-08T13:00:00Z",
+        words: "yes",
+      },
+      clk.pass,
+    );
+    const counted = (await fetch(`${started.origin}/api/v1/inbox`).then((r) =>
+      r.json(),
+    )) as { projects: Array<{ id: string; counts: CountBody }> };
+    expect(counted.projects.find((p) => p.id === "fleet")!.counts).toEqual({
+      waiting: 0,
+      oneWay: 0,
+      reported: 1,
+      closed: 0,
+    });
+  });
+
+  it("counts a superseded-over-answer decision as closed", async () => {
+    const clk = clock();
+    const started = await startHarness({
+      adminToken: ADMIN_TOKEN,
+      now: clk.now,
+    });
+    const tokens = await registerAll(started, clk.pass);
+    await putDecision(
+      started,
+      tokens.fleet!,
+      "fleet",
+      "other",
+      decision("fleet", "other"),
+      clk.pass,
+    );
+    const token = tokens.fleet!;
+    const { textSha256 } = await putDecision(
+      started,
+      token,
+      "fleet",
+      "d1",
+      decision("fleet", "d1"),
+      clk.pass,
+    );
+    await postState(
+      started,
+      token,
+      "fleet",
+      "d1",
+      {
+        state: "approved",
+        source: "reported",
+        revision: 1,
+        textSha256,
+        expectedEntries: 0,
+        by: "owner",
+        at: "2026-10-08T13:00:00Z",
+        words: "yes",
+      },
+      clk.pass,
+    );
+    await postState(
+      started,
+      token,
+      "fleet",
+      "d1",
+      {
+        state: "superseded",
+        source: "session",
+        revision: 1,
+        textSha256,
+        expectedEntries: 1,
+        by: "owner",
+        at: "2026-10-08T13:00:00Z",
+        supersededBy: "other",
+      },
+      clk.pass,
+    );
+    const counted = (await fetch(`${started.origin}/api/v1/inbox`).then((r) =>
+      r.json(),
+    )) as { projects: Array<{ id: string; counts: CountBody }> };
+    expect(counted.projects.find((p) => p.id === "fleet")!.counts).toEqual({
+      waiting: 1,
+      oneWay: 0,
+      reported: 0,
+      closed: 1,
+    });
   });
 });
