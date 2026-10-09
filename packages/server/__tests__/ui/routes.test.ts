@@ -9,6 +9,10 @@ describe("routeOf", () => {
     expect(routeOf("")).toStrictEqual({ kind: "projects" });
   });
 
+  it("routes /inbox at the inbox", () => {
+    expect(routeOf("/inbox")).toStrictEqual({ kind: "inbox" });
+  });
+
   it("routes /p/<id> at one project", () => {
     expect(routeOf("/p/alpha")).toStrictEqual({ kind: "project", id: "alpha" });
     expect(routeOf("/p/a-b9")).toStrictEqual({ kind: "project", id: "a-b9" });

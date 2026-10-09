@@ -48,6 +48,89 @@ describe("drawableProjects", () => {
     ).toBe(true);
   });
 
+  it("takes a project with decision counts, and one without", () => {
+    expect(drawableProjects([projectCard()])).toBe(true);
+    expect(
+      drawableProjects([
+        projectCard({
+          decisions: { waiting: 3, oneWay: 1, reported: 2, closed: 1 },
+        }),
+      ]),
+    ).toBe(true);
+    expect(drawableProjects([projectCard({ decisions: undefined })])).toBe(
+      true,
+    );
+  });
+
+  it("refuses a decisions count that is not a whole number of at least zero", () => {
+    for (const field of ["waiting", "oneWay", "reported", "closed"] as const) {
+      expect(
+        drawableProjects([
+          projectCard({
+            decisions: {
+              waiting: 0,
+              oneWay: 0,
+              reported: 0,
+              closed: 0,
+              [field]: -1,
+            } as never,
+          }),
+        ]),
+      ).toBe(false);
+      expect(
+        drawableProjects([
+          projectCard({
+            decisions: {
+              waiting: 0,
+              oneWay: 0,
+              reported: 0,
+              closed: 0,
+              [field]: 1.5,
+            } as never,
+          }),
+        ]),
+      ).toBe(false);
+      expect(
+        drawableProjects([
+          projectCard({
+            decisions: {
+              waiting: 0,
+              oneWay: 0,
+              reported: 0,
+              closed: 0,
+              [field]: "1",
+            } as never,
+          }),
+        ]),
+      ).toBe(false);
+    }
+  });
+
+  it("refuses a oneWay above waiting", () => {
+    expect(
+      drawableProjects([
+        projectCard({
+          decisions: { waiting: 1, oneWay: 2, reported: 0, closed: 0 },
+        }),
+      ]),
+    ).toBe(false);
+  });
+
+  it("refuses a decisions field that is not a countable object", () => {
+    expect(drawableProjects([projectCard({ decisions: null as never })])).toBe(
+      false,
+    );
+    expect(drawableProjects([projectCard({ decisions: 42 as never })])).toBe(
+      false,
+    );
+    expect(drawableProjects([projectCard({ decisions: "no" as never })])).toBe(
+      false,
+    );
+    expect(
+      drawableProjects([projectCard({ decisions: { waiting: 1 } as never })]),
+    ).toBe(false);
+  });
+
   it("refuses an entry it could not draw", () => {
     expect(drawableProjects([null])).toBe(false);
     expect(drawableProjects([projectCard(), null])).toBe(false);

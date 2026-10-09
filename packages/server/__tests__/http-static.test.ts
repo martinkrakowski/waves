@@ -22,10 +22,10 @@ function bodyOf(raw: string): string {
 afterEach(cleanupHarnesses);
 
 describe("the placeholder page", () => {
-  it("serves the page at the root, at a project and at one of its waves", async () => {
+  it("serves the page at the root, at the inbox and at a project's waves", async () => {
     const started = await startHarness();
 
-    for (const path of ["/", "/p/alpha", "/p/alpha/w/wv1"]) {
+    for (const path of ["/", "/inbox", "/p/alpha", "/p/alpha/w/wv1"]) {
       const response = await fetch(`${started.origin}${path}`);
 
       expect(response.status).toBe(200);

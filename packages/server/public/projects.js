@@ -40,6 +40,25 @@ function count(value) {
 }
 
 /**
+ * The optional `decisions` of a summary, when it carries one: the four counts
+ * and the rule that oneWay is at most waiting. Absent is valid — a project that
+ * never raised a decision says nothing here, and a `0` a reader would take for
+ * a count is not the same as never having said a count.
+ */
+function decisionsOf(project) {
+  return (
+    project.decisions === undefined ||
+    (project.decisions !== null &&
+      typeof project.decisions === "object" &&
+      count(project.decisions.waiting) &&
+      count(project.decisions.oneWay) &&
+      count(project.decisions.reported) &&
+      count(project.decisions.closed) &&
+      project.decisions.oneWay <= project.decisions.waiting)
+  );
+}
+
+/**
  * One entry of `recentWaves`. A wave id that fails its pattern is a wave the
  * page has no path for, and `merged` above `lanes` is a count the page would
  * draw as more than a hundred per cent: both are a broken endpoint rather than a
@@ -101,7 +120,8 @@ function present(project) {
     typeof project.stale === "boolean" &&
     repoOf(project) &&
     recentWavesOf(project) &&
-    statusOf(project)
+    statusOf(project) &&
+    decisionsOf(project)
   );
 }
 

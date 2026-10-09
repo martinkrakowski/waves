@@ -267,6 +267,18 @@ describe("the fourteen fixtures", () => {
     const wavesDecisions = (await wavesRes.json()) as { decisions: Head[] };
     const clean = find(wavesDecisions.decisions, "clean-merged-worktrees");
     expect(clean.from).toBe("fleet");
+
+    // An instruction from one project never appears on another's inbox: the
+    // inbox is the owner's own queue. It still appears on the project's own
+    // decisions listing, as the assertion above shows.
+    const wavesInbox = byId.get("waves");
+    const wavesInboxIds = (wavesInbox?.decisions ?? []).map((h) => h.id);
+    expect(wavesInboxIds).not.toContain("clean-merged-worktrees");
+    for (const project of projects) {
+      for (const head of project.decisions) {
+        expect(head.from).toBeUndefined();
+      }
+    }
   });
 });
 

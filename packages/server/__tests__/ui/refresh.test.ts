@@ -4,9 +4,10 @@ import type { AppGlobals } from "../../public/app.js";
 import { createApp, REFRESH_MS } from "../../public/app.js";
 import { clockTime } from "../../public/format.js";
 
-import type { Answer, FetchStub, TimerStub } from "./helpers.js";
+import type { Answer, FetchStub, GatedFetch, TimerStub } from "./helpers.js";
 import {
   attentionView,
+  inboxView,
   laneRow,
   NOW_MS,
   projectCard,
@@ -1414,6 +1415,91 @@ describe("the first paint", () => {
     app.start();
     await flush();
     expect(document.getElementById("root")).toBeNull();
+    app.stop();
+  });
+});
+
+/** The inbox route's three requests: rail, attention, and the inbox. */
+function inboxListing(path: string): Answer {
+  const rail = railAnswer(path);
+  if (rail !== undefined) {
+    return rail;
+  }
+  return path === "/api/v1/inbox"
+    ? { status: 200, body: inboxView() }
+    : { status: 404 };
+}
+
+/** Holds the first request to each path `hold` says yes to, and only that one. */
+function holdInbox(
+  handler: (path: string) => Answer,
+  hold: (path: string) => boolean,
+): GatedFetch {
+  const held = new Set<string>();
+  return gatedFetch((path) => {
+    const answer = handler(path);
+    if (!held.has(path) && hold(path)) {
+      held.add(path);
+      return { ...answer, hold: true };
+    }
+    return { ...answer, hold: false };
+  });
+}
+
+describe("the inbox route", () => {
+  it("loads the inbox and its rail in one pass", async () => {
+    const fetchImpl = fetchStub(inboxListing);
+    const { app } = harness({ pathname: "/inbox", fetchImpl });
+    app.start();
+    await flush();
+
+    expect(fetchImpl.calls).toStrictEqual([
+      "/api/v1/projects",
+      "/api/v1/attention",
+      "/api/v1/inbox",
+    ]);
+    expect(textsOf(root(), "h1")).toStrictEqual(["Inbox"]);
+    expect(root().querySelectorAll(".note")).toHaveLength(0);
+    app.stop();
+  });
+
+  it("is a failed load when the inbox view is not drawable", async () => {
+    const { app, timers } = harness({
+      pathname: "/inbox",
+      fetchImpl: fetchStub((path) =>
+        path === "/api/v1/inbox"
+          ? { status: 200, body: { projects: [null] } }
+          : (railAnswer(path) ?? { status: 404 }),
+      ),
+    });
+    app.start();
+    await flush();
+
+    expect(root().querySelectorAll(".note")).toHaveLength(1);
+    expect(textOf(root().querySelector(".note"))).toBe(OFFLINE);
+    expect(root().querySelectorAll(".inbox-totals")).toHaveLength(0);
+
+    timers.runLast();
+    await flush();
+    expect(root().querySelectorAll(".note")).toHaveLength(1);
+    expect(textOf(root().querySelector(".note"))).toBe(OFFLINE);
+    app.stop();
+  });
+
+  it("drops an inbox pass that loses its route to a navigation", async () => {
+    const gate = holdInbox(inboxListing, (path) => path === "/api/v1/inbox");
+    const { app, browser } = harness({ pathname: "/inbox", fetchImpl: gate });
+    app.start();
+    await flush();
+    expect(gate.pending()).toBe(1);
+
+    app.navigate("/");
+    gate.release();
+    await flush();
+
+    expect(browser.pushes).toStrictEqual(["/"]);
+    expect(app.route).toStrictEqual({ kind: "projects" });
+    expect(textsOf(root(), ".row-head h3 a")).toStrictEqual(["Alpha"]);
     app.stop();
   });
 });

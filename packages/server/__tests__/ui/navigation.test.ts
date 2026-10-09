@@ -4,9 +4,12 @@ import type { AppGlobals } from "../../public/app.js";
 import { createApp } from "../../public/app.js";
 import { el, repoLink } from "../../public/dom.js";
 
+import type { InboxProject } from "../../src/application/notice-read-model.js";
 import type { ProjectLanesView } from "../../src/application/read-model.js";
 import {
   attentionView,
+  inboxProject,
+  inboxView,
   laneRow,
   projectCard,
   projectLanes,
@@ -53,6 +56,13 @@ function listingFor(id: string, waves: readonly string[]): ProjectLanesView {
   });
 }
 
+/** A project card turned into an inbox project entry, with zero counts. */
+function inboxOf(projects: readonly unknown[]): InboxProject[] {
+  return (projects as readonly { id: string; name: string }[]).map((p) =>
+    inboxProject({ id: p.id, name: p.name }),
+  );
+}
+
 /** The rail's list, and every project's lanes, so a crossed path is visible. */
 function perProject(path: string): Answer {
   if (path === "/api/v1/projects") {
@@ -60,6 +70,9 @@ function perProject(path: string): Answer {
   }
   if (path === "/api/v1/attention") {
     return { status: 200, body: attentionView() };
+  }
+  if (path === "/api/v1/inbox") {
+    return { status: 200, body: inboxView({ projects: inboxOf(PROJECTS) }) };
   }
   const lanes = /^\/api\/v1\/projects\/([^/]+)\/lanes(?:\?all=1)?$/.exec(path);
   if (lanes !== null) {
@@ -99,6 +112,9 @@ function answering(...projects: unknown[]): (path: string) => Answer {
     }
     if (path === "/api/v1/attention") {
       return { status: 200, body: attentionView() };
+    }
+    if (path === "/api/v1/inbox") {
+      return { status: 200, body: inboxView({ projects: inboxOf(projects) }) };
     }
     const lanes = /^\/api\/v1\/projects\/([^/]+)\/lanes(?:\?all=1)?$/.exec(
       path,
@@ -1637,6 +1653,86 @@ describe("what the reader is told", () => {
     expect(textOf(root().querySelector(".crumbs") as Element)).toBe(
       "waves / alpha / w-2",
     );
+    app.stop();
+  });
+});
+
+describe("the inbox route", () => {
+  it("boots on /inbox and draws the inbox", async () => {
+    const fetchImpl = fetchStub(
+      answering(projectCard(), projectCard({ id: "beta", name: "Beta" })),
+    );
+    const { app } = harness({ pathname: "/inbox", fetchImpl });
+    app.start();
+    await flush();
+
+    expect(app.route).toStrictEqual({ kind: "inbox" });
+    expect(textsOf(root(), "h1")).toStrictEqual(["Inbox"]);
+    // The totals line is all zeroes: the stubbed inbox has no decisions.
+    expect(textsOf(root(), ".inbox-totals")).toStrictEqual([
+      "0 waiting (0 one-way doors) · 0 reported · 0 closed by a session",
+    ]);
+    // The menu still lists every project.
+    expect(textsOf(root(), ".projects a")).toStrictEqual(["Alpha", "Beta"]);
+    app.stop();
+  });
+
+  it("fetches the inbox alongside the rail's two lists", async () => {
+    const fetchImpl = fetchStub(
+      answering(projectCard(), projectCard({ id: "beta", name: "Beta" })),
+    );
+    const { app } = harness({ pathname: "/inbox", fetchImpl });
+    app.start();
+    await flush();
+
+    expect(fetchImpl.calls).toStrictEqual([
+      "/api/v1/projects",
+      "/api/v1/attention",
+      "/api/v1/inbox",
+    ]);
+    app.stop();
+  });
+
+  it("navigates from the fleet to the inbox", async () => {
+    const fetchImpl = fetchStub(
+      answering(projectCard(), projectCard({ id: "beta", name: "Beta" })),
+    );
+    const { app, browser } = harness({ pathname: "/", fetchImpl });
+    app.start();
+    await flush();
+
+    app.navigate("/inbox");
+    await flush();
+
+    expect(browser.pushes).toStrictEqual(["/inbox"]);
+    expect(app.route).toStrictEqual({ kind: "inbox" });
+    expect(textsOf(root(), ".inbox-totals")).toStrictEqual([
+      "0 waiting (0 one-way doors) · 0 reported · 0 closed by a session",
+    ]);
+    app.stop();
+  });
+
+  it("names the inbox in the breadcrumb and marks it current", async () => {
+    const { app } = harness({ pathname: "/inbox" });
+    app.start();
+    await flush();
+
+    expect(textOf(root().querySelector(".crumbs") as Element)).toBe(
+      "waves / Inbox",
+    );
+    expect(
+      textOf(root().querySelector('.crumbs [aria-current="page"]') as Element),
+    ).toBe("Inbox");
+    app.stop();
+  });
+
+  it("reads nothing from the query string on the inbox route", async () => {
+    const { app } = harness({ pathname: "/inbox", search: "?q=leak" });
+    app.start();
+    await flush();
+
+    expect(app.route).toStrictEqual({ kind: "inbox" });
+    expect(document.body.textContent ?? "").not.toContain("leak");
     app.stop();
   });
 });

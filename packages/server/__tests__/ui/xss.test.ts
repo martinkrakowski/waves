@@ -20,6 +20,9 @@ import {
   attentionLane,
   attentionView,
   envelope,
+  inboxHead,
+  inboxProject,
+  inboxView,
   lane,
   laneRow,
   NOW_ISO,
@@ -1307,5 +1310,141 @@ describe("the status panel against stored markup", () => {
       expectVerbatim(payload, STATUS_OCCURRENCES, 0);
       app.stop();
     }
+  });
+});
+
+/**
+ * Every text field of one inbox head, each carrying the payload: the project
+ * name, the question, the door reason, the act-elsewhere where and what, the
+ * earlier answer's words, and the covered answer's words. The `project` and `id`
+ * are validated by the shape check, so they cannot carry a payload; and `at`
+ * is checked as a time, so it cannot carry one either.
+ * The `by` field of an answer is held but never rendered.
+ */
+function inboxWith(payload: string): unknown {
+  return inboxView({
+    projects: [
+      inboxProject({
+        id: "alpha",
+        name: payload,
+        counts: { waiting: 0, oneWay: 0, reported: 0, closed: 1 },
+        decisions: [
+          inboxHead({
+            question: payload,
+            shape: "instruction",
+            door: { value: true, reason: payload },
+            decider: "owner",
+            state: "withdrawn",
+            group: "closed",
+            at: NOW_ISO,
+            entries: 2,
+            actElsewhere: { where: payload, what: payload },
+            earlierAnswer: {
+              state: "approved",
+              source: "reported",
+              at: NOW_ISO,
+              by: payload,
+              words: payload,
+            },
+            coveredAnswer: {
+              state: "approved",
+              source: "reported",
+              at: NOW_ISO,
+              by: payload,
+              words: payload,
+            },
+          }),
+        ],
+      }),
+    ],
+  });
+}
+
+/** Boots the app on /inbox over the given inbox response. */
+async function bootInbox(
+  inbox: unknown,
+): Promise<ReturnType<typeof createApp>> {
+  freshRoot();
+  const timers = timerStub();
+  const browser = browserGlobals("/inbox");
+  const app = createApp({
+    doc: document,
+    location: browser.location,
+    history: browser.history,
+    win: browser.win,
+    fetch: fetchStub((path) =>
+      path === "/api/v1/projects"
+        ? { status: 200, body: [projectCard()] }
+        : path === "/api/v1/attention"
+          ? { status: 200, body: attentionView() }
+          : path === "/api/v1/inbox"
+            ? { status: 200, body: inbox }
+            : { status: 404 },
+    ),
+    setTimer: timers.setTimer,
+    clearTimer: timers.clearTimer,
+    clock: () => NOW_MS,
+  } satisfies AppGlobals);
+  app.start();
+  await flush();
+  return app;
+}
+
+/**
+ * How many times one payload appears in the rendered text of an inbox head:
+ * the project name (1), the question (1), the door band reason (1), the
+ * act-elsewhere where and what (2), the earlier answer's words (1), the covered
+ * answer's words (1). The `at` timestamp is checked as a time by the shape
+ * check, so it cannot carry a payload. The `by` field is held but
+ * never rendered. Seven places.
+ */
+const INBOX_OCCURRENCES = 7;
+
+describe("the inbox against stored markup", () => {
+  it.each(TEXT_PAYLOADS)(
+    "renders every text field of an inbox as text",
+    async (payload) => {
+      const app = await bootInbox(inboxWith(payload));
+      assertNoInjectedMarkup();
+      expect(root().querySelectorAll("img")).toHaveLength(0);
+      expect(root().querySelectorAll("script")).toHaveLength(0);
+      // No element's class carries the payload.
+      for (const element of Array.from(root().querySelectorAll("[class]"))) {
+        expect(element.getAttribute("class")).not.toContain(payload);
+      }
+      // `at` is checked as a time by the shape check, so it cannot carry a
+      // payload and is not one of the fields counted here.
+      expectVerbatim(payload, INBOX_OCCURRENCES, 0);
+      app.stop();
+    },
+  );
+
+  it("shows the door reason verbatim, not as markup", async () => {
+    const reason = '<b>"x"</b> & more';
+    const app = await bootInbox(
+      inboxView({
+        projects: [
+          inboxProject({
+            id: "alpha",
+            name: "Alpha",
+            counts: { waiting: 1, oneWay: 1, reported: 0, closed: 0 },
+            decisions: [
+              inboxHead({
+                question: "Question?",
+                door: { value: true, reason },
+                state: "open",
+                group: "waiting",
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+    assertNoInjectedMarkup();
+    const band = root().querySelector(".door-band");
+    expect(band).not.toBeNull();
+    expect(band?.textContent).toBe(`ONE-WAY DOOR: ${reason}`);
+    expect(root().querySelectorAll("b")).toHaveLength(0);
+    app.stop();
   });
 });

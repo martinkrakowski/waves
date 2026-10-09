@@ -4,6 +4,29 @@ import { logo } from "./logo.js";
 import { isProjectId } from "./patterns.js";
 
 /**
+ * How many of a summary's own decisions wait on the reader, and how many of
+ * those are one-way doors: the two numbers the inbox link carries, summed
+ * across every project the page already has from `GET /api/v1/projects`. A
+ * summary without a `decisions` field says zero, and zero is still shown so the
+ * link always says "Inbox".
+ */
+function waitingCounts(projects) {
+  if (projects === undefined) {
+    return { waiting: 0, oneWay: 0 };
+  }
+  let waiting = 0;
+  let oneWay = 0;
+  for (const project of projects) {
+    const decisions = project.decisions;
+    if (decisions !== undefined) {
+      waiting += decisions.waiting;
+      oneWay += decisions.oneWay;
+    }
+  }
+  return { waiting, oneWay };
+}
+
+/**
  * The frame around whatever a view drew: a top bar holding the mark, the
  * breadcrumb, the projects menu and the two controls that speak to the app, the
  * page itself, and a footer bar for what the page has to say out loud. Every node
@@ -81,6 +104,9 @@ function projectHref(id, all) {
 function breadcrumb(route, all) {
   if (route.kind === "projects") {
     return [here(BRAND)];
+  }
+  if (route.kind === "inbox") {
+    return [internalLink(BRAND, "/"), text(" / "), here("Inbox")];
   }
   // A page that is not one of ours still has the fleet above it, and with the
   // rail gone this is the only link that leads there.
@@ -170,6 +196,38 @@ function projectList(projects, route, attention, all) {
       ),
     }),
   ];
+}
+
+/**
+ * One word for "one one-way door" and another for every other count, so the
+ * link's suffix agrees with its number: "1 one-way door" and "2 one-way doors"
+ * and "0 one-way doors".
+ */
+function doors(oneWay) {
+  return oneWay === 1 ? `${oneWay} one-way door` : `${oneWay} one-way doors`;
+}
+
+/**
+ * The inbox link in the top bar: "Inbox" alone when nothing waits, or
+ * "Inbox · 3 waiting · 1 one-way door" when it does — the waiting count
+ * summed across every project the page already has, never added to the other
+ * three. The link is marked current on `/inbox`, the same way the breadcrumb
+ * marks the page it is on.
+ */
+function inboxLink(model) {
+  const { waiting, oneWay } = waitingCounts(model.projects);
+  let label = "Inbox";
+  if (waiting > 0) {
+    label = `Inbox · ${waiting} waiting`;
+    if (oneWay > 0) {
+      label = `${label} · ${doors(oneWay)}`;
+    }
+  }
+  return internalLink(
+    label,
+    "/inbox",
+    model.route.kind === "inbox" ? { "aria-current": "page" } : {},
+  );
 }
 
 /** What the summary says: the word alone until the first answer, then a count. */
@@ -351,6 +409,7 @@ export function shell(model, body, handlers) {
           el("span", { attrs: { class: "tag" }, text: CONSOLE }),
           syncPill(model),
           refreshButton(model, handlers),
+          inboxLink(model),
           menu(model),
         ],
       }),
