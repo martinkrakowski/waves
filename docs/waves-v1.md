@@ -1156,19 +1156,33 @@ that asked.
 
 `GET /p/<project>/inbox` is the page for one project's decisions, read-only, and
 linked from that project's count line on the all-projects inbox. It is served
-from the same `index.html` as the other pages, and answered by
+from the same `index.html` as the other pages, and answered by two reads:
 `GET /api/v1/projects/<project>/decisions` with `{ project, counts, decisions }`
 — the project's own four counts and its decisions in all four groups
 (`waiting`, `reported`, `closed`, `history`), plus the standing instructions
-other projects raised against it (marked `from`). The project's own counts are
-named in the same line the inbox uses, never summed; the three drawn groups —
-"Waiting on you", "Reported as answered", "Closed by a session" — use the inbox's
-own card builder, and a `from` card links to the raising project's decision page.
-`history` heads are not drawn as cards: when there is at least one, a single line
-counts them ("N decisions left the inbox after 14 days"). A project with nothing
-in any of the three groups gets one line saying so. The page takes no query
-string and answers nothing: a decision here is answered in the session that owns
-it.
+other projects raised against it (marked `from`); and
+`GET /api/v1/projects/<project>/events` with `{ events: StoredEvent[] }`, newest
+first, at most 200 (`packages/server/public/project-events.js`). A 404 from
+either is "no such project": the reader asked for a specific project, and the
+page says it is absent rather than offline. The project's own counts are named
+in the same line the inbox uses, never summed, and that line gains — only when at
+least one head in the three drawn groups carries `from` — a last part,
+" · N from another project" (one) or " · N from other projects" (two or more),
+so the page names the instructions raised against it without adding them to its
+own four. The three drawn groups — "Waiting on you", "Reported as answered",
+"Closed by a session" — use the inbox's own card builder, and a `from` card links
+to the raising project's decision page. `history` heads are not drawn as cards:
+when there is at least one, a collapsed `<details>` block replaces the old count
+line, with one line per head, newest `at` first — the question as an internal link
+to `/p/<project>/d/<id>` (for a `from` head, to its raiser), the state in the
+card's own words, and the calendar date of `at`. Beneath it, under the heading
+"Events", the project's notice events are listed always: "No events." when there
+are none, otherwise one line per event in the order given (date, topic and text;
+`detail` on its own line beneath; `refs` as plain text — "wave <wave>",
+"lane <lane>", "PR #<n>", only the ones present), and a line noting the cap when
+exactly 200 are shown. A project with nothing in any of the three groups gets one
+line saying so. The page takes no query string and answers nothing: a decision
+here is answered in the session that owns it.
 
 ### 5.2 The optional viewer token
 
