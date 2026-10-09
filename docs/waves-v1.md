@@ -502,10 +502,12 @@ closed object with keys exactly `state`, `source`, `revision`, `textSha256`,
 `option` or `words`. `withdrawn` requires `reason`. `superseded` requires
 `supersededBy`; `supersededBy` is refused on any other state.
 
-Whether the revision, the hash and the entry count are current is the server's
-check (lane I2), not this function's. A `textSha256` of any 64 hex characters is
-accepted here; the server recomputes it from the revision via
-`decisionBindingText`.
+Whether the revision, the hash, the entry count and the revision count are current is
+the server's check (lane I2), not this function's: `appendEntry` compares all of
+them inside the store's serialised read-compare-write and answers `409` with the
+current three when any differs (`packages/server/src/application/ports/notice-store.ts:101`).
+A `textSha256` of any 64 hex characters is accepted here; the server recomputes it from
+the revision via `decisionBindingText`.
 
 ### The event
 
@@ -524,7 +526,12 @@ event is a closed object with keys exactly `schema`, `kind`, `project`, `topic`,
 | `at`      | string | yes      | strict ISO-8601 UTC                                 |
 | `refs`    | object | no       | see above                                           |
 
-An event is one immutable entry: no states, no revisions, no answer.
+An event is one immutable entry: no states, no revisions, no answer. The store
+assigns its id — a per-project sequence carried in the id, taken as the last
+stored event's sequence plus one inside the serialised append — so dropping the
+oldest event cannot free an id for a colliding new one, and two events in the
+same millisecond cannot share one; the writer answers the id the store returns
+(`nextEventSequence`, `packages/server/src/infrastructure/store-helpers.ts:20`).
 
 ### Worked example
 
@@ -681,7 +688,12 @@ unauthenticated request to the lanes route with a bad query is a `401` and a
 
 #### 5.1.2 The notice head, the groups and the counts
 
-A decision head is `{ project, id, question, shape, door: { value, reason? }, decider, revision, revisions, textSha256, entries, state, source?, at, group, actElsewhere?, earlierAnswer?, coveredAnswer?, from? }`. `at` is the current entry's receive time, or the current revision's when the state is `open`. `decisions` on a summary is `{ waiting, oneWay, reported, closed }`: `oneWay` counts the `waiting` decisions whose door value is `true`, and the four are never summed into one number. A head's `group` is `waiting` (state `open` or `delegated`), `reported` (a current answer entry received within the last fourteen days), `closed` (a current `withdrawn` or `superseded` entry within fourteen days), or `history` otherwise; a reported answer stays in `reported` for fourteen days and then moves to `history`, so it can never leave the inbox while it stands (rule 1). `from` carries the project a listed instruction was raised by.
+A decision head is `{ project, id, question, shape, door: { value, reason? }, decider, revision, revisions, textSha256, entries, state, source?, at, group, actElsewhere?, earlierAnswer?, coveredAnswer?, from? }`. `at` is the current entry's receive time, or the current revision's when the state is `open`. `decisions` on a summary is `{ waiting, oneWay, reported, closed }`: `oneWay` counts the `waiting` decisions whose door value is `true`, and the four are never summed into one number. A head's `group` is `waiting` (state `open` or `delegated`), `reported` (a current answer entry received within the last fourteen days), `closed` (a current `withdrawn` or `superseded` entry within fourteen days), or `history` otherwise; a reported answer stays in `reported` for fourteen days and then moves to `history`, so it can never leave the inbox while it stands (rule 1). `from` carries the project a listed instruction was raised by. The current entry
+is the last entry on the current text — the unbroken tail of revisions sharing
+the current revision's `textSha256` — so a text that returns to one a decision
+used before cannot wake the entry that stood under an earlier revision of it;
+an entry is current only when its hash matches and its `revision` is at or after
+the first revision of that run (`currentEntry`, `packages/server/src/domain/decision-state.ts:61`).
 
 In a project summary `waves` is a count, `lanes` is the number of lanes in the
 project's **retained** waves summed from the wave heads, `lastPush` is the newest
