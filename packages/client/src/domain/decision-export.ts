@@ -155,10 +155,27 @@ function readEntry(
   const option = own(value, "option");
   const words = own(value, "words");
   const receivedAt = own(value, "receivedAt");
+  // A present field of the wrong type is not silently dropped: an entry that
+  // carries one is not a valid bound entry, so the record it backs is unusable
+  // rather than half-printed with a coerced field.
+  if (
+    (option !== undefined && typeof option !== "string") ||
+    (words !== undefined && typeof words !== "string")
+  ) {
+    return undefined;
+  }
+  if (receivedAt !== undefined) {
+    if (
+      typeof receivedAt !== "string" ||
+      Number.isNaN(Date.parse(receivedAt))
+    ) {
+      return undefined;
+    }
+  }
   return {
-    option: typeof option === "string" ? option : undefined,
-    words: typeof words === "string" ? words : undefined,
-    receivedAt: typeof receivedAt === "string" ? receivedAt : undefined,
+    option: option as string | undefined,
+    words: words as string | undefined,
+    receivedAt: receivedAt as string | undefined,
   };
 }
 

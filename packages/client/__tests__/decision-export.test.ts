@@ -165,7 +165,12 @@ describe("readRecord", () => {
     expect(record?.entry).toBeUndefined();
   });
 
-  it("ignores a words field that is not a string", () => {
+  it.each([
+    ["a non-string option", { option: 7 }],
+    ["a non-string words", { words: 7 }],
+    ["a non-string receivedAt", { receivedAt: 7 }],
+    ["a receivedAt that is not a date", { receivedAt: "not a date" }],
+  ])("makes the record unusable for %s", (_label, bad) => {
     const body = JSON.stringify({
       head: {
         id: "d1",
@@ -181,13 +186,18 @@ describe("readRecord", () => {
           state: "approved",
           source: "reported",
           textSha256: "sha",
-          words: 7,
+          words: "yes",
           option: "a",
+          receivedAt: "2026-10-08T00:00:01Z",
+          ...bad,
         },
       ],
     });
+    // The entry matches the head, but a wrongly typed field means it is not a
+    // valid bound entry: the record is unusable, never half-printed.
     const record = readRecord(body);
-    expect(record?.entry?.words).toBeUndefined();
+    expect(record?.head?.id).toBe("d1");
+    expect(record?.entry).toBeUndefined();
   });
 
   it("returns no current entry when none match the hash", () => {
