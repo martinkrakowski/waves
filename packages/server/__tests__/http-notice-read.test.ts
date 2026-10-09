@@ -685,3 +685,78 @@ describe("notice counts", () => {
     });
   });
 });
+
+describe("fix 1: a returned text does not wake an older entry", () => {
+  it("opens the decision and raises an earlier answer when the text returns", async () => {
+    const clk = clock();
+    const started = await startHarness({
+      adminToken: ADMIN_TOKEN,
+      now: clk.now,
+    });
+    const tokens = await registerAll(started, clk.pass);
+    const token = tokens.fleet!;
+    const base = decision("fleet", "d1");
+
+    const { textSha256: h1 } = await putDecision(
+      started,
+      token,
+      "fleet",
+      "d1",
+      base,
+      clk.pass,
+    );
+    await postState(
+      started,
+      token,
+      "fleet",
+      "d1",
+      {
+        state: "approved",
+        source: "reported",
+        revision: 1,
+        textSha256: h1,
+        expectedEntries: 0,
+        by: "owner",
+        at: "2026-10-08T13:00:00Z",
+        words: "yes",
+      },
+      clk.pass,
+    );
+    // Revision 2 changes the binding text (a different hash).
+    await putDecision(
+      started,
+      token,
+      "fleet",
+      "d1",
+      { ...base, question: "Other?" },
+      clk.pass,
+    );
+    // Revision 3 returns to the original text (same hash as revision 1).
+    await putDecision(started, token, "fleet", "d1", base, clk.pass);
+
+    const view = (await fetch(
+      `${started.origin}/api/v1/projects/fleet/decisions/d1`,
+    ).then((r) => r.json())) as { head: Head };
+    expect(view.head.revision).toBe(3);
+    expect(view.head.textSha256).toBe(h1);
+    expect(view.head.state).toBe("open");
+    expect(view.head.earlierAnswer).toBeDefined();
+    expect(view.head.earlierAnswer!.state).toBe("approved");
+
+    const inbox = (await fetch(`${started.origin}/api/v1/inbox`).then((r) =>
+      r.json(),
+    )) as {
+      projects: Array<{ id: string; counts: CountBody; decisions: Head[] }>;
+    };
+    const fleet = inbox.projects.find((p) => p.id === "fleet")!;
+    expect(fleet.counts).toEqual({
+      waiting: 1,
+      oneWay: 0,
+      reported: 0,
+      closed: 0,
+    });
+    const d1 = fleet.decisions.find((d) => d.id === "d1");
+    expect(d1).toBeDefined();
+    expect(d1!.group).toBe("waiting");
+  });
+});

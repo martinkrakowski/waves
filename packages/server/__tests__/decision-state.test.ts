@@ -49,6 +49,24 @@ function fresh(days: number): string {
   return new Date(NOW - days * 86_400_000).toISOString();
 }
 
+function revOf(
+  revision: number,
+  hash: string,
+  receivedAt: string,
+): {
+  revision: number;
+  textSha256: string;
+  receivedAt: string;
+  decision: never;
+} {
+  return {
+    revision,
+    textSha256: hash,
+    receivedAt,
+    decision: undefined as unknown as never,
+  };
+}
+
 describe("isAnswer", () => {
   it.each(["approved", "declined", "answered"] as const)(
     "is true for %s",
@@ -264,5 +282,90 @@ describe("coveredAnswer", () => {
     expect(
       coveredAnswer({ project: "p", id: "d", revisions: [], entries: [] }),
     ).toBeUndefined();
+  });
+});
+
+describe("fix 1: a returned text must not wake an older entry", () => {
+  // revision 1 is text A, revision 2 is text B, revision 3 is text A again.
+  const revisions = [
+    revOf(1, HASH_A, fresh(15)),
+    revOf(2, HASH_B, fresh(14)),
+    revOf(3, HASH_A, fresh(0)),
+  ];
+
+  function returnedText(overrides: Partial<StoredEntry> = {}): {
+    project: string;
+    id: string;
+    revisions: typeof revisions;
+    entries: StoredEntry[];
+  } {
+    return {
+      project: "p",
+      id: "d",
+      revisions,
+      entries: [
+        entry({ index: 0, revision: 1, textSha256: HASH_A, ...overrides }),
+      ],
+    };
+  }
+
+  it("leaves a withdrawn on the old text current-less (open, waiting) and drops earlierAnswer", () => {
+    const d = returnedText({
+      state: "withdrawn",
+      source: "session",
+      receivedAt: fresh(15),
+      reason: "gone",
+    });
+    expect(currentEntry(d)).toBeUndefined();
+    expect(decisionState(d)).toBe("open");
+    expect(groupOf(d, NOW)).toBe("waiting");
+    expect(earlierAnswer(d)).toBeUndefined();
+  });
+
+  it("keeps a reported answer as earlierAnswer instead of current", () => {
+    const d = returnedText({
+      state: "approved",
+      source: "reported",
+      receivedAt: fresh(15),
+      words: "yes",
+    });
+    expect(currentEntry(d)).toBeUndefined();
+    expect(decisionState(d)).toBe("open");
+    expect(groupOf(d, NOW)).toBe("waiting");
+    expect(earlierAnswer(d)?.state).toBe("approved");
+  });
+
+  it("covers no answer when the current entry is on an older text", () => {
+    const d = returnedText({
+      state: "withdrawn",
+      source: "session",
+      receivedAt: fresh(15),
+      reason: "gone",
+    });
+    expect(coveredAnswer(d)).toBeUndefined();
+  });
+
+  it("keeps a link-only revision's answer current (run spans both revisions)", () => {
+    const d = {
+      project: "p",
+      id: "d",
+      revisions: [revOf(1, HASH_A, fresh(1)), revOf(2, HASH_A, fresh(0))],
+      entries: [
+        entry({
+          index: 0,
+          revision: 1,
+          textSha256: HASH_A,
+          state: "approved",
+          source: "reported",
+          receivedAt: fresh(1),
+          at: fresh(1),
+          words: "yes",
+        }),
+      ],
+    };
+    expect(currentEntry(d)?.state).toBe("approved");
+    expect(decisionState(d)).toBe("approved");
+    expect(groupOf(d, NOW)).toBe("reported");
+    expect(earlierAnswer(d)).toBeUndefined();
   });
 });
