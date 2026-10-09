@@ -35,6 +35,21 @@ All three must exit 0. `test:cov` enforces 100% lines, branches, functions and
 statements, so an uncovered branch fails the gate. `yarn format` then
 `yarn format:check` keeps Prettier's output.
 
+## How this code behaves
+
+These are facts about the code, not preferences. A change that makes one of them false is a
+defect, whatever the change calls itself.
+
+- A limit, cap or bound that is unset, zero, negative or not a number refuses the request. There
+  is no uncapped mode anywhere in this codebase, and an optional limit parameter does not mean
+  one: the absence of a limit is an error to refuse, never permission.
+- A write is answered by exactly one kind of token. A request with no token is refused, and a
+  project's token writes only that project's documents.
+- A write to the store is a temporary file renamed into place, or it did not happen.
+- Input that fails validation is refused. It is never repaired or given a default.
+- An answer to a decision binds only the exact text it was given for, and nothing is removed
+  from a decision's history.
+
 ## Rules
 
 - Never `console.log` (or any `console.*`) outside a CLI shim such as
