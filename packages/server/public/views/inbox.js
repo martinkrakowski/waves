@@ -161,7 +161,23 @@ export function stateNodes(head) {
 }
 
 /**
- * One decision card, in the order the brief lists: the door band, the question,
+ * The "an earlier text was answered" note the card prints when the head's
+ * `earlierAnswer` is set, exported so the decision page can reuse it in its
+ * own state area for every group.
+ */
+export function earlierAnswerNode(head) {
+  if (!head.earlierAnswer) {
+    return undefined;
+  }
+  const ear = head.earlierAnswer;
+  const withWords = ear.words ? `: "${ear.words}"` : "";
+  return el("p", {
+    attrs: { class: "card-earlier" },
+    text: `An earlier text of this decision was answered: ${ear.state}${withWords}. That answer does not apply to the current text.`,
+  });
+}
+
+/**
  * the facts, the state line, then the four optional notes — earlier answer,
  * act-elsewhere, the `from` instruction, and the id line at the bottom.
  */
@@ -176,15 +192,9 @@ function card(head, nowMs) {
     el("p", { attrs: { class: "card-facts" }, text: factsLine(head) }),
     ...stateNodes(head),
   );
-  if (head.earlierAnswer) {
-    const ear = head.earlierAnswer;
-    const withWords = ear.words ? `: "${ear.words}"` : "";
-    children.push(
-      el("p", {
-        attrs: { class: "card-earlier" },
-        text: `An earlier text of this decision was answered: ${ear.state}${withWords}. That answer does not apply to the current text.`,
-      }),
-    );
+  const earlierNode = earlierAnswerNode(head);
+  if (earlierNode !== undefined) {
+    children.push(earlierNode);
   }
   if (head.actElsewhere) {
     children.push(

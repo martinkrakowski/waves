@@ -19,23 +19,28 @@ const EVIDENCE_HEADING = "Evidence";
 const ACT_HEADING = "What you would do";
 const APPLIES_HEADING = "Applies to";
 
-/** One option as the page reads it: "key: text — Cost: cost". */
-function optionLine(option) {
-  return `${option.key}: ${option.text} — Cost: ${option.cost}`;
-}
-
 /**
- * One option in the list. The recommended option carries the word "Recommended"
- * beside it and, under it, "Why: " plus the reason.
+ * One option in the list: the key and text on the first line (with "Recommended"
+ * before them when this is the recommended option), the cost on the second, and
+ * the "Why:" on the third only for the recommended one. Each line is its own
+ * block, so the mark is never lost at the end of a cost.
  */
 function optionItem(option, recommended, recommendedReason) {
-  const children = [text(optionLine(option))];
+  const head = recommended
+    ? `Recommended · ${option.key}: ${option.text}`
+    : `${option.key}: ${option.text}`;
+  const children = [
+    el("div", { attrs: { class: "option-head" }, text: head }),
+    el("div", {
+      attrs: { class: "option-cost" },
+      text: `Cost: ${option.cost}`,
+    }),
+  ];
   if (recommended) {
     children.push(
-      el("span", { attrs: { class: "recommended" }, text: " Recommended" }),
-      el("small", {
-        attrs: { class: "card-small" },
-        text: ` Why: ${recommendedReason}`,
+      el("div", {
+        attrs: { class: "option-why" },
+        text: `Why: ${recommendedReason}`,
       }),
     );
   }

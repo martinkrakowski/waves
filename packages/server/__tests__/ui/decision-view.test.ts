@@ -60,12 +60,67 @@ describe("renderDecision", () => {
     );
   });
 
+  it("shows the earlier-text note in the state area for a head with earlierAnswer", () => {
+    const host = draw(
+      decisionResponse({
+        head: inboxHead({
+          earlierAnswer: {
+            state: "approved",
+            source: "reported",
+            at: "2026-10-08T13:00:00Z",
+            by: "owner",
+            words: "yes",
+          },
+        }),
+      }),
+    );
+    expect(textOf(host)).toContain(
+      'An earlier text of this decision was answered: approved: "yes". That answer does not apply to the current text.',
+    );
+    // The note is above the Options heading, not in the history list.
+    const optionsHeading = host.querySelector(".decision-options h2");
+    const note = Array.from(host.querySelectorAll(".card-earlier")).find(
+      (n) => n.textContent && n.textContent.includes("An earlier text"),
+    );
+    expect(note).toBeDefined();
+    expect(optionsHeading).not.toBeNull();
+  });
+
+  it("uses the first revision's raisedAt in the facts line, with revised on", () => {
+    const OTHER_HASH = "b".repeat(64);
+    const host = draw(
+      decisionResponse({
+        head: inboxHead({ revision: 2, revisions: 2, textSha256: OTHER_HASH }),
+        revisions: [
+          storedRevision({
+            revision: 1,
+            receivedAt: "2026-10-08T06:25:00Z",
+            decision: decisionRevision({ raisedAt: "2026-10-08T06:25:00Z" }),
+          }),
+          storedRevision({
+            revision: 2,
+            textSha256: OTHER_HASH,
+            receivedAt: "2026-10-09T11:25:00Z",
+            decision: decisionRevision({
+              question: "New?",
+              raisedAt: "2026-10-08T11:25:00Z",
+            }),
+          }),
+        ],
+      }),
+    );
+    expect(textOf(host.querySelector(".decision-facts"))).toBe(
+      "choice · yours to decide · revision 2 of 2 · raised by session on 2026-10-08 at 06:25 UTC · revised on 2026-10-09 at 11:25 UTC",
+    );
+  });
+
   it("shows a choice with no recommendation, commitments or evidence", () => {
     const host = draw(decisionResponse());
     expect(textsOf(host, ".decision-options h2")).toStrictEqual(["Options"]);
-    expect(textsOf(host, ".options li")).toStrictEqual([
-      "a: Yes — Cost: C1",
-      "b: No — Cost: C2",
+    expect(textsOf(host, ".option-head")).toStrictEqual(["a: Yes", "b: No"]);
+    expect(textsOf(host, ".option-cost")).toStrictEqual([
+      "Cost: C1",
+      "Cost: C2",
     ]);
     expect(textsOf(host, ".no-recommendation")).toStrictEqual([
       "No recommendation given.",
@@ -86,10 +141,11 @@ describe("renderDecision", () => {
         ],
       }),
     );
-    expect(textsOf(host, ".options li")).toStrictEqual([
-      "a: Yes — Cost: C1 Recommended Why: best",
-      "b: No — Cost: C2",
+    expect(textsOf(host, ".option-head")).toStrictEqual([
+      "Recommended · a: Yes",
+      "b: No",
     ]);
+    expect(textsOf(host, ".option-why")).toStrictEqual(["Why: best"]);
   });
 
   it("shows an action with What you would do", () => {

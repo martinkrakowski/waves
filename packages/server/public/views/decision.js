@@ -10,7 +10,13 @@
  * foot, not in a control.
  */
 
-import { SHAPE_WORD, DECIDER_WORD, doorBand, stateNodes } from "./inbox.js";
+import {
+  SHAPE_WORD,
+  DECIDER_WORD,
+  doorBand,
+  earlierAnswerNode,
+  stateNodes,
+} from "./inbox.js";
 import { calendarDate } from "../format.js";
 import { el, internalLink, text } from "../dom.js";
 import {
@@ -52,37 +58,55 @@ function breadcrumbs(model) {
   });
 }
 
-/** shape in a word, who decides, revision N of M, raised by on <date>. */
-function factsLine(model) {
-  const head = model.head;
-  const decision = model.currentRevision.decision;
-  return [
-    SHAPE_WORD[head.shape],
-    DECIDER_WORD[head.decider],
-    `revision ${head.revision} of ${head.revisions}`,
-    `raised by ${decision.raisedBy} on ${calendarDate(decision.raisedAt)}`,
-  ].join(" · ");
-}
-
 /**
- * The state the head carries, by its group. For "history", the page shows the
- * sentence the group it left would have used, then says how long it has been
- * gone.
+ * The state the head carries, by its group — plus the "earlier text was
+ * answered" note when the head carries one, under the facts line for every
+ * group. For "history", the page shows the sentence the group it left would
+ * have used, then says how long it has been gone.
  */
 function stateSection(model) {
   const head = model.head;
+  const nodes =
+    head.group === "history"
+      ? stateNodes({ ...head, group: LEFT_GROUP[head.state] })
+      : stateNodes(head);
   if (head.group === "history") {
-    const left = LEFT_GROUP[head.state];
-    const nodes = stateNodes({ ...head, group: left });
     nodes.push(
       el("small", {
         attrs: { class: "card-small" },
         text: "This left the inbox after 14 days.",
       }),
     );
-    return nodes;
   }
-  return stateNodes(head);
+  const earlier = earlierAnswerNode(head);
+  if (earlier !== undefined) {
+    nodes.push(earlier);
+  }
+  return nodes;
+}
+
+/**
+ * shape in a word, who decides, revision N of M, raised by on <date>; and
+ * "revised on <date>" when the decision has more than one revision. The
+ * raised-by line uses the first revision's `raisedAt`, since that is when the
+ * question was first asked, not when a later revision widened the window.
+ */
+function factsLine(model) {
+  const head = model.head;
+  const first =
+    model.revisionChanges.length > 0
+      ? model.revisionChanges[0].decision
+      : model.currentRevision.decision;
+  const parts = [
+    SHAPE_WORD[head.shape],
+    DECIDER_WORD[head.decider],
+    `revision ${head.revision} of ${head.revisions}`,
+    `raised by ${first.raisedBy} on ${calendarDate(first.raisedAt)}`,
+  ];
+  if (head.revisions > 1) {
+    parts.push(`revised on ${calendarDate(model.currentRevision.receivedAt)}`);
+  }
+  return parts.join(" · ");
 }
 
 /**

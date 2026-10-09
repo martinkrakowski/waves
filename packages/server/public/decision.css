@@ -84,10 +84,22 @@
   overflow-wrap: anywhere;
 }
 
-.recommended {
-  color: var(--amber);
+.option-head {
   font-family: var(--mono);
-  font-size: 0.8rem;
+  font-size: 0.85rem;
+}
+
+.option-cost {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  margin: 0.1rem 0 0;
+}
+
+.option-why {
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin: 0.1rem 0 0;
 }
 
 .no-recommendation {

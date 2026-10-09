@@ -56,9 +56,10 @@ describe("optionsBlock", () => {
       ],
     });
     expect(host.querySelector(".decision-options")).not.toBeNull();
-    expect(textsOf(host, ".options li")).toStrictEqual([
-      "a: Yes — Cost: C1",
-      "b: No — Cost: C2",
+    expect(textsOf(host, ".option-head")).toStrictEqual(["a: Yes", "b: No"]);
+    expect(textsOf(host, ".option-cost")).toStrictEqual([
+      "Cost: C1",
+      "Cost: C2",
     ]);
   });
 
@@ -76,10 +77,11 @@ describe("optionsBlock", () => {
         }),
       ],
     });
-    expect(textsOf(host, ".options li")).toStrictEqual([
-      "a: Yes — Cost: C1 Recommended Why: best",
-      "b: No — Cost: C2",
+    expect(textsOf(host, ".option-head")).toStrictEqual([
+      "Recommended · a: Yes",
+      "b: No",
     ]);
+    expect(textsOf(host, ".option-why")).toStrictEqual(["Why: best"]);
   });
 
   it("says No recommendation given when there is none", () => {

@@ -20,6 +20,9 @@ export declare function doorBand(head: Head): string | undefined;
 /** The state nodes a head carries, by its group. */
 export declare function stateNodes(head: Head): HTMLElement[];
 
+/** The "an earlier text was answered" note, or undefined when the head has none. */
+export declare function earlierAnswerNode(head: Head): HTMLElement | undefined;
+
 export declare function renderInbox(
   model: InboxModel,
   nowMs: number,
