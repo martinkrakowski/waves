@@ -122,3 +122,23 @@ export function clockTime(milliseconds) {
   const seconds = String(when.getSeconds()).padStart(2, "0");
   return `${hours}:${minutes}:${seconds}`;
 }
+
+/**
+ * A timestamp as a calendar date and time, in UTC: "2026-10-09 at 06:25 UTC".
+ *
+ * The date is shown so a reader can pin a session's report to a moment they
+ * might remember — "just now" or "2m ago" could be anything inside the window.
+ * The time is UTC because the server is the only clock this page trusts for a
+ * decision's `at`, and a wall-clock time would invite the reader to read
+ * timezone into a field the server never named.
+ */
+export function calendarDate(iso) {
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) {
+    return "unknown";
+  }
+  const when = new Date(ms);
+  const pad = (n) => String(n).padStart(2, "0");
+  const year = String(when.getUTCFullYear()).padStart(4, "0");
+  return `${year}-${pad(when.getUTCMonth() + 1)}-${pad(when.getUTCDate())} at ${pad(when.getUTCHours())}:${pad(when.getUTCMinutes())} UTC`;
+}

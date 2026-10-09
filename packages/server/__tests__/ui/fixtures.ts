@@ -408,10 +408,14 @@ function headFromFixture(fixture: NoticeFixture, nowMs: number): Head {
 
 /**
  * The inbox response the fourteen NOTICE_DECISIONS fixtures would produce, built
- * by the rules in docs/waves-v1.md 5.1.2. Every project in `appliesTo` gets a
- * copy of a raising project's instructions, marked `from` the raiser; the counts
- * stay the raiser's own, as the server does. Decisions are sorted as the server
- * sorts them: group, then one-way door, then receive time.
+ * by the rules in docs/waves-v1.md 5.1.2. Each project's inbox holds its OWN
+ * decisions only: an instruction raised by one project and applied to others
+ * appears on those projects' /decisions listing (with `from`), but not on the
+ * inbox — the inbox is the owner's own queue, not another project's card.
+ * Decisions are sorted as the server sorts them: group, then one-way door,
+ * then receive time. This is a test-only reconstruction, not the server's own
+ * model: it hardcodes the hash, assumes every fixture date is in-window, and
+ * only computes the fields the view reads.
  */
 export function inboxFromFixtures(): InboxView {
   const nowMs = INBOX_NOW_MS;
@@ -426,28 +430,9 @@ export function inboxFromFixtures(): InboxView {
     ownHeads.get(fixture.project)!.push(headFromFixture(fixture, nowMs));
   }
 
-  // Applied instructions: instructions from one project that applyTo another.
   const projects: InboxProject[] = registry.map((id) => {
     const own = ownHeads.get(id) ?? [];
-    const applied: Head[] = [];
-    for (const fixture of NOTICE_DECISIONS) {
-      const latest = fixture.revisions[fixture.revisions.length - 1] as Record<
-        string,
-        unknown
-      >;
-      if (latest.shape === "instruction") {
-        const appliesTo = latest.appliesTo as string[] | undefined;
-        if (appliesTo?.includes(id) && fixture.project !== id) {
-          applied.push({
-            ...headFromFixture(fixture, nowMs),
-            from: fixture.project,
-          });
-        }
-      }
-    }
-
-    // Merge own and applied, then sort by group, door, at (newest first).
-    const all = [...own, ...applied].sort((a, b) => {
+    const sorted = own.sort((a, b) => {
       const ga = a.group === "waiting" ? 0 : a.group === "reported" ? 1 : 2;
       const gb = b.group === "waiting" ? 0 : b.group === "reported" ? 1 : 2;
       if (ga !== gb) return ga - gb;
@@ -457,31 +442,34 @@ export function inboxFromFixtures(): InboxView {
       return Date.parse(b.at) - Date.parse(a.at);
     });
 
-    const counts = all.reduce(
-      (c, h) => {
-        if (h.project === id && h.from === undefined) {
-          // Only own decisions count.
-          if (h.group === "waiting") {
-            c.waiting += 1;
-            if (h.door.value === true) c.oneWay += 1;
-          } else if (h.group === "reported") {
-            c.reported += 1;
-          } else if (h.group === "closed") {
-            c.closed += 1;
-          }
-        }
-        return c;
-      },
-      { waiting: 0, oneWay: 0, reported: 0, closed: 0 },
-    );
-
     return inboxProject({
       id,
       name: INBOX_NAMES[id] ?? id,
-      counts,
-      decisions: all,
+      counts: noticeCountsOf(own),
+      decisions: sorted,
     });
   });
 
   return inboxView({ projects });
+}
+
+/** The four counts of a project's own decisions, as the server computes them. */
+function noticeCountsOf(heads: readonly Head[]): NoticeCounts {
+  const counts = { waiting: 0, oneWay: 0, reported: 0, closed: 0 };
+  for (const head of heads) {
+    if (head.from !== undefined) {
+      continue;
+    }
+    if (head.group === "waiting") {
+      counts.waiting += 1;
+      if (head.door.value === true) {
+        counts.oneWay += 1;
+      }
+    } else if (head.group === "reported") {
+      counts.reported += 1;
+    } else if (head.group === "closed") {
+      counts.closed += 1;
+    }
+  }
+  return counts;
 }

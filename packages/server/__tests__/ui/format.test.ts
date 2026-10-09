@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   aliveView,
+  calendarDate,
   clockTime,
   detailValue,
   diffText,
@@ -177,5 +178,30 @@ describe("clockTime", () => {
     expect(clockTime(new Date(2026, 11, 31, 8, 9, 4).getTime())).toBe(
       "08:09:04",
     );
+  });
+});
+
+describe("calendarDate", () => {
+  it("reads an ISO timestamp as a UTC date and time", () => {
+    expect(calendarDate("2026-10-08T13:00:00Z")).toBe(
+      "2026-10-08 at 13:00 UTC",
+    );
+    expect(calendarDate("2026-01-05T08:09:00Z")).toBe(
+      "2026-01-05 at 08:09 UTC",
+    );
+  });
+
+  it("drops seconds and pads every field to two digits", () => {
+    expect(calendarDate("2026-10-08T13:00:45Z")).toBe(
+      "2026-10-08 at 13:00 UTC",
+    );
+    expect(calendarDate("0001-01-01T00:00:00Z")).toBe(
+      "0001-01-01 at 00:00 UTC",
+    );
+  });
+
+  it("reads an unparsable timestamp as unknown", () => {
+    expect(calendarDate("not a date")).toBe("unknown");
+    expect(calendarDate("2026-13-45T99:99:99Z")).toBe("unknown");
   });
 });

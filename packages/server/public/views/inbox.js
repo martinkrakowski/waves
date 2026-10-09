@@ -10,6 +10,7 @@
  */
 
 import { countLine } from "./inbox-model.js";
+import { calendarDate } from "../format.js";
 import { el, internalLink, stamp, text } from "../dom.js";
 
 /** A heading over one project's block of decisions. */
@@ -92,7 +93,7 @@ function factsLine(head) {
  * says what the session did and, when an answer was reported first, says so
  * beside it without striking it out.
  */
-function stateNodes(head, nowMs) {
+function stateNodes(head) {
   const nodes = [];
   if (head.group === "waiting") {
     if (head.state === "delegated") {
@@ -121,10 +122,8 @@ function stateNodes(head, nowMs) {
         attrs: { class: "card-state" },
         children: [
           text(
-            `The ${head.project} session reports you ${head.state} this on `,
+            `The ${head.project} session reports you ${head.state} this on ${calendarDate(head.at)}.`,
           ),
-          stamp(head.at, nowMs),
-          text("."),
         ],
       }),
       el("small", {
@@ -140,9 +139,9 @@ function stateNodes(head, nowMs) {
     el("p", {
       attrs: { class: "card-state" },
       children: [
-        text(`The ${head.project} session ${action} on `),
-        stamp(head.at, nowMs),
-        text("."),
+        text(
+          `The ${head.project} session ${action} on ${calendarDate(head.at)}.`,
+        ),
       ],
     }),
   );
@@ -173,7 +172,7 @@ function card(head, nowMs) {
   children.push(
     el("p", { attrs: { class: "card-question" }, text: head.question }),
     el("p", { attrs: { class: "card-facts" }, text: factsLine(head) }),
-    ...stateNodes(head, nowMs),
+    ...stateNodes(head),
   );
   if (head.earlierAnswer) {
     const ear = head.earlierAnswer;
@@ -269,7 +268,7 @@ function projectBlock(project, nowMs) {
         nowMs,
       ),
       groupBlock(GROUP_HEAD.closed, "inbox-closed", project.closed, nowMs),
-    ],
+    ].filter((child) => child !== undefined),
   });
 }
 

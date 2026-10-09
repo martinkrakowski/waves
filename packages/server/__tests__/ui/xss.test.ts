@@ -1394,8 +1394,10 @@ async function bootInbox(
  * How many times one payload appears in the rendered text of an inbox head:
  * the project name (1), the question (1), the door band reason (1), the
  * act-elsewhere where and what (2), the earlier answer's words (1), the covered
- * answer's words (1). The `at` timestamp goes into `title`, not text; `by` is
- * held but not rendered. Seven places.
+ * answer's words (1). The `at` timestamp is passed through `calendarDate`,
+ * which renders "unknown" for a non-date — never the payload as text. It also
+ * lives in the meta line's `title` via `stamp`. The `by` field is held but
+ * never rendered. Seven places.
  */
 const INBOX_OCCURRENCES = 7;
 
@@ -1411,9 +1413,9 @@ describe("the inbox against stored markup", () => {
       for (const element of Array.from(root().querySelectorAll("[class]"))) {
         expect(element.getAttribute("class")).not.toContain(payload);
       }
-      // The `at` timestamp lives in two titles (state line and meta line),
-      // never as text or markup.
-      expectVerbatim(payload, INBOX_OCCURRENCES, 2);
+      // The `at` timestamp lives only in the meta line's title via `stamp`,
+      // never as text or markup: `calendarDate` renders "unknown" for it.
+      expectVerbatim(payload, INBOX_OCCURRENCES, 1);
       app.stop();
     },
   );

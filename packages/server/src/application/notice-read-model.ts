@@ -291,7 +291,7 @@ export function createNoticeReadModel(
         name: project.name,
         counts: noticeCounts(own, nowMs),
         decisions: headsOf(project.id, projects, decisions, nowMs).filter(
-          (head) => head.group !== "history",
+          (head) => head.group !== "history" && head.from === undefined,
         ),
       });
     }

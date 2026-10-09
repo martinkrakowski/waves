@@ -42,3 +42,6 @@ export declare function waveCountText(waves: number): string;
 
 /** `HH:MM:SS` in the reader's own time zone, every field padded to two digits. */
 export declare function clockTime(milliseconds: number): string;
+
+/** `YYYY-MM-DD at HH:MM UTC`, or `unknown` for an unparsable timestamp. */
+export declare function calendarDate(iso: string): string;
