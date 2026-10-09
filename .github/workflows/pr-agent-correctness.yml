@@ -77,10 +77,11 @@ jobs:
           pr_reviewer.enable_review_labels_security: "false"
           pr_reviewer.enable_review_labels_effort: "false"
           pr_reviewer.inline_key_issues: "true"
-          # The default is 3. A change that touches a route and the store can break more than
-          # three of the rules below at once (the proof file broke six), and what is over the
-          # number is dropped silently. 8 leaves room without inviting filler.
-          pr_reviewer.num_max_findings: "8"
+          # The default is 3, and what is over the number is dropped silently. 8 was reached on
+          # the first real pull request reviewed here (about 5,500 lines, 7 of its 8 findings
+          # valid), so a ninth may have been lost. 12 leaves room; a review that posts exactly 12
+          # is the sign to raise it again or to split the pull request.
+          pr_reviewer.num_max_findings: "12"
           pr_reviewer.extra_instructions: |
             You are the correctness reviewer for waves, a small status service: projects push
             versioned documents with a bearer token, one server stores them as files and serves a
@@ -101,8 +102,10 @@ jobs:
             - An answer to a decision binds only the exact text it was given for, and nothing is
               removed from a decision's history.
             - A test must fail if the behaviour its name states were removed.
-            - No secret in a log line, an error, a URL, a response, a fixture or an example, and
-              TLS verification is never weakened.
+            - No real credential, and no value that could be one, in a log line, an error, a URL,
+              a response, a fixture or an example. A documented placeholder in a test (a fixed,
+              obviously fake string such as "project-token-0123…") is not a secret and is not a
+              finding. TLS verification is never weakened.
 
             Report a real defect even when you cannot write its complete fix: say what is wrong
             and what a fix must do. Do not raise style, naming, the import layer rule, or a defect
