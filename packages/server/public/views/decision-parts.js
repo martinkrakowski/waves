@@ -186,7 +186,9 @@ function hasRefs(refs) {
   return (
     refs !== undefined &&
     refs !== null &&
-    (refs.wave !== undefined || refs.lane !== undefined || refs.pr !== undefined)
+    (refs.wave !== undefined ||
+      refs.lane !== undefined ||
+      refs.pr !== undefined)
   );
 }
 

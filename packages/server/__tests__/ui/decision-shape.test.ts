@@ -431,7 +431,12 @@ const INVALID: readonly (readonly [string, unknown])[] = [
     {
       ...decisionResponse(),
       entries: [
-        { ...decisionEntry(), state: "delegated", option: undefined, words: undefined },
+        {
+          ...decisionEntry(),
+          state: "delegated",
+          option: undefined,
+          words: undefined,
+        },
       ],
     },
   ],
@@ -440,7 +445,12 @@ const INVALID: readonly (readonly [string, unknown])[] = [
     {
       ...decisionResponse(),
       entries: [
-        { ...decisionEntry(), state: "withdrawn", source: "session", reason: undefined },
+        {
+          ...decisionEntry(),
+          state: "withdrawn",
+          source: "session",
+          reason: undefined,
+        },
       ],
     },
   ],
@@ -449,7 +459,12 @@ const INVALID: readonly (readonly [string, unknown])[] = [
     {
       ...decisionResponse(),
       entries: [
-        { ...decisionEntry(), state: "superseded", source: "session", supersededBy: undefined },
+        {
+          ...decisionEntry(),
+          state: "superseded",
+          source: "session",
+          supersededBy: undefined,
+        },
       ],
     },
   ],
@@ -457,9 +472,7 @@ const INVALID: readonly (readonly [string, unknown])[] = [
     "an approved entry with source session",
     {
       ...decisionResponse(),
-      entries: [
-        { ...decisionEntry(), state: "approved", source: "session" },
-      ],
+      entries: [{ ...decisionEntry(), state: "approved", source: "session" }],
     },
   ],
   [

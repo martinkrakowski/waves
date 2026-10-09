@@ -57,6 +57,7 @@
 .option-head {
   font-family: var(--mono);
   font-size: 0.85rem;
+  overflow-wrap: anywhere;
 }
 
 .option-cost {
@@ -64,18 +65,21 @@
   font-family: var(--mono);
   font-size: 0.78rem;
   margin: 0.1rem 0 0;
+  overflow-wrap: anywhere;
 }
 
 .option-why {
   color: var(--muted);
   font-size: 0.78rem;
   margin: 0.1rem 0 0;
+  overflow-wrap: anywhere;
 }
 
 .no-recommendation {
   color: var(--muted);
   font-size: 0.85rem;
   margin: 0.25rem 0 0.5rem;
+  overflow-wrap: anywhere;
 }
 
 .commits {
@@ -130,10 +134,12 @@
 
 .earlier-text-body {
   margin: 0.25rem 0 0 1rem;
+  overflow-wrap: anywhere;
 }
 
 .decision-footer {
   color: var(--muted);
   font-size: 0.8rem;
   margin: 1rem 0 0;
+  overflow-wrap: anywhere;
 }
