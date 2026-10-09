@@ -179,8 +179,8 @@ export interface ProjectSummary {
   };
   /**
    * The counts of this project's own decisions, for the fleet glance. Absent
-   * when the notice store is wired in (it is, in production); used only by the
-   * project summary, never summed with the wave counts.
+   * when the notice store is not wired in (it is, in production); used only by
+   * the project summary, never summed with the wave counts.
    */
   readonly decisions?: NoticeCounts;
 }

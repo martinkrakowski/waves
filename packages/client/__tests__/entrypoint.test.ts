@@ -186,7 +186,30 @@ describe("run", () => {
     expect(await run(["decision", "raise", "--stdin"], built.io, broken)).toBe(
       2,
     );
-    expect(built.err).toEqual(["waves decision raise: /path is a link"]);
+    expect(built.err).toEqual([
+      "waves decision raise: /path is a link",
+      "waves decision raise: not raised; fix the configuration, or ask in the terminal",
+    ]);
+  });
+
+  it("propagates an unexpected token-file error instead of swallowing it", async () => {
+    const built = harness({
+      files: { [tokenPath]: { text: PROJECT_TOKEN, mode: 0o600 } },
+    });
+    const broken = {
+      ...built.deps,
+      files: {
+        ...built.deps.files,
+        readSecret: async () => {
+          throw "not even an error";
+        },
+      },
+    };
+    await expect(
+      run(["decision", "raise", "--stdin"], built.io, broken),
+    ).rejects.toBe("not even an error");
+    expect(built.err).toEqual([]);
+    expect(built.sent()).toBe(0);
   });
 
   describe("read exit 0 is not an answer", () => {

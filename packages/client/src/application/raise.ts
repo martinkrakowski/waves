@@ -17,7 +17,7 @@ import {
   Failure,
   UsageError,
 } from "./errors.js";
-import type { UseCaseDeps } from "./ports.js";
+import { FileRefusal, type UseCaseDeps } from "./ports.js";
 import { readJsonInput } from "./send.js";
 import {
   type Session,
@@ -71,7 +71,7 @@ export async function raise(
       deps.env,
     ));
   } catch (error) {
-    if (error instanceof UsageError) {
+    if (error instanceof UsageError || error instanceof FileRefusal) {
       deps.err(`${LABEL}: ${error.message}`);
       deps.err(
         `${LABEL}: not raised; fix the configuration, or ask in the terminal`,

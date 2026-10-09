@@ -534,11 +534,11 @@ assigns its id — a per-project sequence carried in the id, taken as the last
 stored event's sequence plus one inside the serialised append — so dropping the
 oldest event cannot free an id for a colliding new one, and two events in the
 same millisecond cannot share one; the writer answers the id the store returns
-(`nextEventSequence`, `packages/server/src/infrastructure/store-helpers.ts:20`).
+(`nextEventSequence`, `packages/server/src/infrastructure/store-helpers.ts:32`).
 The events of a project are one append-only array in `events/<project>.json`;
 an append to a file that exists but is not a JSON array is refused and the file
 is left untouched, never replaced with only the new event
-(`readEvents`, `packages/server/src/infrastructure/file-notice-store.ts:127`).
+(`readEvents`, `packages/server/src/infrastructure/file-notice-store.ts:170`).
 
 ### Worked example
 
@@ -691,14 +691,14 @@ unauthenticated request to the lanes route with a bad query is a `401` and a
 | `GET /api/v1/projects/<id>/waves/<wave>`                    | `{ envelope, receivedAt, stale, staleAfterMs }`, where `envelope` is the stored envelope with `lanes[].derived.alive` possibly `"unknown"`                                                                                                                                                                                     |
 | `GET /api/v1/projects/<id>/status`                          | `{ status, receivedAt, stale, staleAfterMs }`, where `status` is the stored document of "The project status document"                                                                                                                                                                                                          |
 | `GET /api/v1/attention`                                     | `{ lanes: [{ project, wave, lane, seat?, reasons, receivedAt, stale, pr? }], projects: [{ id, attention }], truncated, wavesOmitted }`, see below                                                                                                                                                                              |
-| `GET /api/v1/projects/<id>/decisions`                       | `{ project, counts, decisions: [Head] }`, the project's own and every instruction of another project that applies to it, see 5.1.2                                                                                                                                                                                             |
+| `GET /api/v1/projects/<id>/decisions`                       | `{ project, counts, decisions: [Head] }`, the project's own and every instruction of another project that applies to it, see 5.1.4                                                                                                                                                                                             |
 | `GET /api/v1/projects/<id>/decisions/<decision>`            | `{ head, revisions: StoredRevision[], entries: StoredEntry[] }`, or `404` if there is no such decision                                                                                                                                                                                                                         |
 | `GET /api/v1/projects/<id>/events`                          | `{ events: StoredEvent[] }`, newest first, at most `MAX_NOTICE_EVENTS` (200)                                                                                                                                                                                                                                                   |
 | `GET /api/v1/inbox`                                         | `{ projects: [{ id, name, counts, decisions: [Head] }] }`, one entry per registered project in registry order; `decisions` holds each project's own heads only — `from` is never set here, so an instruction one project raised and applied to another appears only on that project's `/decisions` listing, never on the inbox |
 | `GET /` and `/inbox` — and `/p/<id>` and `/p/<id>/w/<wave>` | the status page (`public/index.html`)                                                                                                                                                                                                                                                                                          |
 | `GET /<static file>`                                        | a file from `public`, allow-listed extensions only                                                                                                                                                                                                                                                                             |
 
-#### 5.1.2 The notice head, the groups and the counts
+#### 5.1.4 The notice head, the groups and the counts
 
 A decision head is `{ project, id, question, shape, door: { value, reason? }, decider, revision, revisions, textSha256, entries, state, source?, at, group, actElsewhere?, earlierAnswer?, coveredAnswer?, from? }`. `at` is the current entry's receive time, or the current revision's when the state is `open`. `decisions` on a summary is `{ waiting, oneWay, reported, closed }`: `oneWay` counts the `waiting` decisions whose door value is `true`, and the four are never summed into one number. A head's `group` is `waiting` (state `open` or `delegated`), `reported` (a current answer entry received within the last fourteen days), `closed` (a current `withdrawn` or `superseded` entry within fourteen days), or `history` otherwise; a reported answer stays in `reported` for fourteen days and then moves to `history`, so it can never leave the inbox while it stands (rule 1). `from` carries the project a listed instruction was raised by. The current entry
 is the last entry on the current text — the unbroken tail of revisions sharing
@@ -1099,7 +1099,7 @@ history with one entry per word.
 `…/query.js:93-104`; `renderFleet`, `packages/server/public/views/fleet.js:418-436`;
 `fleetHandlers`, `packages/server/public/app.js:354-367`)
 
-#### 5.1.4 `/inbox`
+#### 5.1.5 `/inbox`
 
 `GET /inbox` is the page the owner reads: one block per project, each holding
 the decisions `GET /api/v1/inbox` answers with — those in the `waiting`,

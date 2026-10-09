@@ -2,7 +2,12 @@ import type { Stats } from "node:fs";
 import { lstat, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
-import { validateDecision } from "@hexagen-monaco/waves-contract";
+import {
+  isLaneId,
+  validateDecision,
+  validateEvent,
+  validateStateEntry,
+} from "@hexagen-monaco/waves-contract";
 
 import type {
   AppendOutcome,
@@ -32,8 +37,17 @@ function ignore(): undefined {
   return undefined;
 }
 
+/**
+ * The id of a decision snapshot file: its file name without the `.json` suffix.
+ * The store only ever lists files whose stem is a lane id, so this is always a
+ * valid id when it is produced from a name that passed `isDecisionName`.
+ */
+function decisionId(name: string): string {
+  return name.slice(0, -SNAPSHOT_SUFFIX.length);
+}
+
 function isDecisionName(name: string): boolean {
-  return name.endsWith(SNAPSHOT_SUFFIX);
+  return name.endsWith(SNAPSHOT_SUFFIX) && isLaneId(decisionId(name));
 }
 
 /**
@@ -42,8 +56,10 @@ function isDecisionName(name: string): boolean {
  * match what was asked for, every revision must carry a positive integer
  * `revision`, a 64-hex `textSha256`, a string `receivedAt` and a `decision`
  * valid under the contract's `validateDecision` with that `project` and `id`,
- * and every entry must be an object with an integer `index` and `revision`, and
- * string `state`, `source`, `textSha256` and `receivedAt`. A bad file is never
+ * and every entry must pass the contract's `validateStateEntry` as the writer's
+ * request it was built from (with `expectedEntries` restored to its `index`),
+ * its `index` must equal its position in the list, and its `revision` and
+ * `textSha256` must pin to one of the decision's revisions. A bad file is never
  * thrown on: it is treated as absent so the inbox keeps listing the good
  * decisions alongside it, reads report no decision, and a write against it is a
  * conflict.
@@ -98,19 +114,44 @@ function readDecision(
       return undefined;
     }
   }
-  for (const entry of entries) {
+  for (let i = 0; i < entries.length; i += 1) {
+    const entry = entries[i];
     if (typeof entry !== "object" || entry === null) {
       return undefined;
     }
     const ent = entry as Record<string, unknown>;
+    const index = ent.index;
+    const receivedAt = ent.receivedAt;
     if (
-      !Number.isInteger(ent.index) ||
-      !Number.isInteger(ent.revision) ||
-      typeof ent.state !== "string" ||
-      typeof ent.source !== "string" ||
-      typeof ent.textSha256 !== "string" ||
-      typeof ent.receivedAt !== "string"
+      !Number.isInteger(index) ||
+      index !== i ||
+      typeof receivedAt !== "string"
     ) {
+      return undefined;
+    }
+    // Rebuild the writer's request: drop the store-added index/receivedAt and
+    // restore the entry count it pinned on, then validate with the contract.
+    const { index: _idx, receivedAt: _receivedAt, ...request } = ent;
+    void _idx;
+    void _receivedAt;
+    const validated = validateStateEntry({
+      ...request,
+      expectedEntries: index,
+    });
+    if (!validated.ok) {
+      return undefined;
+    }
+    // The entry pins the revision and text hash it answered; both must match one
+    // of the decision's revisions so a reader never trusts a drifted entry.
+    const { revision, textSha256 } = validated.value;
+    const matched = revisions.some(
+      (rev) =>
+        (rev as { revision: unknown; textSha256: unknown }).revision ===
+          revision &&
+        (rev as { revision: unknown; textSha256: unknown }).textSha256 ===
+          textSha256,
+    );
+    if (!matched) {
       return undefined;
     }
   }
@@ -118,13 +159,15 @@ function readDecision(
 }
 
 /**
- * One stored events list, parsed and shape-checked: an array. Throws a store
- * error when the file exists but is not a JSON array (truncated or wrong shape),
- * so an append to an invalid file fails and leaves the file untouched; a missing
- * file is an empty list so a new one can start. `listEvents` catches the throw
- * and answers no events.
+ * One stored events list, parsed and shape-checked: an array whose every member
+ * is an object with a string `id` and `receivedAt` and an `event` that passes
+ * the contract's `validateEvent` and carries `project`. Throws a store error
+ * when the file exists but is not a JSON array or holds a member that fails the
+ * check, so an append to an invalid file fails and leaves the file untouched; a
+ * missing file is an empty list so a new one can start. `listEvents` catches
+ * the throw and answers no events.
  */
-function readEvents(raw: string | undefined): StoredEvent[] {
+function readEvents(raw: string | undefined, project: string): StoredEvent[] {
   if (raw === undefined) {
     return [];
   }
@@ -136,6 +179,19 @@ function readEvents(raw: string | undefined): StoredEvent[] {
   }
   if (!Array.isArray(parsed)) {
     throw new Error("events file is not an array");
+  }
+  for (const member of parsed) {
+    if (typeof member !== "object" || member === null) {
+      throw new Error("events file has an invalid member");
+    }
+    const m = member as Record<string, unknown>;
+    if (typeof m.id !== "string" || typeof m.receivedAt !== "string") {
+      throw new Error("events file has an invalid member");
+    }
+    const validated = validateEvent(m.event);
+    if (!validated.ok || validated.value.project !== project) {
+      throw new Error("events file has an invalid member");
+    }
   }
   return parsed as StoredEvent[];
 }
@@ -179,13 +235,10 @@ export class FileNoticeStore implements NoticeStorePort {
     const names = await this.#decisionNames(dir);
     const decisions: StoredDecision[] = [];
     for (const name of names) {
+      const id = decisionId(name);
       const raw = await this.#readText(join(dir, name));
       if (raw !== undefined) {
-        const decision = readDecision(
-          raw,
-          project,
-          name.slice(0, -SNAPSHOT_SUFFIX.length),
-        );
+        const decision = readDecision(raw, project, id);
         if (decision !== undefined) {
           decisions.push(decision);
         }
@@ -287,7 +340,7 @@ export class FileNoticeStore implements NoticeStorePort {
       await this.#directoryForWrite(eventsDir);
       const path = this.#eventsPath(project);
       const raw = await this.#readText(path);
-      const current = readEvents(raw);
+      const current = readEvents(raw, project);
       const id = `${stored.receivedAt}-${nextEventSequence(current)}`;
       current.push({ ...stored, id });
       const dropped = Math.max(0, current.length - keep);
@@ -308,7 +361,7 @@ export class FileNoticeStore implements NoticeStorePort {
     const raw = await this.#readText(this.#eventsPath(project));
     let events: StoredEvent[];
     try {
-      events = readEvents(raw);
+      events = readEvents(raw, project);
     } catch {
       events = [];
     }
@@ -377,7 +430,11 @@ export class FileNoticeStore implements NoticeStorePort {
   }
 
   async #decisionNames(dir: string): Promise<string[]> {
-    return (await this.#entryNames(dir, isDecisionName)).sort();
+    const byId = new Map<string, string>();
+    for (const name of await this.#entryNames(dir, isDecisionName)) {
+      byId.set(decisionId(name), name);
+    }
+    return [...byId.keys()].sort().map((id) => byId.get(id) as string);
   }
 
   async #lstatOrUndefined(path: string): Promise<Stats | undefined> {

@@ -14,7 +14,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { FileNoticeStore } from "../src/infrastructure/file-notice-store.js";
+import { FileNoticeStore, MemoryStore } from "../src/index.js";
 import {
   decisionRevision,
   event,
@@ -232,7 +232,7 @@ describe("FileNoticeStore", () => {
           {
             id: `e${at}`,
             receivedAt: `2026-10-08T13:00:0${at}Z`,
-            event: event({ topic: `t${at}` }),
+            event: event({ topic: ["alpha", "beta", "gamma"][at] }),
           },
           2,
         );
@@ -268,6 +268,34 @@ describe("FileNoticeStore", () => {
 
       const ids = (await store.listDecisions("alpha")).map((d) => d.id);
       expect(ids).toEqual(["a", "z"]);
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("lists a and a-b in id order, matching the memory store", async () => {
+    const { dataDir, dispose } = harness();
+    try {
+      const fileStore = new FileNoticeStore(dataDir);
+      const memStore = new MemoryStore();
+      for (const store of [fileStore, memStore] as const) {
+        await store.appendRevision(
+          "alpha",
+          "a-b",
+          storedRevision(1, "a-b"),
+          0,
+          3,
+        );
+        await store.appendRevision("alpha", "a", storedRevision(1, "a"), 0, 3);
+      }
+
+      const expected = ["a", "a-b"];
+      expect((await fileStore.listDecisions("alpha")).map((d) => d.id)).toEqual(
+        expected,
+      );
+      expect((await memStore.listDecisions("alpha")).map((d) => d.id)).toEqual(
+        expected,
+      );
     } finally {
       await dispose();
     }
@@ -617,9 +645,10 @@ describe("corrupted notice files", () => {
     state: "approved",
     source: "reported",
     textSha256: "0".repeat(64),
-    receivedAt: "2026-10-08T12:00:00Z",
+    receivedAt: "2026-10-08T13:00:00Z",
     by: "owner",
-    at: "2026-10-08T12:00:00Z",
+    at: "2026-10-08T13:00:00Z",
+    words: "ship it",
   });
 
   it.each([
@@ -897,6 +926,24 @@ describe("corrupted notice files", () => {
     }
   });
 
+  it("never opens a decision file whose id is not a lane id", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.appendRevision("alpha", "d1", storedRevision(1), 0, 3);
+      // A directory named "bad id.json" whose stem is not a lane id: if the
+      // listing read it, readFile would throw EISDIR. The filter must drop it
+      // before any file is opened.
+      mkdirSync(join(dataDir, "decisions", "alpha", "bad id.json"), {
+        recursive: true,
+        mode: 0o700,
+      });
+      const listed = await store.listDecisions("alpha");
+      expect(listed.map((d) => d.id)).toEqual(["d1"]);
+    } finally {
+      await dispose();
+    }
+  });
+
   it("answers conflict when appending an entry to an unreadable decision", async () => {
     const { store, dataDir, dispose } = harness();
     try {
@@ -951,6 +998,68 @@ describe("corrupted notice files", () => {
       expect(read?.revisions).toHaveLength(1);
       expect(read?.entries).toHaveLength(1);
       expect(read?.entries[0]).toMatchObject({ index: 0, state: "approved" });
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("skips an entry that fails validateStateEntry", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      // approved is an answer state, which a session source cannot carry; before
+      // the store validated entries this was served as an approval.
+      writeDecisionFile(
+        dataDir,
+        "alpha",
+        "d1",
+        JSON.stringify({
+          project: "alpha",
+          id: "d1",
+          revisions: [goodRev()],
+          entries: [{ ...goodEntry(), source: "session" }],
+        }),
+      );
+      expect(await store.getDecision("alpha", "d1")).toBeUndefined();
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("skips an entry whose index does not match its position", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      writeDecisionFile(
+        dataDir,
+        "alpha",
+        "d1",
+        JSON.stringify({
+          project: "alpha",
+          id: "d1",
+          revisions: [goodRev()],
+          entries: [{ ...goodEntry(), index: 5 }],
+        }),
+      );
+      expect(await store.getDecision("alpha", "d1")).toBeUndefined();
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("skips an entry whose revision does not pin a stored revision", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      writeDecisionFile(
+        dataDir,
+        "alpha",
+        "d1",
+        JSON.stringify({
+          project: "alpha",
+          id: "d1",
+          revisions: [goodRev()],
+          entries: [{ ...goodEntry(), revision: 2 }],
+        }),
+      );
+      expect(await store.getDecision("alpha", "d1")).toBeUndefined();
     } finally {
       await dispose();
     }
@@ -1094,6 +1203,83 @@ describe("corrupted notice files", () => {
       ).rejects.toThrow();
       expect(readFileSync(join(dataDir, "events", "alpha.json"), "utf8")).toBe(
         contents,
+      );
+    } finally {
+      await dispose();
+    }
+  });
+
+  it.each([
+    ["null", "[null]"],
+    ["a number", "[42]"],
+    ["a string", '["x"]'],
+    [
+      "an object missing an id",
+      JSON.stringify([{ receivedAt: "2026-10-08T13:00:00Z", event: event() }]),
+    ],
+    [
+      "an object with a non-string id",
+      JSON.stringify([
+        { id: 7, receivedAt: "2026-10-08T13:00:00Z", event: event() },
+      ]),
+    ],
+    [
+      "an object missing receivedAt",
+      JSON.stringify([{ id: "e0", event: event() }]),
+    ],
+    [
+      "an object with a non-string receivedAt",
+      JSON.stringify([{ id: "e0", receivedAt: 7, event: event() }]),
+    ],
+    [
+      "an object with a non-object event",
+      JSON.stringify([
+        { id: "e0", receivedAt: "2026-10-08T13:00:00Z", event: "x" },
+      ]),
+    ],
+    [
+      "an object with a malformed event",
+      JSON.stringify([
+        {
+          id: "e0",
+          receivedAt: "2026-10-08T13:00:00Z",
+          event: { schema: "x" },
+        },
+      ]),
+    ],
+    [
+      "an object whose event names another project",
+      JSON.stringify([
+        {
+          id: "e0",
+          receivedAt: "2026-10-08T13:00:00Z",
+          event: event({ project: "beta" }),
+        },
+      ]),
+    ],
+  ])("listEvents reads %s as no events", async (_label, raw) => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      writeEventsFile(dataDir, "alpha", raw);
+      expect(await store.listEvents("alpha", 10)).toEqual([]);
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("refuses an append to an events file with an invalid member", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      writeEventsFile(dataDir, "alpha", "[null]");
+      await expect(
+        store.appendEvent(
+          "alpha",
+          { id: "e0", receivedAt: "2026-10-08T13:00:00Z", event: event() },
+          2000,
+        ),
+      ).rejects.toThrow();
+      expect(readFileSync(join(dataDir, "events", "alpha.json"), "utf8")).toBe(
+        "[null]",
       );
     } finally {
       await dispose();

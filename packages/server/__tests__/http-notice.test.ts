@@ -390,7 +390,6 @@ describe("auth and framing for the notice writes", () => {
   it.each([
     ["no token at all", undefined],
     ["an unknown token", BEARER(UNKNOWN_TOKEN)],
-    ["another project's token", BEARER(OTHER_TOKEN)],
   ])("401s %s on a notice write", async (_label, auth) => {
     const { started, pass } = await wired();
     pass();
@@ -405,6 +404,56 @@ describe("auth and framing for the notice writes", () => {
     });
 
     expect(response.status).toBe(401);
+  });
+
+  it("refuses another project's token on every notice write route", async () => {
+    const { started, store, pass } = await wired();
+    // Register a second project with OTHER_TOKEN so the token is known but
+    // foreign: it must be refused (403) on alpha's three notice write routes,
+    // not answered as an unknown token (401).
+    await store.putProject({
+      id: "beta",
+      name: "Beta",
+      repo: "https://example.com/beta.git",
+      tokenSha256: digestOf(OTHER_TOKEN),
+      registeredAt: "2026-10-01T12:00:00Z",
+    });
+    pass();
+
+    const token = OTHER_TOKEN;
+    const put = await json(
+      started,
+      "PUT",
+      decisionPath(),
+      decisionBody(),
+      token,
+    );
+    expect(put.status).toBe(403);
+
+    const postState = await json(
+      started,
+      "POST",
+      statesPath(),
+      stateEntry(),
+      token,
+    );
+    expect(postState.status).toBe(403);
+
+    const postEvent = await json(
+      started,
+      "POST",
+      EVENTS_PATH,
+      {
+        schema: "waves-notice/v1",
+        kind: "event",
+        project: PROJECT,
+        topic: "relay",
+        text: "Round 3 sent to five sessions",
+        at: "2026-10-08T13:00:00Z",
+      },
+      token,
+    );
+    expect(postEvent.status).toBe(403);
   });
 
   it("429s the second write to a project within a second", async () => {
