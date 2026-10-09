@@ -438,7 +438,7 @@ function currentEntry(
  * `http-notice-read.test.ts` is what checks that the real response is right;
  * this helper only feeds a plausible one to the page.
  */
-function headFromFixture(fixture: NoticeFixture, nowMs: number): Head {
+export function headFromFixture(fixture: NoticeFixture, nowMs: number): Head {
   const latest = fixture.revisions[fixture.revisions.length - 1] as Record<
     string,
     unknown
