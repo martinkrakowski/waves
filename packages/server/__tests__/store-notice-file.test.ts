@@ -527,24 +527,22 @@ describe("FileNoticeStore edge cases", () => {
     }
   });
 
-  it("removes the temporary file when the rename fails", async () => {
+  // This test replaces d1.json with a directory, but appendRevision fails in
+  // readFile with EISDIR before writeAtomic is ever called — so it does not
+  // exercise the rename-failure cleanup path. That path is covered by
+  // store-file-cleanup.test.ts, which drives the shared writeAtomic directly.
+  it("throws when the decision file is a directory", async () => {
     const { store, dataDir, dispose } = harness();
     try {
       await store.appendRevision("alpha", "d1", storedRevision(1), 0, 3);
-      // Make the target a directory so the atomic rename fails.
       await rm(join(dataDir, "decisions", "alpha", "d1.json"));
       mkdirSync(join(dataDir, "decisions", "alpha", "d1.json"), {
         mode: 0o700,
       });
 
       await expect(
-        store.appendRevision("alpha", "d1", storedRevision(2), 1, 3),
+        store.appendRevision("alpha", "d1", storedRevision(2, "d1"), 1, 3),
       ).rejects.toThrow();
-      // No temp file left behind in the project directory.
-      const left = readdirSync(join(dataDir, "decisions", "alpha")).filter(
-        (name) => !name.endsWith(".json"),
-      );
-      expect(left).toEqual([]);
     } finally {
       await dispose();
     }
