@@ -418,11 +418,11 @@ describe("auth and framing for the notice writes", () => {
 
     const del = await json(started, "DELETE", decisionPath(), undefined);
     expect(del.status).toBe(405);
-    expect(del.headers.get("allow")).toBe("PUT");
+    expect(del.headers.get("allow")).toBe("GET, HEAD, PUT");
 
     const post = await json(started, "POST", decisionPath(), undefined);
     expect(post.status).toBe(405);
-    expect(post.headers.get("allow")).toBe("PUT");
+    expect(post.headers.get("allow")).toBe("GET, HEAD, PUT");
   });
 
   it("refuses a notice write that carries an Origin", async () => {
