@@ -232,6 +232,17 @@ describe("evidenceBlock", () => {
     expect(host.querySelector(".decision-evidence")).toBeNull();
   });
 
+  it("returns undefined when refs is an empty object", () => {
+    const host = drawEvidence({
+      revisions: [
+        storedRevision({
+          decision: decisionRevision({ refs: {} }),
+        }),
+      ],
+    });
+    expect(host.querySelector(".decision-evidence")).toBeNull();
+  });
+
   it("falls back to text when an evidence href is https but not a valid URL", () => {
     const host = drawEvidence({
       revisions: [

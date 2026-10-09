@@ -181,6 +181,15 @@ function refsText(refs) {
   return parts.join(" · ");
 }
 
+/** Whether a refs object carries at least one reference. */
+function hasRefs(refs) {
+  return (
+    refs !== undefined &&
+    refs !== null &&
+    (refs.wave !== undefined || refs.lane !== undefined || refs.pr !== undefined)
+  );
+}
+
 /**
  * The evidence section: links for each source, followed by the references as
  * plain text, only when at least one of them is present.
@@ -188,8 +197,8 @@ function refsText(refs) {
 export function evidenceBlock(model) {
   const decision = model.currentRevision.decision;
   const hasEvidence = decision.evidence.length > 0;
-  const hasRefs = decision.refs !== undefined && decision.refs !== null;
-  if (!hasEvidence && !hasRefs) {
+  const refs = hasRefs(decision.refs);
+  if (!hasEvidence && !refs) {
     return undefined;
   }
   const children = [];
@@ -204,7 +213,7 @@ export function evidenceBlock(model) {
       }),
     );
   }
-  if (hasRefs) {
+  if (refs) {
     children.push(
       el("p", {
         attrs: { class: "decision-refs" },
