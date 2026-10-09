@@ -23,6 +23,12 @@ function statusPath(projectId) {
   return `/api/v1/projects/${encodeURIComponent(projectId)}/status`;
 }
 
+/** One decision's full record: head, revisions and entries. */
+function decisionPath(projectId, decisionId) {
+  const project = `/api/v1/projects/${encodeURIComponent(projectId)}`;
+  return `${project}/decisions/${encodeURIComponent(decisionId)}`;
+}
+
 async function readJson(fetchImpl, path) {
   const response = await fetchImpl(path, { headers: JSON_HEADERS });
   if (response.status === 404) {
@@ -40,13 +46,10 @@ export function createApi(fetchImpl) {
     attention: () => readJson(fetchImpl, "/api/v1/attention"),
     inbox: () => readJson(fetchImpl, "/api/v1/inbox"),
     lanes: (projectId, all) => readJson(fetchImpl, lanesPath(projectId, all)),
-    // One wave on its own, for the drawer in lane K6 and nothing else: the page
-    // itself never asks for it, and keeps it because that lane will.
     wave: (projectId, waveId) =>
       readJson(fetchImpl, wavePath(projectId, waveId)),
-    // What a project last said about itself. `undefined` for a 404, which the
-    // project page reads as "it has pushed none" rather than as a failure: the
-    // route is optional where the others are not.
     status: (projectId) => readJson(fetchImpl, statusPath(projectId)),
+    decision: (projectId, decisionId) =>
+      readJson(fetchImpl, decisionPath(projectId, decisionId)),
   };
 }

@@ -7,6 +7,7 @@ import { renderInbox } from "../../public/views/inbox.js";
 import {
   inboxFromFixtures,
   inboxHead,
+  inboxProject,
   inboxView,
   INBOX_NOW_MS,
 } from "./fixtures.js";
@@ -121,6 +122,28 @@ describe("the fourteenth fixtures", () => {
     expect(textsOf(host, ".inbox-footer")).toStrictEqual([
       "This page shows decisions; it does not take answers. A session's own permission prompt can only be cleared in that session.",
     ]);
+  });
+
+  it("links each card's id to its decision page", () => {
+    const host = draw(
+      inboxView({
+        projects: [
+          inboxProject({
+            id: "alpha",
+            name: "Alpha",
+            counts: { waiting: 1, oneWay: 0, reported: 0, closed: 0 },
+            decisions: [
+              inboxHead({ question: "Go?", id: "d1", state: "open" }),
+            ],
+          }),
+        ],
+      }),
+    );
+    const link = host.querySelector(".card-meta a");
+    expect(link).not.toBeNull();
+    expect(link?.textContent).toBe("d1");
+    expect(link?.getAttribute("href")).toBe("/p/alpha/d/d1");
+    expect(link?.hasAttribute("data-key")).toBe(true);
   });
 });
 

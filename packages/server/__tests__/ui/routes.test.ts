@@ -31,9 +31,34 @@ describe("routeOf", () => {
     });
   });
 
+  it("routes /p/<project>/d/<decision> at that decision of that project", () => {
+    expect(routeOf("/p/alpha/d/d1")).toStrictEqual({
+      kind: "decision",
+      project: "alpha",
+      id: "d1",
+    });
+    expect(routeOf("/p/alpha/d/w_v-1")).toStrictEqual({
+      kind: "decision",
+      project: "alpha",
+      id: "w_v-1",
+    });
+  });
+
   it("refuses an id or a wave it would have to decode", () => {
     expect(routeOf("/p/a%20b")).toStrictEqual({ kind: "unknown" });
     expect(routeOf("/p/%zz")).toStrictEqual({ kind: "unknown" });
+  });
+
+  it("refuses a decision path with a bad project id", () => {
+    expect(routeOf("/p/ALPHA/d/d1")).toStrictEqual({ kind: "unknown" });
+  });
+
+  it("refuses a decision path with a bad decision id", () => {
+    expect(routeOf("/p/alpha/d/-bad")).toStrictEqual({ kind: "unknown" });
+  });
+
+  it("refuses a decision path with no decision id", () => {
+    expect(routeOf("/p/alpha/d/")).toStrictEqual({ kind: "unknown" });
   });
 
   it("refuses a path with no id", () => {
@@ -78,10 +103,15 @@ describe("pathFor", () => {
       "/p/a-b9",
       "/p/alpha/w/wv1",
       "/p/alpha/w/w_v-1",
+      "/p/alpha/d/d1",
     ]) {
       const route = routeOf(pathname);
       const path =
-        route.kind === "project" ? pathFor(route.id, route.wave) : "/";
+        route.kind === "project"
+          ? pathFor(route.id, route.wave)
+          : route.kind === "decision"
+            ? `/p/${route.project}/d/${route.id}`
+            : "/";
       expect(routeOf(path)).toStrictEqual(route);
     }
   });

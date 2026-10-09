@@ -205,7 +205,11 @@ function card(head, nowMs) {
   children.push(
     el("p", {
       attrs: { class: "card-meta" },
-      children: [text(head.id), text(" · "), stamp(head.at, nowMs)],
+      children: [
+        internalLink(head.id, `/p/${head.project}/d/${head.id}`),
+        text(" · "),
+        stamp(head.at, nowMs),
+      ],
     }),
   );
   return el("li", { attrs: { class: "inbox-card" }, children });

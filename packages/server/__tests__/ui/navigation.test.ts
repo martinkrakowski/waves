@@ -8,6 +8,7 @@ import type { InboxProject } from "../../src/application/notice-read-model.js";
 import type { ProjectLanesView } from "../../src/application/read-model.js";
 import {
   attentionView,
+  decisionResponse,
   inboxProject,
   inboxView,
   laneRow,
@@ -1733,6 +1734,71 @@ describe("the inbox route", () => {
 
     expect(app.route).toStrictEqual({ kind: "inbox" });
     expect(document.body.textContent ?? "").not.toContain("leak");
+    app.stop();
+  });
+});
+
+describe("the decision route", () => {
+  /** A fetch stub that answers the rail's two lists and one decision. */
+  function decisionFetch(body: unknown) {
+    return fetchStub((path) =>
+      path === "/api/v1/projects"
+        ? { status: 200, body: [projectCard()] }
+        : path === "/api/v1/attention"
+          ? { status: 200, body: attentionView() }
+          : path === "/api/v1/projects/alpha/decisions/d1"
+            ? { status: 200, body }
+            : { status: 404 },
+    );
+  }
+
+  it("boots on the decision page and draws the decision", async () => {
+    const fetchImpl = decisionFetch(decisionResponse());
+    const { app } = harness({ pathname: "/p/alpha/d/d1", fetchImpl });
+    app.start();
+    await flush();
+
+    expect(app.route).toStrictEqual({
+      kind: "decision",
+      project: "alpha",
+      id: "d1",
+    });
+    expect(textsOf(root(), "h1")).toStrictEqual(["Go?"]);
+    expect(fetchImpl.calls).toStrictEqual([
+      "/api/v1/projects",
+      "/api/v1/attention",
+      "/api/v1/projects/alpha/decisions/d1",
+    ]);
+    app.stop();
+  });
+
+  it("says No such decision for a 404", async () => {
+    const fetchImpl = decisionFetch(undefined);
+    const { app } = harness({ pathname: "/p/alpha/d/d1", fetchImpl });
+    app.start();
+    await flush();
+
+    expect(app.route).toStrictEqual({
+      kind: "decision",
+      project: "alpha",
+      id: "d1",
+    });
+    expect(textsOf(root(), ".empty")).toStrictEqual(["No such decision."]);
+    app.stop();
+  });
+
+  it("names the project in the breadcrumb and title", async () => {
+    const { app } = harness({
+      pathname: "/p/alpha/d/d1",
+      fetchImpl: decisionFetch(decisionResponse()),
+    });
+    app.start();
+    await flush();
+
+    expect(document.title).toBe("waves — alpha");
+    expect(textOf(root().querySelector(".crumbs") as Element)).toBe(
+      "waves / alpha / d1",
+    );
     app.stop();
   });
 });

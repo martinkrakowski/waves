@@ -110,6 +110,15 @@ function breadcrumb(route, all) {
   }
   // A page that is not one of ours still has the fleet above it, and with the
   // rail gone this is the only link that leads there.
+  if (route.kind === "decision") {
+    return [
+      internalLink(BRAND, "/"),
+      text(" / "),
+      internalLink(route.project, `/p/${route.project}`),
+      text(" / "),
+      hereId(route.id),
+    ];
+  }
   if (route.kind !== "project") {
     return [internalLink(BRAND, "/")];
   }
