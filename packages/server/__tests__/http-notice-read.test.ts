@@ -93,7 +93,6 @@ async function postState(
   return ((await res.json()) as { index: number }).index;
 }
 
-
 async function postEvent(
   started: Started,
   token: string,
@@ -102,18 +101,21 @@ async function postEvent(
   pass: () => void,
 ): Promise<void> {
   pass();
-  const res = await fetch(`${started.origin}/api/v1/projects/${project}/events`, {
-    method: "POST",
-    headers: { "content-type": "application/json", ...BEARER(token) },
-    body: JSON.stringify({
-      schema: "waves-notice/v1",
-      kind: "event",
-      project,
-      topic,
-      text: topic,
-      at: "2026-10-08T13:00:00Z",
-    }),
-  });
+  const res = await fetch(
+    `${started.origin}/api/v1/projects/${project}/events`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", ...BEARER(token) },
+      body: JSON.stringify({
+        schema: "waves-notice/v1",
+        kind: "event",
+        project,
+        topic,
+        text: topic,
+        at: "2026-10-08T13:00:00Z",
+      }),
+    },
+  );
   expect(res.status).toBe(201);
 }
 
@@ -515,25 +517,39 @@ describe("coveredAnswer", () => {
 describe("notice read routes", () => {
   it("serves a project's events newest first", async () => {
     const clk = clock();
-    const started = await startHarness({ adminToken: ADMIN_TOKEN, now: clk.now });
+    const started = await startHarness({
+      adminToken: ADMIN_TOKEN,
+      now: clk.now,
+    });
     const tokens = await registerAll(started, clk.pass);
     await postEvent(started, tokens.fleet!, "fleet", "relay", clk.pass);
     await postEvent(started, tokens.fleet!, "fleet", "policy", clk.pass);
 
     const res = await fetch(`${started.origin}/api/v1/projects/fleet/events`);
-    const body = (await res.json()) as { events: Array<{ topic: string }> };
+    const body = (await res.json()) as {
+      events: Array<{ event: { topic: string } }>;
+    };
     expect(body.events.map((e) => e.event.topic)).toEqual(["policy", "relay"]);
   });
 
   it("serves a decision's head, revisions and entries", async () => {
     const clk = clock();
-    const started = await startHarness({ adminToken: ADMIN_TOKEN, now: clk.now });
+    const started = await startHarness({
+      adminToken: ADMIN_TOKEN,
+      now: clk.now,
+    });
     const tokens = await registerAll(started, clk.pass);
     const body = decision("fleet", "d1");
     await putDecision(started, tokens.fleet!, "fleet", "d1", body, clk.pass);
 
-    const res = await fetch(`${started.origin}/api/v1/projects/fleet/decisions/d1`);
-    const view = (await res.json()) as { head: Head; revisions: unknown[]; entries: unknown[] };
+    const res = await fetch(
+      `${started.origin}/api/v1/projects/fleet/decisions/d1`,
+    );
+    const view = (await res.json()) as {
+      head: Head;
+      revisions: unknown[];
+      entries: unknown[];
+    };
     expect(view.head.revision).toBe(1);
     expect(view.head.state).toBe("open");
     expect(view.revisions).toHaveLength(1);
@@ -542,10 +558,14 @@ describe("notice read routes", () => {
 
   it("404s an unknown decision", async () => {
     const clk = clock();
-    const started = await startHarness({ adminToken: ADMIN_TOKEN, now: clk.now });
+    const started = await startHarness({
+      adminToken: ADMIN_TOKEN,
+      now: clk.now,
+    });
     await registerAll(started, clk.pass);
     expect(
-      (await fetch(`${started.origin}/api/v1/projects/fleet/decisions/absent`)).status,
+      (await fetch(`${started.origin}/api/v1/projects/fleet/decisions/absent`))
+        .status,
     ).toBe(404);
   });
 });
