@@ -45,8 +45,13 @@ export function decisionRevision(
 
 export function storedRevision(
   revision: number,
-  decision: DecisionRevision = decisionRevision("d1"),
+  decisionOrId: DecisionRevision | string = "d1",
+  project = "alpha",
 ): StoredRevision {
+  const decision =
+    typeof decisionOrId === "string"
+      ? decisionRevision(decisionOrId, project)
+      : decisionOrId;
   return {
     revision,
     textSha256: "0".repeat(64),

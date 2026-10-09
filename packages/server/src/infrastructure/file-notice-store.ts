@@ -2,6 +2,8 @@ import type { Stats } from "node:fs";
 import { lstat, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
+import { validateDecision } from "@hexagen-monaco/waves-contract";
+
 import type {
   AppendOutcome,
   NoticeStorePort,
@@ -18,6 +20,8 @@ import {
   writeAtomic,
 } from "./store-helpers.js";
 
+const TEXT_SHA256_PATTERN = /^[0-9a-f]{64}$/;
+
 const DATA_DIR_MODE = 0o700;
 const DECISIONS_DIR = "decisions";
 const EVENTS_DIR = "events";
@@ -32,13 +36,22 @@ function isDecisionName(name: string): boolean {
 }
 
 /**
- * One stored decision, parsed and shape-checked, or undefined when the file is
- * gone, truncated or not a decision (a `project`/`id` strings, a non-empty
- * `revisions` array and an `entries` array). A bad file is never thrown on: it
- * is treated as absent so the inbox keeps listing the good decisions alongside
- * it, reads report no decision, and a write against it is a conflict.
+ * One stored decision, parsed and fully shape-checked, or undefined when the file
+ * is absent, unparseable, or fails the check: the top-level `project`/`id` must
+ * match what was asked for, every revision must carry a positive integer
+ * `revision`, a 64-hex `textSha256`, a string `receivedAt` and a `decision`
+ * valid under the contract's `validateDecision` with that `project` and `id`,
+ * and every entry must be an object with an integer `index` and `revision`, and
+ * string `state`, `source`, `textSha256` and `receivedAt`. A bad file is never
+ * thrown on: it is treated as absent so the inbox keeps listing the good
+ * decisions alongside it, reads report no decision, and a write against it is a
+ * conflict.
  */
-function readDecision(raw: string): StoredDecision | undefined {
+function readDecision(
+  raw: string,
+  project: string,
+  id: string,
+): StoredDecision | undefined {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -50,14 +63,55 @@ function readDecision(raw: string): StoredDecision | undefined {
   }
   const obj = parsed as Record<string, unknown>;
   const revisions = obj.revisions;
+  const entries = obj.entries;
   if (
     typeof obj.project !== "string" ||
+    obj.project !== project ||
     typeof obj.id !== "string" ||
+    obj.id !== id ||
     !Array.isArray(revisions) ||
     revisions.length === 0 ||
-    !Array.isArray(obj.entries)
+    !Array.isArray(entries)
   ) {
     return undefined;
+  }
+  for (const revision of revisions) {
+    if (typeof revision !== "object" || revision === null) {
+      return undefined;
+    }
+    const rev = revision as Record<string, unknown>;
+    const validated = validateDecision(rev.decision);
+    const revNum = rev.revision;
+    const hash = rev.textSha256;
+    if (
+      !validated.ok ||
+      validated.value.project !== project ||
+      validated.value.id !== id ||
+      typeof revNum !== "number" ||
+      !Number.isInteger(revNum) ||
+      revNum <= 0 ||
+      typeof hash !== "string" ||
+      !TEXT_SHA256_PATTERN.test(hash) ||
+      typeof rev.receivedAt !== "string"
+    ) {
+      return undefined;
+    }
+  }
+  for (const entry of entries) {
+    if (typeof entry !== "object" || entry === null) {
+      return undefined;
+    }
+    const ent = entry as Record<string, unknown>;
+    if (
+      !Number.isInteger(ent.index) ||
+      !Number.isInteger(ent.revision) ||
+      typeof ent.state !== "string" ||
+      typeof ent.source !== "string" ||
+      typeof ent.textSha256 !== "string" ||
+      typeof ent.receivedAt !== "string"
+    ) {
+      return undefined;
+    }
   }
   return obj as unknown as StoredDecision;
 }
@@ -104,7 +158,7 @@ export class FileNoticeStore implements NoticeStorePort {
     if (raw === undefined) {
       return undefined;
     }
-    return readDecision(raw);
+    return readDecision(raw, project, id);
   }
 
   async listDecisions(project: string): Promise<readonly StoredDecision[]> {
@@ -117,7 +171,11 @@ export class FileNoticeStore implements NoticeStorePort {
     for (const name of names) {
       const raw = await this.#readText(join(dir, name));
       if (raw !== undefined) {
-        const decision = readDecision(raw);
+        const decision = readDecision(
+          raw,
+          project,
+          name.slice(0, -SNAPSHOT_SUFFIX.length),
+        );
         if (decision !== undefined) {
           decisions.push(decision);
         }
@@ -162,7 +220,7 @@ export class FileNoticeStore implements NoticeStorePort {
         );
         return "stored";
       }
-      const stored = readDecision(raw);
+      const stored = readDecision(raw, project, id);
       if (stored === undefined || stored.revisions.length !== expectRevisions) {
         return "conflict";
       }
@@ -191,7 +249,7 @@ export class FileNoticeStore implements NoticeStorePort {
       if (raw === undefined) {
         return "missing";
       }
-      const stored = readDecision(raw);
+      const stored = readDecision(raw, project, id);
       if (
         stored === undefined ||
         stored.entries.length !== expectEntries ||

@@ -14,7 +14,12 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { FileNoticeStore } from "../src/infrastructure/file-notice-store.js";
-import { event, storedEntry, storedRevision } from "./notice-contract.js";
+import {
+  decisionRevision,
+  event,
+  storedEntry,
+  storedRevision,
+} from "./notice-contract.js";
 
 function harness(): {
   store: FileNoticeStore;
@@ -115,7 +120,7 @@ describe("FileNoticeStore", () => {
     const { store, dispose } = harness();
     try {
       await store.appendRevision("alpha", "d1", storedRevision(1), 0, 2);
-      await store.appendRevision("alpha", "d2", storedRevision(1), 0, 2);
+      await store.appendRevision("alpha", "d2", storedRevision(1, "d2"), 0, 2);
 
       const outcome = await store.appendRevision(
         "alpha",
@@ -257,8 +262,8 @@ describe("FileNoticeStore", () => {
   it("lists decisions ordered by id", async () => {
     const { store, dispose } = harness();
     try {
-      await store.appendRevision("alpha", "z", storedRevision(1), 0, 3);
-      await store.appendRevision("alpha", "a", storedRevision(1), 0, 3);
+      await store.appendRevision("alpha", "z", storedRevision(1, "z"), 0, 3);
+      await store.appendRevision("alpha", "a", storedRevision(1, "a"), 0, 3);
 
       const ids = (await store.listDecisions("alpha")).map((d) => d.id);
       expect(ids).toEqual(["a", "z"]);
@@ -295,7 +300,13 @@ describe("FileNoticeStore", () => {
     const { store, dispose } = harness();
     try {
       await store.appendRevision("alpha", "d1", storedRevision(1), 0, 3);
-      await store.appendRevision("beta", "d1", storedRevision(1), 0, 3);
+      await store.appendRevision(
+        "beta",
+        "d1",
+        storedRevision(1, "d1", "beta"),
+        0,
+        3,
+      );
       await store.appendEvent(
         "alpha",
         {
@@ -568,7 +579,7 @@ describe("FileNoticeStore edge cases", () => {
   it("lists decisions in id order", async () => {
     const { store, dispose } = harness();
     try {
-      await store.appendRevision("alpha", "d2", storedRevision(1), 0, 3);
+      await store.appendRevision("alpha", "d2", storedRevision(1, "d2"), 0, 3);
       await store.appendRevision("alpha", "d1", storedRevision(1), 0, 3);
       const listed = await store.listDecisions("alpha");
       expect(listed.map((decision) => decision.id)).toEqual(["d1", "d2"]);
@@ -588,11 +599,29 @@ describe("corrupted notice files", () => {
           revision: 1,
           textSha256: "0".repeat(64),
           receivedAt: "2026-10-08T12:00:00Z",
-          decision: {},
+          decision: decisionRevision(id, "alpha"),
         },
       ],
       entries: [],
     });
+
+  const goodRev = (id = "d1") => ({
+    revision: 1,
+    textSha256: "0".repeat(64),
+    receivedAt: "2026-10-08T12:00:00Z",
+    decision: decisionRevision(id, "alpha"),
+  });
+
+  const goodEntry = () => ({
+    index: 0,
+    revision: 1,
+    state: "approved",
+    source: "reported",
+    textSha256: "0".repeat(64),
+    receivedAt: "2026-10-08T12:00:00Z",
+    by: "owner",
+    at: "2026-10-08T12:00:00Z",
+  });
 
   it.each([
     ["truncated json", "{"],
@@ -629,6 +658,205 @@ describe("corrupted notice files", () => {
         entries: "no",
       }),
     ],
+    [
+      "a project that does not match",
+      JSON.stringify({
+        project: "beta",
+        id: "d1",
+        revisions: [{}],
+        entries: [],
+      }),
+    ],
+    [
+      "an id that does not match",
+      JSON.stringify({
+        project: "alpha",
+        id: "d2",
+        revisions: [{}],
+        entries: [],
+      }),
+    ],
+    [
+      "a revision that is not an object",
+      JSON.stringify({
+        project: "alpha",
+        id: "d1",
+        revisions: [42],
+        entries: [],
+      }),
+    ],
+    [
+      "a null revision",
+      JSON.stringify({
+        project: "alpha",
+        id: "d1",
+        revisions: [null],
+        entries: [],
+      }),
+    ],
+    [
+      "an empty revision object",
+      JSON.stringify({
+        project: "alpha",
+        id: "d1",
+        revisions: [{}],
+        entries: [],
+      }),
+    ],
+    [
+      "a revision with a decision of the wrong project",
+      JSON.stringify({
+        project: "alpha",
+        id: "d1",
+        revisions: [
+          {
+            ...goodRev("d1"),
+            decision: decisionRevision("d1", "beta"),
+          },
+        ],
+        entries: [],
+      }),
+    ],
+    [
+      "a revision with a decision of the wrong id",
+      JSON.stringify({
+        project: "alpha",
+        id: "d1",
+        revisions: [
+          {
+            ...goodRev("d2"),
+            decision: decisionRevision("d2", "alpha"),
+          },
+        ],
+        entries: [],
+      }),
+    ],
+    [
+      "a revision with a non-number revision",
+      JSON.stringify({
+        project: "alpha",
+        id: "d1",
+        revisions: [{ ...goodRev(), revision: "1" }],
+        entries: [],
+      }),
+    ],
+    [
+      "a revision with a non-integer revision",
+      JSON.stringify({
+        project: "alpha",
+        id: "d1",
+        revisions: [{ ...goodRev(), revision: 1.5 }],
+        entries: [],
+      }),
+    ],
+    [
+      "a revision with a zero revision",
+      JSON.stringify({
+        project: "alpha",
+        id: "d1",
+        revisions: [{ ...goodRev(), revision: 0 }],
+        entries: [],
+      }),
+    ],
+    [
+      "a revision with a non-string textSha256",
+      JSON.stringify({
+        project: "alpha",
+        id: "d1",
+        revisions: [{ ...goodRev(), textSha256: 123 }],
+        entries: [],
+      }),
+    ],
+    [
+      "a revision with a malformed textSha256",
+      JSON.stringify({
+        project: "alpha",
+        id: "d1",
+        revisions: [{ ...goodRev(), textSha256: "short" }],
+        entries: [],
+      }),
+    ],
+    [
+      "a revision with a non-string receivedAt",
+      JSON.stringify({
+        project: "alpha",
+        id: "d1",
+        revisions: [{ ...goodRev(), receivedAt: 123 }],
+        entries: [],
+      }),
+    ],
+    [
+      "a non-object entry",
+      JSON.stringify({
+        project: "alpha",
+        id: "d1",
+        revisions: [goodRev()],
+        entries: [42],
+      }),
+    ],
+    [
+      "a null entry",
+      JSON.stringify({
+        project: "alpha",
+        id: "d1",
+        revisions: [goodRev()],
+        entries: [null],
+      }),
+    ],
+    [
+      "an entry with a non-integer index",
+      JSON.stringify({
+        project: "alpha",
+        id: "d1",
+        revisions: [goodRev()],
+        entries: [{ ...goodEntry(), index: 1.5 }],
+      }),
+    ],
+    [
+      "an entry with a non-integer revision",
+      JSON.stringify({
+        project: "alpha",
+        id: "d1",
+        revisions: [goodRev()],
+        entries: [{ ...goodEntry(), revision: 1.5 }],
+      }),
+    ],
+    [
+      "an entry with a non-string state",
+      JSON.stringify({
+        project: "alpha",
+        id: "d1",
+        revisions: [goodRev()],
+        entries: [{ ...goodEntry(), state: 123 }],
+      }),
+    ],
+    [
+      "an entry with a non-string source",
+      JSON.stringify({
+        project: "alpha",
+        id: "d1",
+        revisions: [goodRev()],
+        entries: [{ ...goodEntry(), source: 123 }],
+      }),
+    ],
+    [
+      "an entry with a non-string textSha256",
+      JSON.stringify({
+        project: "alpha",
+        id: "d1",
+        revisions: [goodRev()],
+        entries: [{ ...goodEntry(), textSha256: 123 }],
+      }),
+    ],
+    [
+      "an entry with a non-string receivedAt",
+      JSON.stringify({
+        project: "alpha",
+        id: "d1",
+        revisions: [goodRev()],
+        entries: [{ ...goodEntry(), receivedAt: 123 }],
+      }),
+    ],
   ])("getDecision reads %s as undefined", async (_label, raw) => {
     const { store, dataDir, dispose } = harness();
     try {
@@ -655,7 +883,13 @@ describe("corrupted notice files", () => {
   it("skips a malformed decision file in listDecisions", async () => {
     const { store, dataDir, dispose } = harness();
     try {
-      await store.appendRevision("alpha", "good", storedRevision(1), 0, 3);
+      await store.appendRevision(
+        "alpha",
+        "good",
+        storedRevision(1, "good"),
+        0,
+        3,
+      );
       writeDecisionFile(dataDir, "alpha", "bad", "{ broken");
       const listed = await store.listDecisions("alpha");
       expect(listed.map((d) => d.id)).toEqual(["good"]);
@@ -688,7 +922,115 @@ describe("corrupted notice files", () => {
       const outcome = await store.appendRevision(
         "alpha",
         "d1",
-        storedRevision(2),
+        storedRevision(2, "d1"),
+        1,
+        3,
+      );
+      expect(outcome).toBe("conflict");
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("getDecision reads a valid file with a revision and an entry", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      writeDecisionFile(
+        dataDir,
+        "alpha",
+        "d1",
+        JSON.stringify({
+          project: "alpha",
+          id: "d1",
+          revisions: [goodRev()],
+          entries: [goodEntry()],
+        }),
+      );
+      const read = await store.getDecision("alpha", "d1");
+      expect(read?.project).toBe("alpha");
+      expect(read?.id).toBe("d1");
+      expect(read?.revisions).toHaveLength(1);
+      expect(read?.entries).toHaveLength(1);
+      expect(read?.entries[0]).toMatchObject({ index: 0, state: "approved" });
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("skips a shape-invalid decision file in listDecisions", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.appendRevision(
+        "alpha",
+        "good",
+        storedRevision(1, "good"),
+        0,
+        3,
+      );
+      writeDecisionFile(dataDir, "alpha", "bad", validDecision("bad"));
+      writeDecisionFile(
+        dataDir,
+        "alpha",
+        "wrongproj",
+        JSON.stringify({
+          project: "beta",
+          id: "wrongproj",
+          revisions: [goodRev("wrongproj")],
+          entries: [],
+        }),
+      );
+      const listed = await store.listDecisions("alpha");
+      expect(listed.map((d) => d.id)).toEqual(["bad", "good"]);
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("answers conflict when appending an entry to a shape-invalid decision", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      writeDecisionFile(
+        dataDir,
+        "alpha",
+        "d1",
+        JSON.stringify({
+          project: "alpha",
+          id: "d1",
+          revisions: [{}],
+          entries: [],
+        }),
+      );
+      const outcome = await store.appendEntry(
+        "alpha",
+        "d1",
+        storedEntry(0),
+        0,
+        1,
+      );
+      expect(outcome).toBe("conflict");
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("answers conflict when revising a shape-invalid decision", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      writeDecisionFile(
+        dataDir,
+        "alpha",
+        "d1",
+        JSON.stringify({
+          project: "alpha",
+          id: "d1",
+          revisions: [{}],
+          entries: [],
+        }),
+      );
+      const outcome = await store.appendRevision(
+        "alpha",
+        "d1",
+        storedRevision(2, "d1"),
         1,
         3,
       );
