@@ -17,10 +17,12 @@ import type {
   NoticeCounts,
   ProjectInboxView,
   DecisionView,
+  EventView,
 } from "../../src/application/notice-read-model.js";
 import type {
   StoredRevision,
   StoredEntry,
+  StoredEvent,
 } from "../../src/application/ports/notice-store.js";
 import type { ProjectCard } from "../../public/api.js";
 import type { DecisionRevision } from "../../../contract/src/domain/model.js";
@@ -383,6 +385,37 @@ export function decisionResponse(
     entries: [],
     ...overrides,
   } as DecisionView;
+}
+
+/**
+ * One stored event: the id the server gives it, the moment the server received
+ * it, and the notice event it wraps. `id` is a placeholder: the store assigns
+ * its own, so a test that only checks the shape never sees this one.
+ */
+export function inboxEvent(overrides: Partial<StoredEvent> = {}): StoredEvent {
+  return {
+    id: `${NOW_ISO}-1`,
+    receivedAt: NOW_ISO,
+    event: {
+      schema: "waves-notice/v1",
+      kind: "event",
+      project: "alpha",
+      topic: "relay",
+      text: "Round 3 sent to five sessions",
+      at: "2026-10-08T13:00:00Z",
+    },
+    ...overrides,
+  } as StoredEvent;
+}
+
+/** What `GET /api/v1/projects/<project>/events` answers, before anything is wrong. */
+export function projectEventsView(
+  overrides: Partial<EventView> = {},
+): EventView {
+  return {
+    events: [inboxEvent()],
+    ...overrides,
+  };
 }
 
 import { NOTICE_DECISIONS } from "../../../contract/__tests__/fixtures/notice-decisions.js";

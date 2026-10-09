@@ -56,6 +56,21 @@ describe("createApi", () => {
     ]);
   });
 
+  it("asks for JSON from a project's events endpoint", async () => {
+    const { fetch: fetchImpl, seen } = recorder({
+      status: 200,
+      body: { events: [] },
+    });
+    const api = createApi(fetchImpl);
+    await api.fetchProjectEvents("alpha");
+    expect(seen).toStrictEqual([
+      {
+        path: "/api/v1/projects/alpha/events",
+        accept: "application/json",
+      },
+    ]);
+  });
+
   it("percent-encodes the ids it puts in a path", async () => {
     const { fetch: fetchImpl, seen } = recorder({ status: 200, body: [] });
     const api = createApi(fetchImpl);

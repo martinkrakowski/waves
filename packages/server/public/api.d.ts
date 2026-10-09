@@ -1,6 +1,7 @@
 import type {
   InboxView,
   DecisionView,
+  EventView,
 } from "../src/application/notice-read-model.js";
 import type {
   AttentionView,
@@ -66,6 +67,12 @@ export interface Api {
     projectId: string,
     decisionId: string,
   ): Promise<DecisionView | undefined>;
+  /**
+   * A project's notice events, newest first, at most 200. A 404 — an
+   * unregistered project — resolves to `undefined`, the same "no such project"
+   * the decisions route answers, so the page can tell it from a failed load.
+   */
+  fetchProjectEvents(projectId: string): Promise<EventView | undefined>;
 }
 
 export declare function createApi(fetchImpl: FetchLike): Api;
