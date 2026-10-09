@@ -175,7 +175,18 @@ describe("event", () => {
       script: [reply(409, '{"error":"the server has no events route"}')],
     });
     expect(await sendEvent(command(), built.deps)).toBe(1);
-    expect(built.err).toEqual(["the server has no events route"]);
+    expect(built.err).toEqual([
+      "waves event: the server has no events route; not recorded, ask in the terminal",
+    ]);
+    expect(built.out).toEqual([]);
+  });
+
+  it("refuses a 409 that carries no error", async () => {
+    const built = harnessFor({ script: [reply(409, "")] });
+    expect(await sendEvent(command(), built.deps)).toBe(1);
+    expect(built.err).toEqual([
+      "waves event: refused (409); not recorded, ask in the terminal",
+    ]);
     expect(built.out).toEqual([]);
   });
 

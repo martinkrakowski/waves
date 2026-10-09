@@ -10,7 +10,7 @@ import {
   reasonPhrase,
 } from "../domain/reply.js";
 import { decideRetry } from "../domain/retry.js";
-import { EXIT_OK, EXIT_USAGE, Failure } from "./errors.js";
+import { EXIT_FAILURE, EXIT_OK, EXIT_USAGE, Failure } from "./errors.js";
 import { openSession, readProjectToken, transportFor } from "./session.js";
 import type { UseCaseDeps } from "./ports.js";
 
@@ -92,8 +92,11 @@ export async function sendEvent(
       return EXIT_OK;
     }
     if (status === 409) {
-      deps.err(readServerError(body));
-      return 1;
+      const error = readServerError(body);
+      deps.err(
+        `${LABEL}: ${error || "refused (409)"}; not recorded, ask in the terminal`,
+      );
+      return EXIT_FAILURE;
     }
     if (status === 429) {
       const decision = decideRetry(

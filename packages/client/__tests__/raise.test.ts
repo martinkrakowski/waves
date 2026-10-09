@@ -137,17 +137,60 @@ describe("raise", () => {
     });
     const built = harnessFor({ stdin: foreign });
 
-    await expect(raise(command(), built.deps)).rejects.toThrow(
-      "project someone-else is not waves-demo",
-    );
+    expect(await raise(command(), built.deps)).toBe(2);
+    expect(built.err).toEqual([
+      "waves decision raise: project someone-else is not waves-demo",
+      "waves decision raise: not raised; fix the document, or ask in the terminal",
+    ]);
     expect(built.sent()).toBe(0);
   });
 
   it("refuses input that is not a JSON object", async () => {
     const built = harnessFor({ stdin: "[]" });
-    await expect(raise(command(), built.deps)).rejects.toThrow(
-      "the input is not a JSON object",
-    );
+    expect(await raise(command(), built.deps)).toBe(2);
+    expect(built.err).toEqual([
+      "waves decision raise: the input is not a JSON object",
+      "waves decision raise: not raised; fix the document, or ask in the terminal",
+    ]);
+    expect(built.sent()).toBe(0);
+  });
+
+  it("refuses a file it cannot read, and sends nothing", async () => {
+    const built = harnessFor({
+      stdin: "",
+      files: { [tokenPath]: { text: PROJECT_TOKEN, mode: 0o600 } },
+    });
+    expect(
+      await raise(
+        command({ kind: "file", path: "/no/such/file.json" }),
+        built.deps,
+      ),
+    ).toBe(2);
+    expect(built.err).toEqual([
+      "waves decision raise: cannot read /no/such/file.json",
+      "waves decision raise: not raised; fix the document, or ask in the terminal",
+    ]);
+    expect(built.sent()).toBe(0);
+  });
+
+  it("refuses a file that is not JSON, and sends nothing", async () => {
+    const built = harnessFor({
+      stdin: "",
+      files: {
+        [tokenPath]: { text: PROJECT_TOKEN, mode: 0o600 },
+        "/tmp/decision.json": { text: "not json", mode: 0o644 },
+      },
+    });
+    expect(
+      await raise(
+        command({ kind: "file", path: "/tmp/decision.json" }),
+        built.deps,
+      ),
+    ).toBe(2);
+    expect(built.err).toEqual([
+      "waves decision raise: the input is not valid JSON",
+      "waves decision raise: not raised; fix the document, or ask in the terminal",
+    ]);
     expect(built.sent()).toBe(0);
   });
 
@@ -179,7 +222,22 @@ describe("raise", () => {
     });
 
     expect(await raise(command(), built.deps)).toBe(1);
-    expect(built.err).toEqual(["too many decisions for this project"]);
+    expect(built.err).toEqual([
+      "waves decision raise: too many decisions for this project; not raised, ask in the terminal",
+    ]);
+    expect(built.out).toEqual([]);
+  });
+
+  it("fails with exit 1 on a 409 that carries no error", async () => {
+    const built = harnessFor({
+      script: [reply(409, "")],
+      stdin: MINIMAL_DECISION,
+    });
+
+    expect(await raise(command(), built.deps)).toBe(1);
+    expect(built.err).toEqual([
+      "waves decision raise: refused (409); not raised, ask in the terminal",
+    ]);
     expect(built.out).toEqual([]);
   });
 
@@ -189,7 +247,7 @@ describe("raise", () => {
       stdin: MINIMAL_DECISION,
     });
     await expect(raise(command(), built.deps)).rejects.toThrow(
-      "the server sent an unusable body",
+      "the server sent an unusable body; not raised, ask in the terminal",
     );
     expect(built.out).toEqual([]);
   });

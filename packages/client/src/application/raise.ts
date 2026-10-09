@@ -54,13 +54,27 @@ export async function raise(
     deps.files,
     deps.env,
   );
-  const input = await readJsonInput(command.source, deps);
+  let input: unknown;
+  try {
+    input = await readJsonInput(command.source, deps);
+  } catch (error) {
+    if (error instanceof UsageError) {
+      deps.err(`${LABEL}: ${error.message}`);
+      deps.err(
+        `${LABEL}: not raised; fix the document, or ask in the terminal`,
+      );
+      return EXIT_USAGE;
+    }
+    throw error;
+  }
   const completed = completeDecision(input, {
     project,
     now: deps.clock.now(),
   });
   if (!completed.ok) {
-    throw new UsageError(completed.reason);
+    deps.err(`${LABEL}: ${completed.reason}`);
+    deps.err(`${LABEL}: not raised; fix the document, or ask in the terminal`);
+    return EXIT_USAGE;
   }
   const validated = validateDecision(completed.document);
   if (!validated.ok) {
@@ -96,7 +110,9 @@ export async function raise(
     if (status === 200) {
       const reply = readRaiseReply(body);
       if (reply === undefined) {
-        throw new Failure("the server sent an unusable body");
+        throw new Failure(
+          "the server sent an unusable body; not raised, ask in the terminal",
+        );
       }
       deps.out(
         `raised ${project}/${document.id}: revision ${reply.revision} (${reply.created ? "new" : "unchanged"}), textSha256 ${reply.textSha256}, entries ${reply.entries}`,
@@ -104,7 +120,10 @@ export async function raise(
       return EXIT_OK;
     }
     if (status === 409) {
-      deps.err(readServerError(body));
+      const error = readServerError(body);
+      deps.err(
+        `${LABEL}: ${error || "refused (409)"}; not raised, ask in the terminal`,
+      );
       return EXIT_FAILURE;
     }
     if (status === 429) {
