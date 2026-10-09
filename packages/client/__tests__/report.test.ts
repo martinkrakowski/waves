@@ -97,11 +97,19 @@ describe("report", () => {
     expect(built.out).toEqual([]);
   });
 
-  it("refuses a 409 with an unusable body", async () => {
+  it("refuses a 409 with an unusable body with exit 5", async () => {
     const built = harnessFor({ script: [reply(409, "{}")] });
-    await expect(report(command(), built.deps)).rejects.toThrow(
-      "409; the server sent an unusable body",
-    );
+    expect(await report(command(), built.deps)).toBe(5);
+    expect(built.err).toEqual(["waves decision report: stale; read again"]);
+    expect(built.out).toEqual([]);
+    expect(built.sent()).toBe(1);
+  });
+
+  it("refuses a 409 with an empty body with exit 5", async () => {
+    const built = harnessFor({ script: [reply(409, "")] });
+    expect(await report(command(), built.deps)).toBe(5);
+    expect(built.err).toEqual(["waves decision report: stale; read again"]);
+    expect(built.out).toEqual([]);
     expect(built.sent()).toBe(1);
   });
 

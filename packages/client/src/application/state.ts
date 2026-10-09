@@ -101,7 +101,8 @@ export async function state(
     if (status === 409) {
       const stale = readStaleReply(body);
       if (stale === undefined) {
-        throw new Failure("409; the server sent an unusable body");
+        deps.err(`${LABEL}: stale; read again`);
+        return EXIT_STALE;
       }
       deps.err(
         `${LABEL}: stale; current revision ${stale.revision}, textSha256 ${stale.textSha256}, entries ${stale.entries}; read again`,
