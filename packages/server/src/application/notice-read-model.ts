@@ -193,10 +193,7 @@ function compareHeads(a: Head, b: Head): number {
 
 export interface NoticeReadModel {
   counts(project: string): Promise<NoticeCounts>;
-  decisions(
-    project: string,
-    options?: { readonly history?: boolean },
-  ): Promise<readonly Head[]>;
+  decisions(project: string): Promise<readonly Head[]>;
   getDecision(project: string, id: string): Promise<DecisionView | undefined>;
   events(project: string, limit: number): Promise<readonly StoredEvent[]>;
   inbox(): Promise<readonly InboxProject[]>;
@@ -222,10 +219,7 @@ export function createNoticeReadModel(
    * project). `from` carries the raising project; the head otherwise describes
    * the decision that raised it.
    */
-  async function decisionsOf(
-    project: string,
-    history: boolean,
-  ): Promise<Head[]> {
+  async function decisionsOf(project: string): Promise<Head[]> {
     const own = await noticeStore.listDecisions(project);
     const nowMs = now();
     const heads: Head[] = own.map((decision) => headOf(decision, nowMs));
@@ -244,9 +238,6 @@ export function createNoticeReadModel(
       }
     }
     heads.sort(compareHeads);
-    if (!history) {
-      return heads.filter((head) => head.group !== "history");
-    }
     return heads;
   }
 
@@ -257,8 +248,8 @@ export function createNoticeReadModel(
     for (const project of projects) {
       const own = await noticeStore.listDecisions(project.id);
       const counts = noticeCounts(own, nowMs);
-      const decisions = (await decisionsOf(project.id, false)).map(
-        (head) => head,
+      const decisions = (await decisionsOf(project.id)).filter(
+        (head) => head.group !== "history",
       );
       result.push({
         id: project.id,
@@ -275,8 +266,7 @@ export function createNoticeReadModel(
       const own = await noticeStore.listDecisions(project);
       return noticeCounts(own, now());
     },
-    decisions: (project, options) =>
-      decisionsOf(project, options?.history === true),
+    decisions: (project) => decisionsOf(project),
     async getDecision(project, id) {
       const decision = await noticeStore.getDecision(project, id);
       if (decision === undefined) {
