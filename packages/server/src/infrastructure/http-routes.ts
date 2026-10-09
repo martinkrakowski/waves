@@ -230,6 +230,7 @@ export function route(pathname: string, root: string): Route {
   }
   if (
     pathname === "/" ||
+    pathname === "/inbox" ||
     (parts.length === 3 && parts[1] === "p" && isProjectId(String(parts[2]))) ||
     (parts.length === 5 &&
       parts[1] === "p" &&
