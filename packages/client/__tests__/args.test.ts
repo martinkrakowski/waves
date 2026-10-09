@@ -953,3 +953,38 @@ describe("event", () => {
     ).toBe("--wave is not an event option");
   });
 });
+
+describe("decisions", () => {
+  it("reads an export, with and without --since", () => {
+    expect(commandOf(["decisions", "export"])).toEqual({
+      kind: "decisions",
+      action: "export",
+      since: null,
+    });
+    expect(commandOf(["decisions", "export", "--since", "2026-10-07"])).toEqual(
+      {
+        kind: "decisions",
+        action: "export",
+        since: "2026-10-07",
+      },
+    );
+  });
+
+  it("refuses a --since that is not a real date", () => {
+    expect(errorOf(["decisions", "export", "--since", "not-a-date"])).toBe(
+      "--since must be a date in YYYY-MM-DD form",
+    );
+    expect(errorOf(["decisions", "export", "--since", "2026-02-30"])).toBe(
+      "--since must be a real date",
+    );
+  });
+
+  it("wants the export sub-command and takes no others", () => {
+    expect(errorOf(["decisions"])).toBe(
+      "decisions takes a sub-command: export",
+    );
+    expect(errorOf(["decisions", "export", "extra"])).toBe(
+      "export takes no arguments",
+    );
+  });
+});

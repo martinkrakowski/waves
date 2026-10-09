@@ -8,6 +8,7 @@ import {
   UsageError,
 } from "./errors.js";
 import { sendEvent } from "./event.js";
+import { exportDecisions } from "./export.js";
 import { FileRefusal, type CliDeps, type UseCaseDeps } from "./ports.js";
 import { push } from "./push.js";
 import { readDecision } from "./read.js";
@@ -71,6 +72,9 @@ export async function run(
     }
     if (parsed.command.kind === "event") {
       return await sendEvent(parsed.command, useCase);
+    }
+    if (parsed.command.kind === "decisions") {
+      return await exportDecisions(parsed.command, useCase);
     }
     if (parsed.command.kind === "decision") {
       switch (parsed.command.action) {

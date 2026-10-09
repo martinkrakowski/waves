@@ -308,7 +308,7 @@ export function readStaleReply(body: string): StaleReply | undefined {
   return { revision, textSha256, entries };
 }
 
-function parseObject(body: string): Record<string, unknown> | undefined {
+export function parseObject(body: string): Record<string, unknown> | undefined {
   let parsed: unknown;
   try {
     parsed = JSON.parse(body);

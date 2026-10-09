@@ -127,6 +127,11 @@ export type Command =
       readonly topic: string;
       readonly text: string;
       readonly detail?: string;
+    }
+  | {
+      readonly kind: "decisions";
+      readonly action: "export";
+      readonly since: string | null;
     };
 
 export type ParseResult =
@@ -262,6 +267,8 @@ const DECISION_STATE_FLAGS: readonly string[] = [
   "--by",
 ];
 const EVENT_FLAGS: readonly string[] = ["--topic", "--text", "--detail"];
+const DECISIONS_EXPORT_FLAGS: readonly string[] = ["--since"];
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 const REPORT_STATES = ["approved", "declined", "answered"] as const;
 const STATE_STATES = ["delegated", "withdrawn", "superseded"] as const;
@@ -296,7 +303,8 @@ export function parseArgv(argv: readonly string[]): ParseResult {
     head !== "sync" &&
     head !== "delete" &&
     head !== "decision" &&
-    head !== "event"
+    head !== "event" &&
+    head !== "decisions"
   ) {
     return { ok: false, error: `unknown command ${head}` };
   }
@@ -325,7 +333,10 @@ export function parseArgv(argv: readonly string[]): ParseResult {
   if (head === "decision") {
     return readDecision(tokens);
   }
-  return readEvent(tokens);
+  if (head === "event") {
+    return readEvent(tokens);
+  }
+  return readDecisions(tokens);
 }
 
 function tokenize(argv: readonly string[]): Tokens | string {
@@ -827,6 +838,53 @@ function readEvent(tokens: Tokens): ParseResult {
   };
 }
 
+function readSince(
+  raw: string | undefined,
+): { ok: true; since: string | null } | { ok: false; error: string } {
+  if (raw === undefined) {
+    return { ok: true, since: null };
+  }
+  if (!DATE_PATTERN.test(raw)) {
+    return { ok: false, error: "--since must be a date in YYYY-MM-DD form" };
+  }
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) {
+    return { ok: false, error: "--since must be a real date" };
+  }
+  if (date.toISOString().slice(0, 10) !== raw) {
+    return { ok: false, error: "--since must be a real date" };
+  }
+  return { ok: true, since: raw };
+}
+
+function readDecisions(tokens: Tokens): ParseResult {
+  const unused = firstUnused(tokens, DECISIONS_EXPORT_FLAGS);
+  if (unused !== undefined) {
+    return { ok: false, error: `${unused} is not a decisions option` };
+  }
+  if (tokens.positionals.length === 0) {
+    return {
+      ok: false,
+      error: "decisions takes a sub-command: export",
+    };
+  }
+  const action = tokens.positionals[0];
+  if (action !== "export") {
+    return { ok: false, error: `unknown decisions sub-command ${action}` };
+  }
+  if (tokens.positionals.length !== 1) {
+    return { ok: false, error: "export takes no arguments" };
+  }
+  const since = readSince(tokens.values.get("--since"));
+  if (!since.ok) {
+    return { ok: false, error: since.error };
+  }
+  return {
+    ok: true,
+    command: { kind: "decisions", action: "export", since: since.since },
+  };
+}
+
 export function commandName(command: Command): string {
   switch (command.kind) {
     case "help":
@@ -847,5 +905,7 @@ export function commandName(command: Command): string {
       return `${WAVES} decision ${command.action}`;
     case "event":
       return `${WAVES} event`;
+    case "decisions":
+      return `${WAVES} decisions ${command.action}`;
   }
 }
