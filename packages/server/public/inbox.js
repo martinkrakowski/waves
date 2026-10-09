@@ -124,7 +124,7 @@ export const GROUP_STATES = {
   closed: ["withdrawn", "superseded"],
 };
 
-function head(entry) {
+export function head(entry, groups = GROUPS, groupStates = GROUP_STATES) {
   return (
     entry !== null &&
     typeof entry === "object" &&
@@ -143,9 +143,9 @@ function head(entry) {
     oneOf(entry.state, STATES) &&
     (entry.source === undefined || oneOf(entry.source, SOURCES)) &&
     time(entry.at) &&
-    oneOf(entry.group, GROUPS) &&
+    oneOf(entry.group, groups) &&
     (entry.group !== "reported" || entry.source === "reported") &&
-    GROUP_STATES[entry.group].includes(entry.state) &&
+    groupStates[entry.group].includes(entry.state) &&
     actElsewhere(entry.actElsewhere) &&
     (entry.earlierAnswer === undefined || answer(entry.earlierAnswer)) &&
     (entry.coveredAnswer === undefined || answer(entry.coveredAnswer)) &&
@@ -174,7 +174,7 @@ function inboxProjectEntry(entry) {
     count(entry.counts.closed) &&
     entry.counts.oneWay <= entry.counts.waiting &&
     Array.isArray(entry.decisions) &&
-    entry.decisions.every(head)
+    entry.decisions.every((entry) => head(entry))
   );
 }
 

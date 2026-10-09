@@ -15,6 +15,7 @@ import type {
   InboxProject,
   InboxView,
   NoticeCounts,
+  ProjectInboxView,
   DecisionView,
 } from "../../src/application/notice-read-model.js";
 import type {
@@ -292,6 +293,22 @@ export function inboxProject(
 export function inboxView(overrides: Partial<InboxView> = {}): InboxView {
   return {
     projects: [],
+    ...overrides,
+  };
+}
+
+/** The whole one-project inbox, empty until a test fills it. */
+export function projectInboxView(
+  overrides: Partial<ProjectInboxView> = {},
+): ProjectInboxView {
+  return {
+    project: {
+      id: "alpha",
+      name: "Alpha",
+      repo: "https://git.example.test/alpha",
+    },
+    counts: inboxCounts(),
+    decisions: [],
     ...overrides,
   };
 }

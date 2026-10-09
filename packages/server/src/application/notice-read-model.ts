@@ -93,6 +93,19 @@ export interface InboxView {
   readonly projects: readonly InboxProject[];
 }
 
+/**
+ * The answer `GET /api/v1/projects/<project>/decisions` gives: one project —
+ * its id, name and optional repo — its own four counts, and the heads set on
+ * it. The heads are the project's own decisions in all four groups (including
+ * `history`, which the project page counts rather than draws as a card) plus
+ * the standing instructions other projects raised against it, marked `from`.
+ */
+export interface ProjectInboxView {
+  readonly project: Pick<Project, "id" | "name" | "repo">;
+  readonly counts: NoticeCounts;
+  readonly decisions: readonly Head[];
+}
+
 const GROUP_ORDER: Readonly<Record<DecisionGroup, number>> = {
   waiting: 0,
   reported: 1,
