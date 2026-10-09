@@ -145,6 +145,9 @@ async function replyFor(
       return view === undefined ? NOT_FOUND : jsonReply(200, view);
     }
     case "decision": {
+      if ((await store.getProject(matched.project)) === undefined) {
+        return NOT_FOUND;
+      }
       const view = await noticeReadModel.getDecision(
         matched.project,
         matched.id,

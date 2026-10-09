@@ -17,7 +17,11 @@ import {
   startHarness,
   type Started,
 } from "./http-harness.js";
-import { decisionRevision, stateEntryRequest } from "./notice-contract.js";
+import {
+  decisionRevision,
+  stateEntryRequest,
+  storedRevision,
+} from "./notice-contract.js";
 
 const PROJECT_TOKEN = "project-token-0123456789abcdefghijklmnopq";
 const OTHER_TOKEN = "other-token-0123456789abcdefghijklmnopqr";
@@ -528,5 +532,14 @@ describe("unknown project reads", () => {
     ]) {
       expect((await fetch(`${started.origin}${path}`)).status).toBe(404);
     }
+  });
+
+  it("serves 404 for a decision file planted under an unregistered project", async () => {
+    const { started, store } = await wired();
+    await store.appendRevision("absent", "d1", storedRevision(1, "d1"), 0, 3);
+    const res = await fetch(
+      `${started.origin}/api/v1/projects/absent/decisions/d1`,
+    );
+    expect(res.status).toBe(404);
   });
 });
