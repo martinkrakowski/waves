@@ -58,7 +58,10 @@ export function readHeads(body: string): readonly HeadInfo[] | undefined {
     }
     const head = readHead(value);
     if (head === undefined) {
-      continue;
+      // A member that is not one of this project's heads is not something the
+      // body the server sent could mean for this project: the response is
+      // unusable, never half-parsed.
+      return undefined;
     }
     // An id that is not a lane id is not a safe path segment: `..` would survive
     // encodeURIComponent and be normalised away, so the response is unusable.

@@ -35,7 +35,7 @@ describe("readHeads", () => {
     expect(heads?.[0]?.id).toBe("d1");
   });
 
-  it("skips heads with the wrong field types", () => {
+  it("refuses a list with a member that is not a valid head", () => {
     const bodies = JSON.stringify({
       decisions: [
         { id: "d1", question: "q", state: 7, revision: 1, textSha256: "a" },
@@ -48,9 +48,9 @@ describe("readHeads", () => {
         },
       ],
     });
-    const heads = readHeads(bodies);
-    expect(heads).toHaveLength(1);
-    expect(heads?.[0]?.id).toBe("d2");
+    // A member that is not a valid head is not skipped: the whole response is
+    // unusable, so a usable head next to it is still refused.
+    expect(readHeads(bodies)).toBeUndefined();
   });
 
   it("returns undefined for a body that is not the list", () => {
