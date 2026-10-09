@@ -17,14 +17,14 @@ import { el, internalLink, stamp, text } from "../dom.js";
 const HEADING = "Inbox";
 
 /** The line at the foot of the page, saying what the page is for. */
-const FOOTER =
+export const FOOTER =
   "This page shows decisions; it does not take answers. A session's own permission prompt can only be cleared in that session.";
 
 /** What a project with no decisions in it is said in one line. */
 const EMPTY = "nothing waiting";
 
 /** The three group headings, in the order the page draws them. */
-const GROUP_HEAD = {
+export const GROUP_HEAD = {
   waiting: "Waiting on you",
   reported: "Reported as answered",
   closed: "Closed by a session",
@@ -181,7 +181,7 @@ export function earlierAnswerNode(head) {
  * the facts, the state line, then the four optional notes — earlier answer,
  * act-elsewhere, the `from` instruction, and the id line at the bottom.
  */
-function card(head, nowMs) {
+export function card(head, nowMs) {
   const children = [];
   const band = doorBand(head);
   if (band !== undefined) {
@@ -231,7 +231,7 @@ function card(head, nowMs) {
  * and a reader looking for "Reported as answered" and finding it absent knows
  * that none was reported.
  */
-function groupBlock(label, cls, heads, nowMs) {
+export function groupBlock(label, cls, heads, nowMs) {
   if (heads.length === 0) {
     return undefined;
   }
