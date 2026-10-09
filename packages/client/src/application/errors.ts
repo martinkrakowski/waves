@@ -1,6 +1,11 @@
 export const EXIT_OK = 0;
 export const EXIT_FAILURE = 1;
 export const EXIT_USAGE = 2;
+/**
+ * A `409` on a state write: the pin is stale, the entry the writer read has moved
+ * on, and the writer must read the decision again before writing again.
+ */
+export const EXIT_STALE = 5;
 
 /**
  * The command line or the configuration is wrong: nothing was sent, and

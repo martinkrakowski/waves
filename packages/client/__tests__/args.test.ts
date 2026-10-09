@@ -533,6 +533,8 @@ describe("options", () => {
 });
 
 describe("decision", () => {
+  const SHA = "a".repeat(64);
+
   it("reads a raise from a file or from stdin", () => {
     expect(commandOf(["decision", "raise", "--file", "decision.json"])).toEqual(
       {
@@ -560,6 +562,230 @@ describe("decision", () => {
       action: "read",
       id: "d1",
     });
+  });
+
+  it("reads a report with its required flags", () => {
+    expect(
+      commandOf([
+        "decision",
+        "report",
+        "d1",
+        "--state",
+        "approved",
+        "--words",
+        "go with B",
+        "--revision",
+        "1",
+        "--text-sha256",
+        SHA,
+        "--entries",
+        "0",
+      ]),
+    ).toEqual({
+      kind: "decision",
+      action: "report",
+      id: "d1",
+      state: "approved",
+      words: "go with B",
+      revision: 1,
+      textSha256: SHA,
+      entries: 0,
+    });
+  });
+
+  it("reads the optional flags of a report", () => {
+    expect(
+      commandOf([
+        "decision",
+        "report",
+        "d1",
+        "--state",
+        "declined",
+        "--words",
+        "no",
+        "--revision",
+        "2",
+        "--text-sha256",
+        SHA,
+        "--entries",
+        "3",
+        "--option",
+        "b",
+        "--by",
+        "the session",
+      ]),
+    ).toEqual({
+      kind: "decision",
+      action: "report",
+      id: "d1",
+      state: "declined",
+      words: "no",
+      revision: 2,
+      textSha256: SHA,
+      entries: 3,
+      option: "b",
+      by: "the session",
+    });
+  });
+
+  it("refuses a report that is missing a required flag", () => {
+    expect(errorOf(["decision", "report", "d1"])).toBe("give --state");
+    expect(errorOf(["decision", "report", "d1", "--state", "approved"])).toBe(
+      "give --words",
+    );
+    expect(
+      errorOf([
+        "decision",
+        "report",
+        "d1",
+        "--state",
+        "approved",
+        "--words",
+        "yes",
+      ]),
+    ).toBe("give --revision");
+    expect(
+      errorOf([
+        "decision",
+        "report",
+        "d1",
+        "--state",
+        "approved",
+        "--words",
+        "yes",
+        "--revision",
+        "1",
+      ]),
+    ).toBe("give --text-sha256");
+    expect(
+      errorOf([
+        "decision",
+        "report",
+        "d1",
+        "--state",
+        "approved",
+        "--words",
+        "yes",
+        "--revision",
+        "1",
+        "--text-sha256",
+        SHA,
+      ]),
+    ).toBe("give --entries");
+  });
+
+  it("refuses a non-integer revision or entries", () => {
+    expect(
+      errorOf([
+        "decision",
+        "report",
+        "d1",
+        "--state",
+        "approved",
+        "--words",
+        "yes",
+        "--revision",
+        "abc",
+        "--text-sha256",
+        SHA,
+        "--entries",
+        "0",
+      ]),
+    ).toBe("--revision must be an integer");
+    expect(
+      errorOf([
+        "decision",
+        "report",
+        "d1",
+        "--state",
+        "approved",
+        "--words",
+        "yes",
+        "--revision",
+        "1",
+        "--text-sha256",
+        SHA,
+        "--entries",
+        "abc",
+      ]),
+    ).toBe("--entries must be an integer");
+  });
+
+  it("refuses a --state outside the three", () => {
+    expect(
+      errorOf([
+        "decision",
+        "report",
+        "d1",
+        "--state",
+        "open",
+        "--words",
+        "yes",
+        "--revision",
+        "1",
+        "--text-sha256",
+        SHA,
+        "--entries",
+        "0",
+      ]),
+    ).toBe("--state must be one of approved, declined, answered");
+  });
+
+  it("wants an id for report", () => {
+    expect(
+      errorOf([
+        "decision",
+        "report",
+        "--state",
+        "approved",
+        "--words",
+        "yes",
+        "--revision",
+        "1",
+        "--text-sha256",
+        SHA,
+        "--entries",
+        "0",
+      ]),
+    ).toBe("report takes exactly one id");
+    expect(
+      errorOf([
+        "decision",
+        "report",
+        "d1",
+        "extra",
+        "--state",
+        "approved",
+        "--words",
+        "yes",
+        "--revision",
+        "1",
+        "--text-sha256",
+        SHA,
+        "--entries",
+        "0",
+      ]),
+    ).toBe("report takes exactly one id");
+    // --wave is a recognised flag, just not one report takes.
+    expect(
+      errorOf([
+        "decision",
+        "report",
+        "d1",
+        "--wave",
+        "wv5",
+        "--state",
+        "approved",
+        "--words",
+        "yes",
+        "--revision",
+        "1",
+        "--text-sha256",
+        SHA,
+        "--entries",
+        "0",
+      ]),
+    ).toBe("--wave is not a decision option");
   });
 
   it("wants a source and a sub-command", () => {

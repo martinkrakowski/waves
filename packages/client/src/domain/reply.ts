@@ -254,6 +254,50 @@ export function labelIssueLines(
   });
 }
 
+/** The `index` a state entry 201 answers with, or `undefined` when absent. */
+export function readStateEntryIndex(body: string): number | undefined {
+  const parsed = parseObject(body);
+  if (parsed === undefined) {
+    return undefined;
+  }
+  const index = own(parsed, "index");
+  return typeof index === "number" && Number.isInteger(index)
+    ? index
+    : undefined;
+}
+
+/** The current revision, hash and entry count the server sends on a 409. */
+export interface StaleReply {
+  readonly revision: number;
+  readonly textSha256: string;
+  readonly entries: number;
+}
+
+/**
+ * Reads the 409 body a state write gets when its pin moved before the request:
+ * the current `revision`, `textSha256` and `entries`, so the writer knows what to
+ * read again. `undefined` when the body is not one, which is a failure to read.
+ */
+export function readStaleReply(body: string): StaleReply | undefined {
+  const parsed = parseObject(body);
+  if (parsed === undefined) {
+    return undefined;
+  }
+  const revision = own(parsed, "revision");
+  const textSha256 = own(parsed, "textSha256");
+  const entries = own(parsed, "entries");
+  if (
+    typeof revision !== "number" ||
+    !Number.isInteger(revision) ||
+    typeof textSha256 !== "string" ||
+    typeof entries !== "number" ||
+    !Number.isInteger(entries)
+  ) {
+    return undefined;
+  }
+  return { revision, textSha256, entries };
+}
+
 function parseObject(body: string): Record<string, unknown> | undefined {
   let parsed: unknown;
   try {

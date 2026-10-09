@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { validateDecision } from "@hexagen-monaco/waves-contract";
+import {
+  validateDecision,
+  validateStateEntry,
+} from "@hexagen-monaco/waves-contract";
 
-import { completeDecision } from "../src/domain/decision-document.js";
+import {
+  buildStateEntry,
+  completeDecision,
+} from "../src/domain/decision-document.js";
 import { GENERATED_AT, NOW, PROJECT } from "./support/harness.js";
 
 const context = { project: PROJECT, now: NOW };
@@ -89,5 +95,82 @@ describe("completeDecision", () => {
     if (result.ok) {
       expect(validateDecision(result.document).ok).toBe(true);
     }
+  });
+});
+
+describe("buildStateEntry", () => {
+  it("fills in by and at from the session, with the given source", () => {
+    const entry = buildStateEntry(
+      {
+        state: "approved",
+        source: "reported",
+        revision: 1,
+        textSha256: "a".repeat(64),
+        expectedEntries: 0,
+        by: undefined,
+        words: "yes",
+        option: undefined,
+        reason: undefined,
+        supersededBy: undefined,
+      },
+      { project: PROJECT, now: NOW },
+    );
+
+    expect(entry).toEqual({
+      state: "approved",
+      source: "reported",
+      revision: 1,
+      textSha256: "a".repeat(64),
+      expectedEntries: 0,
+      by: `${PROJECT} session`,
+      at: GENERATED_AT,
+      words: "yes",
+      option: undefined,
+      reason: undefined,
+      supersededBy: undefined,
+    });
+  });
+
+  it("keeps a given by, and every optional field it was given", () => {
+    const entry = buildStateEntry(
+      {
+        state: "withdrawn",
+        source: "session",
+        revision: 2,
+        textSha256: "b".repeat(64),
+        expectedEntries: 1,
+        by: "deploy session",
+        words: undefined,
+        option: "a",
+        reason: "fixed another way",
+        supersededBy: undefined,
+      },
+      { project: PROJECT, now: NOW },
+    );
+
+    expect(entry.by).toBe("deploy session");
+    expect(entry.option).toBe("a");
+    expect(entry.reason).toBe("fixed another way");
+    expect(entry.words).toBeUndefined();
+    expect(entry.supersededBy).toBeUndefined();
+  });
+
+  it("produces an entry the contract accepts", () => {
+    const entry = buildStateEntry(
+      {
+        state: "approved",
+        source: "reported",
+        revision: 1,
+        textSha256: "a".repeat(64),
+        expectedEntries: 0,
+        by: undefined,
+        words: "yes",
+        option: "a",
+        reason: undefined,
+        supersededBy: undefined,
+      },
+      { project: PROJECT, now: NOW },
+    );
+    expect(validateStateEntry(entry).ok).toBe(true);
   });
 });

@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   MAX_SERVER_TEXT,
-  issueLines,
   labelIssueLines,
+  issueLines,
   readIssues,
   readRaiseReply,
   readReceivedAt,
   readServerError,
+  readStateEntryIndex,
+  readStaleReply,
   readToken,
   reasonPhrase,
   safeText,
@@ -297,5 +299,45 @@ describe("labelIssueLines", () => {
       "waves decision raise: /schema: expected waves-notice/v1",
       "waves decision raise: /: root problem",
     ]);
+  });
+});
+
+describe("readStateEntryIndex", () => {
+  it("reads the index a 201 answers with", () => {
+    expect(readStateEntryIndex('{"index":3}')).toBe(3);
+  });
+
+  it("refuses anything that is not an integer index", () => {
+    expect(readStateEntryIndex("not json")).toBeUndefined();
+    expect(readStateEntryIndex("[1]")).toBeUndefined();
+    expect(readStateEntryIndex("{}")).toBeUndefined();
+    expect(readStateEntryIndex('{"index":"x"}')).toBeUndefined();
+    expect(readStateEntryIndex('{"index":1.5}')).toBeUndefined();
+  });
+});
+
+describe("readStaleReply", () => {
+  it("reads the current revision, hash and entry count of a 409", () => {
+    expect(
+      readStaleReply('{"revision":2,"textSha256":"abc","entries":3}'),
+    ).toEqual({ revision: 2, textSha256: "abc", entries: 3 });
+  });
+
+  it("refuses a body with the wrong field types", () => {
+    expect(
+      readStaleReply('{"revision":"x","textSha256":"abc","entries":3}'),
+    ).toBeUndefined();
+    expect(
+      readStaleReply('{"revision":2,"textSha256":"abc","entries":"x"}'),
+    ).toBeUndefined();
+    expect(
+      readStaleReply('{"revision":2.5,"textSha256":"abc","entries":3}'),
+    ).toBeUndefined();
+  });
+
+  it("refuses a body that is not an object", () => {
+    expect(readStaleReply("not json")).toBeUndefined();
+    expect(readStaleReply("[1,2]")).toBeUndefined();
+    expect(readStaleReply('{"revision":2}')).toBeUndefined();
   });
 });

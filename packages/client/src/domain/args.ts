@@ -90,7 +90,24 @@ export type Command =
       readonly action: "raise";
       readonly source: InputSource;
     }
-  | { readonly kind: "decision"; readonly action: "read"; readonly id: string };
+  | { readonly kind: "decision"; readonly action: "read"; readonly id: string }
+  | {
+      readonly kind: "decision";
+      readonly action: "report";
+      readonly id: string;
+      readonly state: string;
+      readonly words: string;
+      readonly revision: number;
+      readonly textSha256: string;
+      readonly entries: number;
+      readonly option?: string;
+      readonly by?: string;
+    }
+  | {
+      readonly kind: "decision";
+      readonly action: "raise";
+      readonly source: InputSource;
+    };
 
 export type ParseResult =
   | { readonly ok: true; readonly command: Command }
@@ -154,6 +171,18 @@ const VALUE_FLAGS = [
   "--wave",
   "--file",
   "--interval",
+  "--state",
+  "--words",
+  "--revision",
+  "--text-sha256",
+  "--entries",
+  "--option",
+  "--by",
+  "--reason",
+  "--superseded-by",
+  "--since",
+  "--topic",
+  "--detail",
 ] as const;
 
 const SWITCH_FLAGS = [
@@ -191,6 +220,18 @@ const SYNC_FLAGS: readonly string[] = [CHECK];
 
 const DECISION_RAISE_FLAGS: readonly string[] = ["--file", "--stdin"];
 const DECISION_READ_FLAGS: readonly string[] = [];
+const DECISION_REPORT_FLAGS: readonly string[] = [
+  "--state",
+  "--words",
+  "--revision",
+  "--text-sha256",
+  "--entries",
+  "--option",
+  "--by",
+];
+
+const REPORT_STATES = ["approved", "declined", "answered"] as const;
+const FLAG_INTEGER = /^\d+$/;
 
 const MIN_INTERVAL_SECONDS = 1;
 const MAX_INTERVAL_SECONDS = 300;
@@ -564,6 +605,9 @@ function readDecision(tokens: Tokens): ParseResult {
   if (action === "read") {
     return readDecisionRead(tokens);
   }
+  if (action === "report") {
+    return readDecisionReport(tokens);
+  }
   return { ok: false, error: `unknown decision sub-command ${action}` };
 }
 
@@ -595,6 +639,69 @@ function readDecisionRead(tokens: Tokens): ParseResult {
     ok: true,
     command: { kind: "decision", action: "read", id },
   };
+}
+
+function readDecisionReport(tokens: Tokens): ParseResult {
+  const unused = firstUnused(tokens, DECISION_REPORT_FLAGS);
+  if (unused !== undefined) {
+    return { ok: false, error: `${unused} is not a decision option` };
+  }
+  const id = tokens.positionals[1];
+  if (id === undefined || tokens.positionals.length !== 2) {
+    return { ok: false, error: "report takes exactly one id" };
+  }
+  const state = tokens.values.get("--state");
+  if (state === undefined) {
+    return { ok: false, error: "give --state" };
+  }
+  if (!(REPORT_STATES as readonly string[]).includes(state)) {
+    return {
+      ok: false,
+      error: `--state must be one of ${REPORT_STATES.join(", ")}`,
+    };
+  }
+  const words = tokens.values.get("--words");
+  if (words === undefined) {
+    return { ok: false, error: "give --words" };
+  }
+  const revision = readIntegerFlag(tokens, "--revision");
+  if (typeof revision === "string") {
+    return { ok: false, error: revision };
+  }
+  const textSha256 = tokens.values.get("--text-sha256");
+  if (textSha256 === undefined) {
+    return { ok: false, error: "give --text-sha256" };
+  }
+  const entries = readIntegerFlag(tokens, "--entries");
+  if (typeof entries === "string") {
+    return { ok: false, error: entries };
+  }
+  return {
+    ok: true,
+    command: {
+      kind: "decision",
+      action: "report",
+      id,
+      state,
+      words,
+      revision,
+      textSha256,
+      entries,
+      option: tokens.values.get("--option"),
+      by: tokens.values.get("--by"),
+    },
+  };
+}
+
+function readIntegerFlag(tokens: Tokens, flag: string): number | string {
+  const raw = tokens.values.get(flag);
+  if (raw === undefined) {
+    return `give ${flag}`;
+  }
+  if (!FLAG_INTEGER.test(raw)) {
+    return `${flag} must be an integer`;
+  }
+  return Number(raw);
 }
 
 export function commandName(command: Command): string {

@@ -12,6 +12,30 @@ export interface DecisionContext {
   readonly now: number;
 }
 
+/**
+ * What `buildStateEntry` needs from the command line and the session: the
+ * decision's id is in the URL, the project is the session's, and `now` is the
+ * client's clock.
+ */
+export interface StateEntryContext {
+  readonly project: string;
+  readonly now: number;
+}
+
+/** The flags the user gave for a state entry, all of them parsed to types. */
+export interface StateEntryInput {
+  readonly state: string;
+  readonly source: "reported" | "session";
+  readonly revision: number;
+  readonly textSha256: string;
+  readonly expectedEntries: number;
+  readonly by: string | undefined;
+  readonly words: string | undefined;
+  readonly option: string | undefined;
+  readonly reason: string | undefined;
+  readonly supersededBy: string | undefined;
+}
+
 export type CompleteDecisionResult =
   | { readonly ok: true; readonly document: Record<string, unknown> }
   | { readonly ok: false; readonly reason: string };
@@ -54,6 +78,34 @@ export function completeDecision(
   fillIfAbsent(document, "evidence", []);
   fillIfAbsent(document, "options", []);
   return { ok: true, document };
+}
+
+/**
+ * Builds a state entry from the flags a `report` or `state` command parsed and
+ * the session's own values. `by` defaults to `<project> session`, `at` to the
+ * client's clock in the contract's form, and `source` is fixed by the command.
+ * Every optional key is always present on the result, carried as `undefined` when
+ * the user did not give it — which `JSON.stringify` drops and `validateStateEntry`
+ * reads as "absent", so neither the wire nor the validator ever sees a key that
+ * was not really given.
+ */
+export function buildStateEntry(
+  input: StateEntryInput,
+  context: StateEntryContext,
+): Record<string, unknown> {
+  return {
+    state: input.state,
+    source: input.source,
+    revision: input.revision,
+    textSha256: input.textSha256,
+    expectedEntries: input.expectedEntries,
+    by: input.by ?? `${context.project} session`,
+    at: formatTimestamp(context.now),
+    words: input.words,
+    option: input.option,
+    reason: input.reason,
+    supersededBy: input.supersededBy,
+  };
 }
 
 /**
