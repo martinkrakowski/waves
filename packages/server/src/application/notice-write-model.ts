@@ -262,6 +262,7 @@ export function createNoticeWriteModel(deps: NoticeWriteModelDeps) {
         id,
         storedEntry,
         expectedEntries,
+        revisions.length,
       );
       if (outcome === "missing") {
         return { kind: "notFound" };

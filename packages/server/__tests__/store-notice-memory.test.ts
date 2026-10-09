@@ -24,7 +24,7 @@ describe("MemoryStore notice methods", () => {
 
   it("answers missing when the project has no decision on appendEntry", async () => {
     const s = store();
-    expect(await s.appendEntry(PROJECT, "d1", storedEntry(0), 0)).toBe(
+    expect(await s.appendEntry(PROJECT, "d1", storedEntry(0), 0, 1)).toBe(
       "missing",
     );
   });
@@ -32,7 +32,7 @@ describe("MemoryStore notice methods", () => {
   it("answers missing when the decision is absent on appendEntry", async () => {
     const s = store();
     await s.appendRevision(PROJECT, "other", storedRevision(1), 0, 3);
-    expect(await s.appendEntry(PROJECT, "d1", storedEntry(0), 0)).toBe(
+    expect(await s.appendEntry(PROJECT, "d1", storedEntry(0), 0, 1)).toBe(
       "missing",
     );
   });
@@ -41,6 +41,14 @@ describe("MemoryStore notice methods", () => {
     const s = store();
     await s.appendRevision(PROJECT, "d1", storedRevision(1), 0, 3);
     expect(await s.appendRevision(PROJECT, "d1", storedRevision(2), 5, 3)).toBe(
+      "conflict",
+    );
+  });
+
+  it("answers conflict when the revision count is stale on appendEntry", async () => {
+    const s = store();
+    await s.appendRevision(PROJECT, "d1", storedRevision(1), 0, 3);
+    expect(await s.appendEntry(PROJECT, "d1", storedEntry(0), 0, 5)).toBe(
       "conflict",
     );
   });

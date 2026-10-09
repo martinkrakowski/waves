@@ -32,7 +32,7 @@ describe("the notice read model", () => {
   it("counts a decision whose answer has aged out in no group", async () => {
     const { store, model } = await harness();
     await store.appendRevision("alpha", "old", storedRevision(1), 0, 10);
-    await store.appendEntry("alpha", "old", storedEntry(0, {}, OLD), 0);
+    await store.appendEntry("alpha", "old", storedEntry(0, {}, OLD), 0, 1);
     await store.appendRevision("alpha", "new", storedRevision(1), 0, 10);
 
     expect(await model.counts("alpha")).toEqual({
@@ -56,6 +56,7 @@ describe("the notice read model", () => {
       "d1",
       storedEntry(0, { words: undefined, option: "a" }, RECENT),
       0,
+      1,
     );
     await store.appendEntry(
       "alpha",
@@ -70,6 +71,7 @@ describe("the notice read model", () => {
         },
         RECENT,
       ),
+      1,
       1,
     );
 
