@@ -309,37 +309,37 @@ export function readStaleReply(body: string): StaleReply | undefined {
 }
 
 /**
-   * The body of a `GET .../decisions/<id>`: an object holding the head's `id`,
-   * plus `revisions` and `entries` arrays the caller prints verbatim. `undefined`
-   * when the body is not one — a body read.ts cannot trust to name the decision,
-   * it refuses rather than echo. The matched `id` is the one the request named.
-   *
-   * The parsed record is re-encoded with `JSON.stringify` so what is printed is
-   * always one line of JSON, whatever shape the server sent the body in: a
-   * pretty-printed record prints many lines otherwise.
-   */
-  export function readDecisionRecord(
-    body: string,
-    id: string,
-  ): string | undefined {
-    const parsed = parseObject(body);
-    if (parsed === undefined) {
-      return undefined;
-    }
-    const head = own(parsed, "head");
-    if (!isRecord(head)) {
-      return undefined;
-    }
-    if (own(head, "id") !== id) {
-      return undefined;
-    }
-    const revisions = own(parsed, "revisions");
-    const entries = own(parsed, "entries");
-    if (!Array.isArray(revisions) || !Array.isArray(entries)) {
-      return undefined;
-    }
-    return JSON.stringify(parsed);
+ * The body of a `GET .../decisions/<id>`: an object holding the head's `id`,
+ * plus `revisions` and `entries` arrays the caller prints verbatim. `undefined`
+ * when the body is not one — a body read.ts cannot trust to name the decision,
+ * it refuses rather than echo. The matched `id` is the one the request named.
+ *
+ * The parsed record is re-encoded with `JSON.stringify` so what is printed is
+ * always one line of JSON, whatever shape the server sent the body in: a
+ * pretty-printed record prints many lines otherwise.
+ */
+export function readDecisionRecord(
+  body: string,
+  id: string,
+): string | undefined {
+  const parsed = parseObject(body);
+  if (parsed === undefined) {
+    return undefined;
   }
+  const head = own(parsed, "head");
+  if (!isRecord(head)) {
+    return undefined;
+  }
+  if (own(head, "id") !== id) {
+    return undefined;
+  }
+  const revisions = own(parsed, "revisions");
+  const entries = own(parsed, "entries");
+  if (!Array.isArray(revisions) || !Array.isArray(entries)) {
+    return undefined;
+  }
+  return JSON.stringify(parsed);
+}
 
 export function parseObject(body: string): Record<string, unknown> | undefined {
   let parsed: unknown;

@@ -68,21 +68,19 @@ describe("read", () => {
   });
 
   it("says the record was read, not that it was answered", async () => {
-    const built = harness({
-      script: [
-        reply(
-          200,
-          JSON.stringify({
-            head: { id: "d1", state: "approved", source: "reported" },
-            revisions: [],
-            entries: [{ state: "approved", words: "yes" }],
-          }),
-        ),
-      ],
+    const body = JSON.stringify({
+      head: { id: "d1", state: "approved", source: "reported" },
+      revisions: [],
+      entries: [{ state: "approved", words: "yes" }],
     });
+    const built = harness({ script: [reply(200, body)] });
 
     expect(await readDecision(command(), built.deps)).toBe(0);
-    // Exit 0 means the record was read; it says nothing about the answer.
+    // Exit 0 means the record was read; it prints the record verbatim as one
+    // line of JSON and nothing that claims the owner answered.
+    expect(built.out).toEqual([body]);
+    expect(built.out[0]).not.toContain("\n");
+    expect(built.err).toEqual([]);
   });
 
   it("refuses a 200 body that is HTML", async () => {

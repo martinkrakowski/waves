@@ -341,7 +341,9 @@ describe("decisions export", () => {
       },
       entries: [],
     });
-    const built = harnessFor({ script: [reply(200, heads), reply(200, empty)] });
+    const built = harnessFor({
+      script: [reply(200, heads), reply(200, empty)],
+    });
     await expect(exportDecisions(command(), built.deps)).rejects.toThrow(
       "the server sent an unusable body",
     );

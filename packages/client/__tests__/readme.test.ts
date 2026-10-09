@@ -60,6 +60,45 @@ function harnessFor(input = {}) {
   });
 }
 
+interface FenceBlock {
+  readonly language: string;
+  readonly lines: readonly string[];
+}
+
+/** Every ```-fenced block in the markdown, as its (optional) language and lines. */
+function fencedBlocks(markdown: string): readonly FenceBlock[] {
+  const lines = markdown.split("\n");
+  const blocks: FenceBlock[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const opened = lines[i]?.match(/^```(.*)$/);
+    if (opened === null || opened === undefined) {
+      continue;
+    }
+    const language = opened[1] ?? "";
+    const content: string[] = [];
+    i += 1;
+    for (; i < lines.length; i += 1) {
+      const next = lines[i];
+      if (next === undefined || next === "```") {
+        break;
+      }
+      content.push(next);
+    }
+    blocks.push({ language, lines: content });
+  }
+  return blocks;
+}
+
+/** The lines of the one plain fenced block that mentions the raise label. */
+function readmeRefusalLines(readme: string): readonly string[] {
+  const block = fencedBlocks(readme).find(
+    (b) =>
+      b.language === "" && b.lines.some((line) => line.startsWith("waves ")),
+  );
+  expect(block).toBeDefined();
+  return block!.lines;
+}
+
 describe("README documents validate after completion", () => {
   it("parses every fenced JSON block, completes and validates them", () => {
     const readme = readFileSync(README, "utf-8");
@@ -108,17 +147,11 @@ describe("README refusal equals what the client prints", () => {
 
     expect(exitCode).toBe(2);
     expect(built.sent()).toBe(0);
+    expect(built.out).toEqual([]);
 
-    // The README must contain exactly these lines.
-    expect(readme).toContain(
-      "waves decision raise: /hardToUndo/reason: expected a reason",
-    );
-    expect(readme).toContain(
-      "waves decision raise: /options: expected at least 2 options for a choice",
-    );
-    expect(readme).toContain(
-      "waves decision raise: not raised; fix the document, or ask in the terminal",
-    );
+    // The README's fenced refusal block equals exactly what raise prints, line
+    // for line, so the documented example cannot drift from the real output.
+    expect(built.err).toEqual(readmeRefusalLines(readme));
     expect(readme).toContain("Exit 2, nothing sent.");
   });
 });

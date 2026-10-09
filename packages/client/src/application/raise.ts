@@ -65,7 +65,11 @@ export async function raise(
   let token: string;
   try {
     session = await openSession(deps.env, deps.files);
-    ({ project, token } = await readProjectToken(session, deps.files, deps.env));
+    ({ project, token } = await readProjectToken(
+      session,
+      deps.files,
+      deps.env,
+    ));
   } catch (error) {
     if (error instanceof UsageError) {
       deps.err(`${LABEL}: ${error.message}`);
