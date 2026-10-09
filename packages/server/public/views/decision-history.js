@@ -11,7 +11,7 @@
 
 import { calendarDate } from "../format.js";
 import { el, internalLink, text } from "../dom.js";
-import { doorBand } from "./inbox.js";
+import { doorBand, SHAPE_WORD, DECIDER_WORD } from "./inbox.js";
 
 const ANSWER_STATES = ["approved", "declined", "answered"];
 const HISTORY_HEADING = "History";
@@ -188,6 +188,10 @@ function earlierTextDetails(rc) {
   const d = rc.decision;
   const children = [
     el("p", { attrs: { class: "earlier-question" }, text: d.question }),
+    el("p", {
+      attrs: { class: "earlier-facts" },
+      text: `${SHAPE_WORD[d.shape]} · ${DECIDER_WORD[d.decider]}`,
+    }),
   ];
   if (d.options.length > 0) {
     children.push(
@@ -216,6 +220,22 @@ function earlierTextDetails(rc) {
       el("ul", {
         attrs: { class: "earlier-commits" },
         children: d.commits.map((c) => el("li", { text: c })),
+      }),
+    );
+  }
+  if (d.appliesTo.length > 0) {
+    children.push(
+      el("p", {
+        attrs: { class: "earlier-applies-to" },
+        text: `Applies to: ${d.appliesTo.join(", ")}`,
+      }),
+    );
+  }
+  if (d.actElsewhere !== undefined) {
+    children.push(
+      el("p", {
+        attrs: { class: "card-elsewhere" },
+        text: `Cannot be answered here. Act in: ${d.actElsewhere.where}: ${d.actElsewhere.what}.`,
       }),
     );
   }

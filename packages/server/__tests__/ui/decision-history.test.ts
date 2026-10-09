@@ -428,6 +428,44 @@ describe("earlierTextsBlock", () => {
     expect(textsOf(host, ".door-band")).toContain("ONE-WAY DOOR: gone");
   });
 
+  it("shows the shape, decider and appliesTo in an earlier text", () => {
+    const OTHER_HASH = "b".repeat(64);
+    const host = drawEarlier(
+      decisionModel(
+        decisionResponse({
+          head: inboxHead({ revision: 2, revisions: 2, entries: 0 }),
+          revisions: [
+            storedRevision({
+              revision: 1,
+              decision: decisionRevision({
+                shape: "instruction",
+                question: "Old?",
+                options: [],
+                appliesTo: ["beta", "gamma"],
+              }),
+              receivedAt: "2026-10-08T12:00:00Z",
+            }),
+            storedRevision({
+              revision: 2,
+              textSha256: OTHER_HASH,
+              decision: decisionRevision({
+                question: "New?",
+                changeNote: "narrowed",
+              }),
+              receivedAt: "2026-10-09T12:00:00Z",
+            }),
+          ],
+        }),
+      ),
+    );
+    expect(textsOf(host, ".earlier-facts")).toStrictEqual([
+      "standing instruction · yours to decide",
+    ]);
+    expect(textsOf(host, ".earlier-applies-to")).toStrictEqual([
+      "Applies to: beta, gamma",
+    ]);
+  });
+
   it("returns undefined when there is only one revision", () => {
     const host = drawEarlier(decisionModel(decisionResponse()));
     expect(host.querySelector(".decision-earlier-texts")).toBeNull();
