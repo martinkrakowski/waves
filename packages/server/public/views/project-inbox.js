@@ -62,12 +62,16 @@ export function renderProjectInbox(view, name, events, nowMs) {
   const groups = groupHeads(view.decisions);
   const inGroups =
     groups.waiting.length + groups.reported.length + groups.closed.length;
+  const fromCount =
+    groups.waiting.filter((head) => head.from !== undefined).length +
+    groups.reported.filter((head) => head.from !== undefined).length +
+    groups.closed.filter((head) => head.from !== undefined).length;
   const children = [
     breadcrumbs(view, name),
     el("h1", { text: `${name} · decisions` }),
     el("p", {
       attrs: { class: "inbox-counts" },
-      text: countLine(view.counts),
+      text: countLine(view.counts, fromCount),
     }),
     groupBlock(GROUP_HEAD.waiting, "inbox-waiting", groups.waiting, nowMs),
     groupBlock(GROUP_HEAD.reported, "inbox-reported", groups.reported, nowMs),

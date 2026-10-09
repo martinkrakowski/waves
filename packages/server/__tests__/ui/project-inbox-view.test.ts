@@ -5,7 +5,10 @@ import { drawableProjectEvents } from "../../public/project-events.js";
 import { renderProjectInbox } from "../../public/views/project-inbox.js";
 
 import type { StoredEvent } from "../../src/application/ports/notice-store.js";
-import type { ProjectInboxView } from "../../src/application/notice-read-model.js";
+import type {
+  Head,
+  ProjectInboxView,
+} from "../../src/application/notice-read-model.js";
 import {
   INBOX_NOW_MS,
   inboxEvent,
@@ -293,12 +296,12 @@ describe("renderProjectInbox", () => {
     });
 
     it("uses each state's words in the card's voice", () => {
-      const cases = [
-        ["approved" as const, "reported as approved"],
-        ["declined" as const, "reported as declined"],
-        ["answered" as const, "reported as answered"],
-        ["withdrawn" as const, "withdrawn by a session"],
-        ["superseded" as const, "replaced by a later decision"],
+      const cases: [Head["state"], string][] = [
+        ["approved", "reported as approved"],
+        ["declined", "reported as declined"],
+        ["answered", "reported as answered"],
+        ["withdrawn", "withdrawn by a session"],
+        ["superseded", "replaced by a later decision"],
       ];
       for (const [state, word] of cases) {
         const host = draw(
@@ -333,6 +336,111 @@ describe("renderProjectInbox", () => {
     ]);
     expect(host.querySelector(".inbox-group")).toBeNull();
     expect(host.querySelector(".project-inbox-history")).toBeNull();
+    expect(textsOf(host, ".inbox-counts")).toStrictEqual([
+      "0 waiting (0 one-way doors) · 0 reported · 0 closed by a session",
+    ]);
+  });
+
+  it("names no instructions from other projects when none carry from", () => {
+    const host = draw(
+      projectInboxView({
+        counts: { waiting: 1, oneWay: 0, reported: 0, closed: 0 },
+        decisions: [
+          inboxHead({
+            id: "d1",
+            group: "waiting",
+            state: "open",
+            decider: "owner",
+          }),
+        ],
+      }),
+    );
+    expect(textsOf(host, ".inbox-counts")).toStrictEqual([
+      "1 waiting (0 one-way doors) · 0 reported · 0 closed by a session",
+    ]);
+  });
+
+  it("names one instruction from another project on the count line", () => {
+    const host = draw(
+      projectInboxView({
+        counts: { waiting: 2, oneWay: 0, reported: 0, closed: 0 },
+        decisions: [
+          inboxHead({
+            id: "d1",
+            group: "waiting",
+            state: "open",
+            decider: "owner",
+          }),
+          inboxHead({
+            project: "fleet",
+            from: "fleet",
+            id: "d2",
+            question: "Standing?",
+            group: "waiting",
+            state: "open",
+            decider: "owner",
+          }),
+        ],
+      }),
+    );
+    expect(textsOf(host, ".inbox-counts")).toStrictEqual([
+      "2 waiting (0 one-way doors) · 0 reported · 0 closed by a session · 1 from another project",
+    ]);
+  });
+
+  it("names two instructions from other projects on the count line", () => {
+    const host = draw(
+      projectInboxView({
+        counts: { waiting: 1, oneWay: 0, reported: 0, closed: 0 },
+        decisions: [
+          inboxHead({
+            id: "d1",
+            group: "waiting",
+            state: "open",
+            decider: "owner",
+          }),
+          inboxHead({
+            project: "fleet",
+            from: "fleet",
+            id: "d2",
+            question: "First?",
+            group: "reported",
+            state: "approved",
+            source: "reported",
+          }),
+          inboxHead({
+            project: "fleet",
+            from: "fleet",
+            id: "d3",
+            question: "Second?",
+            group: "closed",
+            state: "withdrawn",
+            entries: 2,
+          }),
+        ],
+      }),
+    );
+    expect(textsOf(host, ".inbox-counts")).toStrictEqual([
+      "1 waiting (0 one-way doors) · 0 reported · 0 closed by a session · 2 from other projects",
+    ]);
+  });
+
+  it("does not count a from head in the history group", () => {
+    const host = draw(
+      projectInboxView({
+        counts: { waiting: 0, oneWay: 0, reported: 0, closed: 0 },
+        decisions: [
+          inboxHead({
+            project: "fleet",
+            from: "fleet",
+            id: "h",
+            question: "Old?",
+            group: "history",
+            state: "answered",
+          }),
+        ],
+      }),
+    );
     expect(textsOf(host, ".inbox-counts")).toStrictEqual([
       "0 waiting (0 one-way doors) · 0 reported · 0 closed by a session",
     ]);
