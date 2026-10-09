@@ -1,4 +1,5 @@
 import { drawableAttention } from "./attention.js";
+import { drawableInbox } from "./inbox.js";
 import { createApi } from "./api.js";
 import { digestOf } from "./digest.js";
 import { el } from "./dom.js";
@@ -10,6 +11,8 @@ import { shell } from "./shell.js";
 import { drawableStatus } from "./status.js";
 import { renderDrawer } from "./views/drawer.js";
 import { renderFleet } from "./views/fleet.js";
+import { inboxModel } from "./views/inbox-model.js";
+import { renderInbox } from "./views/inbox.js";
 import { rowIdOf } from "./views/fleet-rows.js";
 import {
   hrefFor,
@@ -37,6 +40,9 @@ const TYPING = ["INPUT", "SELECT", "TEXTAREA"];
 export function routeOf(pathname) {
   if (pathname === "/" || pathname === "") {
     return { kind: "projects" };
+  }
+  if (pathname === "/inbox") {
+    return { kind: "inbox" };
   }
   if (!pathname.startsWith(PROJECT_PREFIX)) {
     return { kind: "unknown" };
@@ -210,6 +216,20 @@ export function createApp(deps) {
   }
 
   /**
+   * What the owner's inbox answers, with the four counts and the heads still in
+   * it. A response the page cannot read is a failed load: the inbox is not
+   * optional, and a page whose counts silently became zero would be one the
+   * reader had no word from.
+   */
+  async function loadInbox() {
+    const inbox = await api.inbox();
+    if (!drawableInbox(inbox)) {
+      throw new Error("the inbox view is not an inbox view");
+    }
+    return inbox;
+  }
+
+  /**
    * What the project last said about itself, which the project page draws as a
    * panel. A 404 is "it has pushed none", not a failure: the status is the one
    * read on this page that a project may legitimately never make, and a page that
@@ -264,6 +284,17 @@ export function createApp(deps) {
         return undefined;
       }
       return { kind: "projects", projects, attention };
+    }
+    if (at.kind === "inbox") {
+      const [projects, attention, inbox] = await Promise.all([
+        loadProjects(),
+        loadAttention(),
+        loadInbox(),
+      ]);
+      if (mine !== generation) {
+        return undefined;
+      }
+      return { kind: "inbox", projects, attention, inbox };
     }
     // Four calls in one Promise.all, in the order the page needs them: the menu's
     // two, then every lane of every wave of the project the route names, then
@@ -339,6 +370,9 @@ export function createApp(deps) {
         clock(),
         projectHandlers(),
       );
+    }
+    if (data.kind === "inbox") {
+      return renderInbox(inboxModel(data.inbox), clock());
     }
     return el("p", { attrs: { class: "empty" }, text: "No such project." });
   }

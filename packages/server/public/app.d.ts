@@ -8,6 +8,7 @@ export type Route =
       /** Present only on `/p/<id>/w/<wave>`. */
       readonly wave?: string;
     }
+  | { readonly kind: "inbox" }
   | { readonly kind: "unknown" };
 
 export interface AppGlobals {

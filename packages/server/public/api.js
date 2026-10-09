@@ -38,6 +38,7 @@ export function createApi(fetchImpl) {
   return {
     projects: () => readJson(fetchImpl, projectsPath()),
     attention: () => readJson(fetchImpl, "/api/v1/attention"),
+    inbox: () => readJson(fetchImpl, "/api/v1/inbox"),
     lanes: (projectId, all) => readJson(fetchImpl, lanesPath(projectId, all)),
     // One wave on its own, for the drawer in lane K6 and nothing else: the page
     // itself never asks for it, and keeps it because that lane will.

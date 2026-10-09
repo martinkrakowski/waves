@@ -1,3 +1,4 @@
+import type { InboxView } from "../src/application/notice-read-model.js";
 import type {
   AttentionView,
   ProjectLanesView,
@@ -30,6 +31,11 @@ export interface Api {
    * the app reads as a failed load: the route is not optional.
    */
   attention(): Promise<AttentionView | undefined>;
+  /**
+   * What every project is asking the owner to decide, with the counts that
+   * name their sources. One entry per registered project, in registry order.
+   */
+  inbox(): Promise<InboxView>;
   /**
    * Every lane of every wave of one project, with the wave heads the page draws
    * the wave strip from. `all` asks for the waves past the retention as well.
