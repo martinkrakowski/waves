@@ -19,6 +19,9 @@ import type {
 import {
   attentionLane,
   attentionView,
+  decisionEntry,
+  decisionRevision,
+  decisionResponse,
   envelope,
   inboxHead,
   inboxProject,
@@ -32,6 +35,7 @@ import {
   recentWave,
   statusFacts,
   statusView,
+  storedRevision,
   waveSummary,
   waveView,
 } from "./fixtures.js";
@@ -728,6 +732,138 @@ describe("the attention ids against stored markup", () => {
       }
     },
   );
+});
+
+/**
+ * A decision response whose every text field carries the payload. The ids
+ * (project, decision, option keys) are held to the contract's patterns, so they
+ * cannot carry a payload — the count below covers every field that can.
+ */
+function decisionWith(payload: string): unknown {
+  return decisionResponse({
+    head: inboxHead({
+      question: payload,
+      door: { value: true, reason: payload },
+      entries: 1,
+    }),
+    revisions: [
+      storedRevision({
+        decision: decisionRevision({
+          question: payload,
+          options: [
+            { key: "a", text: payload, cost: payload },
+            { key: "b", text: payload, cost: payload },
+          ],
+          recommended: { option: "a", reason: payload },
+          commits: [payload],
+          actElsewhere: { where: payload, what: payload },
+          raisedBy: payload,
+          evidence: [{ label: payload, href: "https://example.com" }],
+          changeNote: payload,
+        }),
+      }),
+    ],
+    entries: [
+      decisionEntry({
+        by: payload,
+        words: payload,
+        option: payload,
+      }),
+    ],
+  });
+}
+
+/** Boots the app on a decision route over the given response. */
+async function bootDecision(
+  decision: unknown,
+  pathname = "/p/alpha/d/d1",
+): Promise<ReturnType<typeof createApp>> {
+  freshRoot();
+  const timers = timerStub();
+  const browser = browserGlobals(pathname);
+  const app = createApp({
+    doc: document,
+    location: browser.location,
+    history: browser.history,
+    win: browser.win,
+    fetch: fetchStub((path) =>
+      path === "/api/v1/projects"
+        ? { status: 200, body: [projectCard()] }
+        : path === "/api/v1/attention"
+          ? { status: 200, body: attentionView() }
+          : path === "/api/v1/projects/alpha/decisions/d1"
+            ? { status: 200, body: decision }
+            : { status: 404 },
+    ),
+    setTimer: timers.setTimer,
+    clearTimer: timers.clearTimer,
+    clock: () => NOW_MS,
+  } satisfies AppGlobals);
+  app.start();
+  await flush();
+  return app;
+}
+
+/**
+ * How many times one payload appears in the rendered text of the decision
+ * page: the door band reason (1), the question (1), the raised-by in the
+ * facts line (1), each option's text and cost (4), the recommendation reason
+ * (1), the commit (1), the two act-elsewhere fields (2), the evidence label
+ * (1), the raised-by in history (1), and the entry's by, option and words
+ * (3). Sixteen places, all of them text.
+ */
+const DECISION_OCCURRENCES = 16;
+
+describe("the decision page against stored markup", () => {
+  it.each(TEXT_PAYLOADS)(
+    "renders every text field of a decision as text",
+    async (payload) => {
+      const app = await bootDecision(decisionWith(payload));
+      assertNoInjectedMarkup();
+      expect(root().querySelectorAll("img")).toHaveLength(0);
+      expect(root().querySelectorAll("script")).toHaveLength(0);
+      for (const element of Array.from(root().querySelectorAll("[class]"))) {
+        expect(element.getAttribute("class")).not.toContain(payload);
+      }
+      expectVerbatim(payload, DECISION_OCCURRENCES, 0);
+      app.stop();
+    },
+  );
+
+  it("refuses a response whose evidence href is javascript:", async () => {
+    const app = await bootDecision(
+      decisionResponse({
+        revisions: [
+          storedRevision({
+            decision: decisionRevision({
+              evidence: [{ label: "x", href: "javascript:alert(1)" }],
+            }),
+          }),
+        ],
+      }),
+    );
+    assertNoInjectedMarkup();
+    expect(root().querySelectorAll("a[href^='javascript:']")).toHaveLength(0);
+    expect(documentText()).not.toContain("javascript:alert(1)");
+    app.stop();
+  });
+
+  it("refuses a response whose evidence href is http://", async () => {
+    const app = await bootDecision(
+      decisionResponse({
+        revisions: [
+          storedRevision({
+            decision: decisionRevision({
+              evidence: [{ label: "x", href: "http://evil.example" }],
+            }),
+          }),
+        ],
+      }),
+    );
+    assertNoInjectedMarkup();
+    expect(documentText()).not.toContain("http://evil.example");
+    app.stop();
+  });
 });
 
 /** The repository a project registered, when it registered one on GitHub. */
