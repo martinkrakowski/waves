@@ -83,7 +83,7 @@ function breadcrumb(route, all) {
     return [here(BRAND)];
   }
   if (route.kind === "inbox") {
-    return [internalLink(BRAND, "/"), here("Inbox")];
+    return [internalLink(BRAND, "/"), text(" / "), here("Inbox")];
   }
   // A page that is not one of ours still has the fleet above it, and with the
   // rail gone this is the only link that leads there.
