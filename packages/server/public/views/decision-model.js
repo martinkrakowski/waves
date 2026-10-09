@@ -88,6 +88,7 @@ export function decisionModel(view) {
   const revisionChanges = revisions.slice(0, -1).map((rev, i) => ({
     revision: rev.revision,
     receivedAt: rev.receivedAt,
+    textSha256: rev.textSha256,
     decision: rev.decision,
     changed: changesBetween(rev.decision, revisions[i + 1].decision),
     changeNote: rev.decision.changeNote,

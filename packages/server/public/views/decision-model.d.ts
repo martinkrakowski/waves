@@ -12,6 +12,7 @@ import type { DecisionRevision } from "@hexagen-monaco/waves-contract";
 export interface RevisionChange {
   readonly revision: number;
   readonly receivedAt: string;
+  readonly textSha256: string;
   readonly decision: DecisionRevision;
   /** The binding-text fields that differ from the next revision, by the page's words. */
   readonly changed: readonly string[];
