@@ -8,7 +8,7 @@ import {
   reportedText,
 } from "../format.js";
 import { formatQuery } from "../query.js";
-import { countLine } from "./inbox-model.js";
+import { countLine, hasCounts } from "./inbox-model.js";
 import { renderStatusPanel } from "./status-panel.js";
 import { visibleWaves } from "../wave.js";
 
@@ -348,17 +348,19 @@ function repoLine(view) {
 }
 
 /**
- * The line under the lede: the project's four counts, when the listing carried
- * them, then the link to the project's inbox, on the project's own page and on
- * a wave's page alike. The counts are never added into one number.
+ * The line under the lede: the project's four counts, when it has any to
+ * count, then the link to the project's inbox, on the project's own page and
+ * on a wave's page alike. A project with nothing to count — no count said, or
+ * all four zero — shows the link alone, since a line of zeros says nothing a
+ * reader needs. The counts are never added into one number.
  */
 function inboxLine(model) {
-  const counts = model.decisions;
+  const counted = hasCounts(model.decisions);
   const children =
-    counts === undefined
+    counted === false
       ? [internalLink("Inbox", `/p/${projectId(model)}/inbox`)]
       : [
-          text(countLine(counts)),
+          text(countLine(model.decisions)),
           text(" · "),
           internalLink("Inbox", `/p/${projectId(model)}/inbox`),
         ];

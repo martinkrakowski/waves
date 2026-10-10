@@ -32,6 +32,12 @@ export interface InboxModel {
 export declare function countLine(counts: NoticeCounts): string;
 
 /**
+ * Whether a project has any decision to count: the four counts are present and
+ * at least one of them is greater than zero. Absent and all-zero are the same.
+ */
+export declare function hasCounts(counts?: NoticeCounts): boolean;
+
+/**
  * The inbox's model, built from the checked response: the projects sorted with the
  * ones that have decisions first, each split into the three groups, and the four
  * totals that headline the page.

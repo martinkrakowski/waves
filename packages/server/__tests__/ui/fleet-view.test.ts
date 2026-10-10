@@ -765,11 +765,19 @@ describe("a row's inbox line", () => {
     expect(host.querySelector("summary .row-inbox")).toBeNull();
   });
 
-  it("draws the counts without a link when the app has no page for the project", () => {
+  it("draws no inbox line at all when the app has no page for the project and nothing to count", () => {
     const host = row({ id: "Not An Id" });
+    expect(host.querySelectorAll(".row-inbox")).toHaveLength(0);
+  });
+
+  it("draws the counts without a link when the app has no page for the project", () => {
+    const host = row({
+      id: "Not An Id",
+      decisions: { waiting: 3, oneWay: 1, reported: 2, closed: 1 },
+    });
     const line = oneOf(host, ".row-inbox") as HTMLElement;
     expect(textOf(line)).toBe(
-      "0 waiting (0 one-way doors) · 0 reported · 0 closed by a session",
+      "3 waiting (1 one-way door) · 2 reported · 1 closed by a session",
     );
     expect(line.querySelector("a")).toBeNull();
   });
@@ -781,6 +789,12 @@ describe("a row's inbox line", () => {
     expect(
       (oneOf(host, ".row-inbox a") as HTMLElement).getAttribute("href"),
     ).toBe("/p/alpha/inbox");
+  });
+
+  it("draws the Inbox link alone when all four counts are zero", () => {
+    const host = row();
+    expect(textsOf(host, ".row-inbox")).toStrictEqual(["Inbox"]);
+    expect(textOf(oneOf(host, ".row-inbox a") as HTMLElement)).toBe("Inbox");
   });
 
   it("draws no inbox line at all when it has neither", () => {

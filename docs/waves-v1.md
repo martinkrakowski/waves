@@ -1103,7 +1103,8 @@ A project's page — and a wave's page — shows, under its heading, the project
 four decision counts in the same line the inbox uses (`countLine`,
 `packages/server/public/views/inbox-model.js:32-38`) and a link "Inbox" to
 `/p/<project>/inbox`. The counts come from the projects listing the page already
-loads, and a project that has said no count shows the link alone; the line is
+loads, and a project with nothing to count — no count said, or all four zero —
+shows the link alone; the line is
 drawn on every return path of the view, so a wave the project does not have does
 not take it away.
 
@@ -1126,8 +1127,9 @@ from one heading to another and never removes it; the counts name the sources
 and never add them up.
 
 The fleet page's rows carry each project's four counts too, in the same line
-the inbox uses, next to a link "Inbox" to `/p/<project>/inbox`. A project that
-has said no count shows the link alone, and a project whose id the app has no
+the inbox uses, next to a link "Inbox" to `/p/<project>/inbox`. A project with
+nothing to count — no count said, or all four zero — shows the link alone, and
+a project whose id the app has no
 page for shows the counts without the link.
 
 #### 5.1.6 `/p/<project>/d/<decision>`

@@ -95,6 +95,16 @@ describe("the project page's inbox line", () => {
     app.stop();
   });
 
+  it("shows only the link when all four counts are zero", async () => {
+    const { app } = boot([projectCard()]);
+    await flush();
+    expect(textsOf(root(), ".inbox-line")).toStrictEqual(["Inbox"]);
+    expect(root().querySelector(".inbox-line a")?.getAttribute("href")).toBe(
+      "/p/alpha/inbox",
+    );
+    app.stop();
+  });
+
   it("shows only the link when the listing does not have the project", async () => {
     const { app } = boot([projectCard({ id: "beta", name: "Beta" })]);
     await flush();
