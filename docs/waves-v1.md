@@ -1099,6 +1099,14 @@ history with one entry per word.
 `…/query.js:93-104`; `renderFleet`, `packages/server/public/views/fleet.js:418-436`;
 `fleetHandlers`, `packages/server/public/app.js:354-367`)
 
+A project's page — and a wave's page — shows, under its heading, the project's
+four decision counts in the same line the inbox uses (`countLine`,
+`packages/server/public/views/inbox-model.js:32-38`) and a link "Inbox" to
+`/p/<project>/inbox`. The counts come from the projects listing the page already
+loads, and a project that has said no count shows the link alone; the line is
+drawn on every return path of the view, so a wave the project does not have does
+not take it away.
+
 #### 5.1.5 `/inbox`
 
 `GET /inbox` is the page the owner reads: one block per project, each holding
