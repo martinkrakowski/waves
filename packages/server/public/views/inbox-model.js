@@ -28,13 +28,23 @@ function doors(oneWay) {
  * "3 waiting (1 one-way door) · 2 reported · 1 closed by a session". This is the
  * same wording for the page's own totals and for a project's own line, so a
  * reader never has to read two ways, and the four are never added to one number.
+ *
+ * On the project inbox page only, a `fromCount` — the heads in the three drawn
+ * groups that carry `from` — appends " · N from another project" when there is
+ * one, or " · N from other projects" when there are several. The four own counts
+ * are unchanged: a count line on `/p/<project>/inbox` reads its own four counts
+ * and then names the instructions raised against it, never summed into them.
  */
-export function countLine(counts) {
-  return (
+export function countLine(counts, fromCount) {
+  let line =
     `${oneWord(counts.waiting, "waiting")} (${doors(counts.oneWay)})` +
     ` · ${oneWord(counts.reported, "reported")}` +
-    ` · ${oneWord(counts.closed, "closed by a session")}`
-  );
+    ` · ${oneWord(counts.closed, "closed by a session")}`;
+  if (fromCount !== undefined && fromCount > 0) {
+    const noun = fromCount === 1 ? "another project" : "other projects";
+    line += ` · ${fromCount} from ${noun}`;
+  }
+  return line;
 }
 
 /**

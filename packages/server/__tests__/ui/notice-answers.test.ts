@@ -3,10 +3,15 @@ import { describe, expect, it } from "vitest";
 import { drawableInbox } from "../../public/inbox.js";
 import { drawableDecision } from "../../public/decision.js";
 import { drawableProjectInbox } from "../../public/project-inbox.js";
-import { createNoticeReadModel } from "../../src/application/notice-read-model.js";
+import { drawableProjectEvents } from "../../public/project-events.js";
+import {
+  createNoticeReadModel,
+  MAX_NOTICE_EVENTS,
+} from "../../src/application/notice-read-model.js";
 import { MemoryStore } from "../../src/infrastructure/memory-store.js";
 
-import { storedRevision } from "../notice-contract.js";
+import { event, storedRevision } from "../notice-contract.js";
+import type { StoredEvent } from "../../src/application/ports/notice-store.js";
 
 const PROJECT = "alpha";
 const NAME = "Alpha";
@@ -75,5 +80,17 @@ describe("the three notice shapes the HTTP routes serve", () => {
     const body = await model.getDecision(PROJECT, ID);
     expect(body).toBeDefined();
     expect(drawableDecision(body, PROJECT, ID)).toBe(true);
+  });
+
+  it("drawableProjectEvents accepts the events route's body", async () => {
+    const { store, model } = await seeded();
+    const stored: StoredEvent = {
+      id: "",
+      receivedAt: "2026-10-08T13:00:00.000Z",
+      event: event(),
+    };
+    await store.appendEvent(PROJECT, stored, MAX_NOTICE_EVENTS);
+    const body = { events: await model.events(PROJECT, MAX_NOTICE_EVENTS) };
+    expect(drawableProjectEvents(body, PROJECT)).toBe(true);
   });
 });

@@ -34,6 +34,11 @@ function projectDecisionsPath(projectId) {
   return `/api/v1/projects/${encodeURIComponent(projectId)}/decisions`;
 }
 
+/** A project's own notice events: the project inbox page's events list. */
+function projectEventsPath(projectId) {
+  return `/api/v1/projects/${encodeURIComponent(projectId)}/events`;
+}
+
 async function readJson(fetchImpl, path) {
   const response = await fetchImpl(path, { headers: JSON_HEADERS });
   if (response.status === 404) {
@@ -58,5 +63,7 @@ export function createApi(fetchImpl) {
       readJson(fetchImpl, decisionPath(projectId, decisionId)),
     projectDecisions: (projectId) =>
       readJson(fetchImpl, projectDecisionsPath(projectId)),
+    fetchProjectEvents: (projectId) =>
+      readJson(fetchImpl, projectEventsPath(projectId)),
   };
 }

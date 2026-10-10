@@ -9,13 +9,15 @@
  * The server's response carries only the project id, not its name: the page
  * takes `name` from the projects listing the app already has, falling back to
  * the id when that listing has no such project. History heads — decisions that
- * left the inbox after fourteen days — are not drawn as cards; a single line
- * counts them instead. A project with nothing in any of the three groups gets
+ * left the inbox after fourteen days — are drawn as a collapsed details block,
+ * and the project's notice events are listed beside them, both in
+ * `project-history.js`. A project with nothing in any of the three groups gets
  * one line saying so. The page takes no answers: no button, input or form.
  */
 
 import { countLine } from "./inbox-model.js";
 import { GROUP_HEAD, FOOTER, groupBlock } from "./inbox.js";
+import { eventsList, historyHeads } from "./project-history.js";
 import { el, internalLink, text } from "../dom.js";
 
 /** The line shown for a project whose three drawn groups are all empty. */
@@ -49,44 +51,39 @@ function breadcrumbs(view, name) {
   });
 }
 
-/** The line that counts the history heads this page does not draw, singular-aware. */
-function historyLine(historyCount) {
-  const noun = historyCount === 1 ? "decision" : "decisions";
-  return el("p", {
-    attrs: { class: "project-inbox-history" },
-    text: `${historyCount} ${noun} left the inbox after 14 days.`,
-  });
-}
-
 /**
  * The whole page: the breadcrumb, the heading, the project's own counts, the
- * three groups of cards, the history line when there is one, the empty line when
- * there is nothing to draw, and the inbox's footer sentence — always, even when
- * the inbox is empty, so the rule sits above the fold as well as named.
+ * three groups of cards, the history details block when there are history
+ * heads, the empty line when there is nothing to draw, the events list always,
+ * and the inbox's footer sentence — always, even when the inbox is empty, so
+ * the rule sits above the fold as well as named.
  */
-export function renderProjectInbox(view, nowMs, name) {
+export function renderProjectInbox(view, name, events, nowMs) {
   const groups = groupHeads(view.decisions);
   const inGroups =
     groups.waiting.length + groups.reported.length + groups.closed.length;
+  const fromCount =
+    groups.waiting.filter((head) => head.from !== undefined).length +
+    groups.reported.filter((head) => head.from !== undefined).length +
+    groups.closed.filter((head) => head.from !== undefined).length;
   const children = [
     breadcrumbs(view, name),
     el("h1", { text: `${name} · decisions` }),
     el("p", {
       attrs: { class: "inbox-counts" },
-      text: countLine(view.counts),
+      text: countLine(view.counts, fromCount),
     }),
     groupBlock(GROUP_HEAD.waiting, "inbox-waiting", groups.waiting, nowMs),
     groupBlock(GROUP_HEAD.reported, "inbox-reported", groups.reported, nowMs),
     groupBlock(GROUP_HEAD.closed, "inbox-closed", groups.closed, nowMs),
+    historyHeads(groups.history, view.project),
   ];
-  if (groups.history.length > 0) {
-    children.push(historyLine(groups.history.length));
-  }
   if (inGroups === 0) {
     children.push(
       el("p", { attrs: { class: "project-inbox-empty" }, text: EMPTY }),
     );
   }
+  children.push(eventsList(events));
   children.push(el("p", { attrs: { class: "inbox-footer" }, text: FOOTER }));
   return el("section", {
     attrs: { class: "view project-inbox" },

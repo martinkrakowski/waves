@@ -1,6 +1,7 @@
 import { drawableAttention } from "./attention.js";
 import { drawableDecision } from "./decision.js";
 import { drawableInbox } from "./inbox.js";
+import { drawableProjectEvents } from "./project-events.js";
 import { drawableProjectInbox } from "./project-inbox.js";
 import { createApi } from "./api.js";
 import { digestOf } from "./digest.js";
@@ -297,6 +298,24 @@ export function createApp(deps) {
   }
 
   /**
+   * One project's notice events. A 404 is "no such project" rather than a
+   * failure: the reader asked for a specific project, and the page says it is
+   * absent rather than offline. The page never makes its own query, and it has
+   * no events to show when the store has none — so an empty list is drawn as
+   * "No events.", and a response the page cannot read is a failed load.
+   */
+  async function loadProjectEvents(project) {
+    const view = await api.fetchProjectEvents(project);
+    if (view === undefined) {
+      return undefined;
+    }
+    if (!drawableProjectEvents(view, project)) {
+      throw new Error("the project events are not project events");
+    }
+    return view;
+  }
+
+  /**
    * One decision's whole record, with its head, revisions and entries. A 404 is
    * "no such decision" rather than a failure: the reader asked for a specific
    * decision, and the page says it is absent rather than offline. A response the
@@ -409,15 +428,17 @@ export function createApp(deps) {
       };
     }
     if (at.kind === "project-inbox") {
-      const [projects, attention, projectInbox] = await Promise.all([
-        loadProjects(),
-        loadAttention(),
-        loadProjectInbox(at.project),
-      ]);
+      const [projects, attention, projectInbox, projectEvents] =
+        await Promise.all([
+          loadProjects(),
+          loadAttention(),
+          loadProjectInbox(at.project),
+          loadProjectEvents(at.project),
+        ]);
       if (mine !== generation) {
         return undefined;
       }
-      if (projectInbox === undefined) {
+      if (projectInbox === undefined || projectEvents === undefined) {
         return {
           kind: "missing",
           project: at.project,
@@ -431,6 +452,7 @@ export function createApp(deps) {
         projects,
         attention,
         inbox: projectInbox,
+        events: projectEvents,
       };
     }
     // Four calls in one Promise.all, in the order the page needs them: the menu's
@@ -515,8 +537,9 @@ export function createApp(deps) {
     if (data.kind === "project-inbox") {
       return renderProjectInbox(
         data.inbox,
-        clock(),
         projectName(data.projects, data.project),
+        data.events.events,
+        clock(),
       );
     }
     if (data.kind === "decision") {
