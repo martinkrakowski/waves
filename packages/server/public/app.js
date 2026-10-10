@@ -110,6 +110,17 @@ function projectName(projects, projectId) {
   return found === undefined ? projectId : found.name;
 }
 
+/**
+ * The project's four decision counts from the projects listing the app already
+ * loaded, or undefined when the listing has no such project or it carries none:
+ * the listing is the page that has the counts, and the project page never asks
+ * for one of its own.
+ */
+function projectDecisions(projects, projectId) {
+  const found = projects.find((project) => project.id === projectId);
+  return found === undefined ? undefined : found.decisions;
+}
+
 export function createApp(deps) {
   const {
     doc,
@@ -492,6 +503,7 @@ export function createApp(deps) {
           wave: route.wave,
           query,
           copied,
+          decisions: projectDecisions(data.projects, data.project),
         },
         clock(),
         projectHandlers(),
