@@ -744,6 +744,52 @@ describe("a row", () => {
   });
 });
 
+describe("a row's inbox line", () => {
+  /** The one project the row is drawn from, in the default fleet. */
+  function row(overrides: Partial<ProjectCard> = {}): HTMLElement {
+    return draw({ projects: [projectCard(overrides)] });
+  }
+
+  it("draws the counts and an Inbox link when it has both", () => {
+    const host = row({
+      decisions: { waiting: 3, oneWay: 1, reported: 2, closed: 1 },
+    });
+    const line = oneOf(host, ".row-inbox") as HTMLElement;
+    expect(textOf(line)).toBe(
+      "3 waiting (1 one-way door) · 2 reported · 1 closed by a session · Inbox",
+    );
+    const link = oneOf(host, ".row-inbox a") as HTMLElement;
+    expect(textOf(link)).toBe("Inbox");
+    expect(link.getAttribute("href")).toBe("/p/alpha/inbox");
+    expect(link.getAttribute("data-key")).toBe("nav");
+    expect(host.querySelector("summary .row-inbox")).toBeNull();
+  });
+
+  it("draws the counts without a link when the app has no page for the project", () => {
+    const host = row({ id: "Not An Id" });
+    const line = oneOf(host, ".row-inbox") as HTMLElement;
+    expect(textOf(line)).toBe(
+      "0 waiting (0 one-way doors) · 0 reported · 0 closed by a session",
+    );
+    expect(line.querySelector("a")).toBeNull();
+  });
+
+  it("draws the Inbox link alone when the project has said no count", () => {
+    const host = row({ decisions: undefined });
+    expect(textsOf(host, ".row-inbox")).toStrictEqual(["Inbox"]);
+    expect(textOf(oneOf(host, ".row-inbox a") as HTMLElement)).toBe("Inbox");
+    expect(
+      (oneOf(host, ".row-inbox a") as HTMLElement).getAttribute("href"),
+    ).toBe("/p/alpha/inbox");
+  });
+
+  it("draws no inbox line at all when it has neither", () => {
+    const host = row({ id: "Not An Id", decisions: undefined });
+    expect(host.querySelectorAll(".row-inbox")).toHaveLength(0);
+    assertNoInjectedMarkup();
+  });
+});
+
 describe("the wave bar", () => {
   /** The states of a row's segments, left to right, without the phase class. */
   function segments(host: HTMLElement): string[] {
