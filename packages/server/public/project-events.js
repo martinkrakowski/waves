@@ -10,6 +10,9 @@
  * The `project` it is shown for is the id the page was opened for, and the
  * events carry it as that same string: an event whose project id is not the one
  * asked for is a broken endpoint the way a head the page cannot read is.
+ *
+ * Each event's `schema` is exactly the string `waves-notice/v1`: another value,
+ * or no value at all, is a response this page has no contract for.
  */
 
 import { time } from "./inbox.js";
@@ -28,12 +31,15 @@ function positiveInt(value) {
 
 /**
  * The optional `refs` object: a wave id, a lane id and a PR number. Lane ids
- * share the wave id pattern in `patterns.js`, so `isWaveId` checks both.
+ * share the wave id pattern in `patterns.js`, so `isWaveId` checks both. An
+ * array is an object whose `wave`, `lane` and `pr` are all absent, so it is
+ * refused before the field checks.
  */
 function eventRefs(refs) {
   return (
     refs !== null &&
     typeof refs === "object" &&
+    !Array.isArray(refs) &&
     (refs.wave === undefined || isWaveId(refs.wave)) &&
     (refs.lane === undefined || isWaveId(refs.lane)) &&
     (refs.pr === undefined || positiveInt(refs.pr))
@@ -54,6 +60,7 @@ function storedEvent(entry, project) {
     entry.event !== null &&
     typeof entry.event === "object" &&
     entry.event.kind === "event" &&
+    entry.event.schema === "waves-notice/v1" &&
     entry.event.project === project &&
     typeof entry.event.topic === "string" &&
     TOPIC_PATTERN.test(entry.event.topic) &&

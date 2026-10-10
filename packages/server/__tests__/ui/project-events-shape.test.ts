@@ -220,6 +220,62 @@ const INVALID: readonly (readonly [string, unknown])[] = [
   ],
 ];
 
+/**
+ * The two refusals the shape check was missing: a `schema` that is not exactly
+ * `waves-notice/v1`, and a `refs` that is an array rather than an object. Each
+ * entry is an object literal in an `unknown` slot, as above.
+ */
+const INVALID_SCHEMA_AND_REFS: readonly (readonly [string, unknown])[] = [
+  [
+    "an event whose schema is waves-notice/v2",
+    {
+      ...projectEventsView(),
+      events: [
+        {
+          ...inboxEvent(),
+          event: { ...inboxEvent().event, schema: "waves-notice/v2" },
+        },
+      ],
+    },
+  ],
+  [
+    "an event with no schema",
+    {
+      ...projectEventsView(),
+      events: [
+        {
+          ...inboxEvent(),
+          event: { ...inboxEvent().event, schema: undefined },
+        },
+      ],
+    },
+  ],
+  [
+    "an event whose refs is an empty array",
+    {
+      ...projectEventsView(),
+      events: [
+        {
+          ...inboxEvent(),
+          event: { ...inboxEvent().event, refs: [] },
+        },
+      ],
+    },
+  ],
+  [
+    "an event whose refs is an array of one bad entry",
+    {
+      ...projectEventsView(),
+      events: [
+        {
+          ...inboxEvent(),
+          event: { ...inboxEvent().event, refs: ["bad"] },
+        },
+      ],
+    },
+  ],
+];
+
 describe("drawableProjectEvents", () => {
   it("takes an empty events list", () => {
     expect(drawableProjectEvents({ events: [] }, PROJECT)).toBe(true);
@@ -272,6 +328,10 @@ describe("drawableProjectEvents", () => {
   });
 
   it.each(INVALID)("refuses %s", (_rule, view) => {
+    expect(drawableProjectEvents(view, PROJECT)).toBe(false);
+  });
+
+  it.each(INVALID_SCHEMA_AND_REFS)("refuses %s", (_rule, view) => {
     expect(drawableProjectEvents(view, PROJECT)).toBe(false);
   });
 
