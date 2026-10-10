@@ -1177,11 +1177,12 @@ line, with one line per head, newest `at` first — the question as an internal 
 to `/p/<project>/d/<id>` (for a `from` head, to its raiser), the state in the
 card's own words, and the calendar date of `at`. Beneath it, under the heading
 "Events", the project's notice events are listed always: "No events." when there
-are none, otherwise one line per event in the order given (date, topic and text;
-`detail` on its own line beneath; `refs` as plain text — "wave <wave>",
-"lane <lane>", "PR #<n>", only the ones present), and a line noting the cap when
-exactly 200 are shown. A project with nothing in any of the three groups gets one
-line saying so. The page takes no query string and answers nothing: a decision
+are none, otherwise one block per event in the order given (date, topic and
+text; `detail` and `refs` beneath, inside the same block), and a line noting the
+cap when exactly 200 are shown. A wave ref is a link to that wave's page
+(`/p/<project>/w/<wave>`); lane and PR refs stay plain text, only the ones
+present, joined by " · ". A project with nothing in any of the three groups gets
+one line saying so. The page takes no query string and answers nothing: a decision
 here is answered in the session that owns it.
 
 ### 5.2 The optional viewer token
