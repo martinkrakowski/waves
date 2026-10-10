@@ -4,7 +4,8 @@ _Date: 2026-10-08 · Status: **stage 1 approved by the owner on 2026-10-08
 ("Approved, proceed with your recommendations", relayed by the fleet session):
 sections 3 to 5 and 7, the read-only inbox. Stage 2 (section 6) is NOT approved
 and is not to be built; whether to build it at all (W71) is decided after stage 1
-has had a week of use, and W68 to W70 wait with it.** · Requirements:
+has had a week of use, and W68 and W69 wait with it. W70 is decided (2026-10-10):
+deleting a project deletes its decisions.** · Requirements:
 `~/Projects/fleet/docs/planning/2026-10-08_decisions-inbox.md` (R1 to R12, F26 to
 F28)._
 
@@ -64,8 +65,9 @@ model other than its author, with R5 first; step 3 is the owner's own approval.
    the decision, and the page says so beside the raise form's documentation.
 5. **"Nothing is ever deleted" needs one exception named.** `DELETE
 /api/v1/projects/<id>` with the admin token removes a project and everything
-   under it today. This design keeps that (W60) and asks the owner to confirm it,
-   because the alternative is a store that can never forget a project.
+   under it today. This design keeps that (W60), and the owner confirmed it on
+   2026-10-10 (W70), because the alternative is a store that can never forget a
+   project.
 
 ## 3. Decisions
 
@@ -426,12 +428,12 @@ Whether a card is a one-way door is text the raising session writes, so a
 session that means to deceive raises its decision as "not hard to undo". W68
 limits honest error and reflex (T12) only.
 
-| #       | Open decision for the owner                                                                                                                                                                                                                                        |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **W68** | Are cards marked as one-way doors answerable in the page at all? Recommended: **no** in the first version of stage 2. This guards against reflex and honest mistakes, not against deception.                                                                       |
-| **W69** | Phone passkey or hardware key (W64)? Recommended: the phone, because he reads the page there. If the trials of 6.4 show the phone can be asked from the laptop without his starting it, the hardware key.                                                          |
-| **W70** | Does deleting a project delete its decisions (W60)? Recommended: yes, admin only, as today.                                                                                                                                                                        |
-| **W71** | Given T10, T15 and T16, is stage 2 worth building at all on this cluster? Recommended: decide after the trial week of stage 1. If answering in the terminal turns out to be no burden once the inbox shows the queue, stage 2 buys little for what it leaves open. |
+| #       | Decision for the owner (open unless marked decided)                                                                                                                                                                                                                                                                                       |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **W68** | Are cards marked as one-way doors answerable in the page at all? Recommended: **no** in the first version of stage 2. This guards against reflex and honest mistakes, not against deception.                                                                                                                                              |
+| **W69** | Phone passkey or hardware key (W64)? Recommended: the phone, because he reads the page there. If the trials of 6.4 show the phone can be asked from the laptop without his starting it, the hardware key.                                                                                                                                 |
+| **W70** | Does deleting a project delete its decisions (W60)? **Decided by the owner, 2026-10-10: yes.** Deleting a project, which only the admin token can do, deletes that project's decisions, their history and its events from the service. It is a one-way door, chosen. Nothing is built for it: the service has behaved this way since #64. |
+| **W71** | Given T10, T15 and T16, is stage 2 worth building at all on this cluster? Recommended: decide after the trial week of stage 1. If answering in the terminal turns out to be no burden once the inbox shows the queue, stage 2 buys little for what it leaves open.                                                                        |
 
 ### 6.4 Unproven, to be tried before stage 2 is built
 
