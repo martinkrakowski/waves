@@ -1117,6 +1117,11 @@ in a control on it. A session that writes a report or a withdrawal moves a card
 from one heading to another and never removes it; the counts name the sources
 and never add them up.
 
+The fleet page's rows carry each project's four counts too, in the same line
+the inbox uses, next to a link "Inbox" to `/p/<project>/inbox`. A project that
+has said no count shows the link alone, and a project whose id the app has no
+page for shows the counts without the link.
+
 #### 5.1.6 `/p/<project>/d/<decision>`
 
 `GET /p/<project>/d/<decision>` is the page for one decision, read-only, and

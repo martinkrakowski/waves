@@ -556,6 +556,21 @@
   overflow-wrap: anywhere;
 }
 
+.view.fleet .row-inbox {
+  color: var(--faint);
+  font-size: 0.78rem;
+  margin: 0.15rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.view.fleet .row-inbox a {
+  color: var(--faint);
+}
+
+.view.fleet .row-inbox a:hover {
+  color: var(--cyan);
+}
+
 /*
  * The row's closed line. A `summary` is a button, so nothing interactive is
  * inside it: the name and the `repo · id` line are above it in `.row-head`

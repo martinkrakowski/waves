@@ -2,6 +2,7 @@ import { el, internalLink, repoLink, stamp, text } from "../dom.js";
 import { laneCountText } from "../format.js";
 import { isProjectId } from "../patterns.js";
 import { attentionOf, phaseOf, ringOf, tabOf } from "./fleet-model.js";
+import { countLine } from "./inbox-model.js";
 import { pathFor } from "./project.js";
 
 /**
@@ -281,31 +282,60 @@ function summaryBody(project, model, nowMs) {
 }
 
 /**
+ * The row's inbox line: the project's four counts in the same words the
+ * inbox page uses, with a link to the project's own inbox when the id is
+ * one the app owns. A project that has said no count shows the link alone;
+ * a project whose id has no page keeps its counts and loses the link, the
+ * way its name above keeps its text and loses its own link; one with
+ * neither has no line at all.
+ */
+function inboxLine(project) {
+  const counts = project.decisions;
+  const owned = isProjectId(project.id);
+  if (counts === undefined && !owned) {
+    return undefined;
+  }
+  const children = [];
+  if (counts !== undefined) {
+    children.push(text(countLine(counts)));
+  }
+  if (owned) {
+    if (children.length > 0) {
+      children.push(text(" · "));
+    }
+    children.push(internalLink("Inbox", `/p/${project.id}/inbox`));
+  }
+  return el("p", { attrs: { class: "row-inbox" }, children });
+}
+
+/**
  * The project, above its row: its name as a link to its own page when the id is
  * one the app owns, and as plain text when it is not, so a project whose id is a
  * pusher's own string is still readable and simply has nowhere to lead to.
  */
 function rowHead(project) {
-  return el("div", {
-    attrs: { class: "row-head" },
-    children: [
-      el("h3", {
-        children: [
-          isProjectId(project.id)
-            ? internalLink(project.name, pathFor(project.id, undefined))
-            : text(project.name),
-        ],
-      }),
-      el("p", {
-        attrs: { class: "row-id" },
-        children: [
-          repoLink(project.repo ?? NO_REPO, project.repo),
-          text(" · "),
-          el("code", { text: project.id }),
-        ],
-      }),
-    ],
-  });
+  const children = [
+    el("h3", {
+      children: [
+        isProjectId(project.id)
+          ? internalLink(project.name, pathFor(project.id, undefined))
+          : text(project.name),
+      ],
+    }),
+    el("p", {
+      attrs: { class: "row-id" },
+      children: [
+        repoLink(project.repo ?? NO_REPO, project.repo),
+        text(" · "),
+        el("code", { text: project.id }),
+      ],
+    }),
+  ];
+  const inbox = inboxLine(project);
+  if (inbox !== undefined) {
+    children.push(inbox);
+  }
+  return el("div", { attrs: { class: "row-head" }, children });
 }
 
 /** One wave, in the opened row: a link to it, its state, its two counts. */
