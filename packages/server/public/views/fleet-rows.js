@@ -2,7 +2,7 @@ import { el, internalLink, repoLink, stamp, text } from "../dom.js";
 import { laneCountText } from "../format.js";
 import { isProjectId } from "../patterns.js";
 import { attentionOf, phaseOf, ringOf, tabOf } from "./fleet-model.js";
-import { countLine } from "./inbox-model.js";
+import { countLine, hasCounts } from "./inbox-model.js";
 import { pathFor } from "./project.js";
 
 /**
@@ -284,20 +284,21 @@ function summaryBody(project, model, nowMs) {
 /**
  * The row's inbox line: the project's four counts in the same words the
  * inbox page uses, with a link to the project's own inbox when the id is
- * one the app owns. A project that has said no count shows the link alone;
- * a project whose id has no page keeps its counts and loses the link, the
- * way its name above keeps its text and loses its own link; one with
- * neither has no line at all.
+ * one the app owns. A project with nothing to count — no count said, or
+ * all four zero — shows the link alone, since a line of zeros says
+ * nothing a reader needs; a project whose id has no page keeps its
+ * counts and loses the link, the way its name above keeps its text and
+ * loses its own link; one with neither has no line at all.
  */
 function inboxLine(project) {
-  const counts = project.decisions;
+  const counted = hasCounts(project.decisions);
   const owned = isProjectId(project.id);
-  if (counts === undefined && !owned) {
+  if (!counted && !owned) {
     return undefined;
   }
   const children = [];
-  if (counts !== undefined) {
-    children.push(text(countLine(counts)));
+  if (counted) {
+    children.push(text(countLine(project.decisions)));
   }
   if (owned) {
     if (children.length > 0) {
