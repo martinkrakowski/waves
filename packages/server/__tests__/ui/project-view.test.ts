@@ -114,6 +114,65 @@ describe("the project heading", () => {
   });
 });
 
+describe("the inbox line", () => {
+  it("shows the project's counts and the link, under the lede", () => {
+    const host = renderProjectView({
+      lanes: NO_REPO,
+      decisions: { waiting: 3, oneWay: 1, reported: 2, closed: 1 },
+    });
+    const line = oneOf(host, ".inbox-line");
+    expect(textsOf(host, ".inbox-line")).toStrictEqual([
+      "3 waiting (1 one-way door) · 2 reported · 1 closed by a session · Inbox",
+    ]);
+    expect(line?.querySelector("a")?.getAttribute("href")).toBe(
+      "/p/alpha/inbox",
+    );
+    const lede = oneOf(host, ".lede");
+    const repo = host.querySelector(".repo");
+    const children = Array.from(host.querySelector("section")?.children ?? []);
+    expect(children.indexOf(line as HTMLElement)).toBe(
+      children.indexOf(lede as HTMLElement) + 1,
+    );
+    if (repo !== null) {
+      expect(children.indexOf(line as HTMLElement)).toBeLessThan(
+        children.indexOf(repo),
+      );
+    }
+  });
+
+  it("shows only the link when the project has said no count", () => {
+    const host = renderProjectView({ lanes: NO_REPO });
+    expect(textsOf(host, ".inbox-line")).toStrictEqual(["Inbox"]);
+    expect(oneOf(host, ".inbox-line a")?.getAttribute("href")).toBe(
+      "/p/alpha/inbox",
+    );
+  });
+
+  it("is drawn on a wave's page, with the same href", () => {
+    const host = renderProjectView({
+      lanes: projectLanes({ waves: [waveSummary({ wave: "w-3" })] }),
+      wave: "w-3",
+    });
+    expect(textsOf(host, ".inbox-line")).toStrictEqual(["Inbox"]);
+    expect(oneOf(host, ".inbox-line a")?.getAttribute("href")).toBe(
+      "/p/alpha/inbox",
+    );
+  });
+
+  it("is drawn when the path names a wave the project does not have", () => {
+    const host = renderProjectView({
+      lanes: projectLanes({
+        waves: [waveSummary({ wave: "w-3" }), waveSummary({ wave: "w-2" })],
+      }),
+      wave: "w-9",
+    });
+    expect(textsOf(host, ".inbox-line")).toStrictEqual(["Inbox"]);
+    expect(oneOf(host, ".inbox-line a")?.getAttribute("href")).toBe(
+      "/p/alpha/inbox",
+    );
+  });
+});
+
 describe("the wave strip", () => {
   const WAVES: WaveSummary[] = [
     waveSummary({ wave: "w-3", lanes: 2 }),

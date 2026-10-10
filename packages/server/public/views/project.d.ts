@@ -3,6 +3,7 @@ import type {
   ProjectLanesView,
   WaveSummary,
 } from "../../src/application/read-model.js";
+import type { NoticeCounts } from "../../src/application/notice-read-model.js";
 import type { ViewQuery } from "../query.js";
 import type { Status } from "../status.js";
 
@@ -18,6 +19,11 @@ export interface ProjectModel {
   readonly status?: Status;
   /** What the last copy of the digest said, or nothing when it said nothing. */
   readonly copied?: string;
+  /**
+   * The project's four decision counts, as the projects listing carries them,
+   * or undefined when the listing has no such project or it carries none.
+   */
+  readonly decisions?: NoticeCounts;
 }
 
 /** The rows a route shows: every row, or the rows of the wave it names. */

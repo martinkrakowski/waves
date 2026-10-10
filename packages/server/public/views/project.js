@@ -8,6 +8,7 @@ import {
   reportedText,
 } from "../format.js";
 import { formatQuery } from "../query.js";
+import { countLine } from "./inbox-model.js";
 import { renderStatusPanel } from "./status-panel.js";
 import { visibleWaves } from "../wave.js";
 
@@ -344,6 +345,24 @@ function repoLine(view) {
     attrs: { class: "repo" },
     children: [repoLink(view.project.repo, view.project.repo)],
   });
+}
+
+/**
+ * The line under the lede: the project's four counts, when the listing carried
+ * them, then the link to the project's inbox, on the project's own page and on
+ * a wave's page alike. The counts are never added into one number.
+ */
+function inboxLine(model) {
+  const counts = model.decisions;
+  const children =
+    counts === undefined
+      ? [internalLink("Inbox", `/p/${projectId(model)}/inbox`)]
+      : [
+          text(countLine(counts)),
+          text(" · "),
+          internalLink("Inbox", `/p/${projectId(model)}/inbox`),
+        ];
+  return el("p", { attrs: { class: "inbox-line" }, children });
 }
 
 /** The project, with the wave it names when the path named one. */
@@ -1197,7 +1216,7 @@ function emptyMessage(model) {
 
 export function renderProject(model, nowMs, handlers) {
   const view = model.lanes;
-  const children = [heading(model), lede(view, model.wave)];
+  const children = [heading(model), lede(view, model.wave), inboxLine(model)];
   const repo = repoLine(view);
   if (repo !== undefined) {
     children.push(repo);
