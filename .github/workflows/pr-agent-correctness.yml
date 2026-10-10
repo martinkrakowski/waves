@@ -52,10 +52,11 @@ jobs:
           OPENROUTER__KEY: ${{ secrets.OPENROUTER_KEY }}
           config.restricted_mode: "true"
           # GPT-6.1 Sol on every pull request (the owner's choice, 2026-10-09, after a two-arm
-          # trial in which the other model's answers could not be parsed here). Never a Gemini or
-          # a Grok model through OpenRouter.
+          # trial in which the other model's answers could not be parsed here). Never a Gemini,
+          # a Grok or a Claude model through OpenRouter, as the main model or as a fallback
+          # (the owner's rule, 2026-10-10).
           config.model: "openrouter/openai/gpt-6.1-sol"
-          config.fallback_models: '["openrouter/anthropic/claude-haiku-4.5"]'
+          config.fallback_models: '["openrouter/openai/gpt-6-luna"]'
           # The ceiling: one call with at most 70,000 prompt tokens and 8,000 completion tokens,
           # and 10 minutes for it inside the job's 20.
           config.custom_model_max_tokens: "128000"
