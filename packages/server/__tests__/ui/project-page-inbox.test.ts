@@ -104,4 +104,22 @@ describe("the project page's inbox line", () => {
     );
     app.stop();
   });
+
+  it("shows this project's counts, not those of a project listed before it", async () => {
+    const { app } = boot([
+      projectCard({
+        id: "beta",
+        name: "Beta",
+        decisions: { waiting: 9, oneWay: 9, reported: 9, closed: 9 },
+      }),
+      projectCard({
+        decisions: { waiting: 1, oneWay: 0, reported: 0, closed: 0 },
+      }),
+    ]);
+    await flush();
+    expect(textsOf(root(), ".inbox-line")).toStrictEqual([
+      "1 waiting (0 one-way doors) · 0 reported · 0 closed by a session · Inbox",
+    ]);
+    app.stop();
+  });
 });
