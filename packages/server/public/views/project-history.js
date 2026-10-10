@@ -13,6 +13,7 @@
 
 import { calendarDate } from "../format.js";
 import { el, internalLink, text } from "../dom.js";
+import { pathFor } from "./project.js";
 
 /** The words the inbox card gives each decision state on its way to history. */
 const HISTORY_STATE_WORD = {
@@ -70,45 +71,88 @@ export function historyHeads(heads, project) {
 }
 
 /**
- * One event line: the date, topic and text, with refs appended when present,
- * each field separated by " · ". Ref parts appear only when present: "wave w-1",
- * "lane l-1", "PR #42" — only the ones the event carried.
+ * The `refs` line beneath an event: one part per ref the event carried, only
+ * the ones present, joined by " · ". A wave ref is a link to that wave's own
+ * page, because the page it names exists; a lane ref and a PR number stay
+ * plain text, because this page has no checked URL for either.
  */
-function eventLine(event) {
-  const parts = [
-    calendarDate(event.receivedAt),
-    event.event.topic,
-    event.event.text,
+function eventRefs(refs, project) {
+  const parts = [];
+  if (refs.wave !== undefined) {
+    parts.push(internalLink(`wave ${refs.wave}`, pathFor(project, refs.wave)));
+  }
+  if (refs.lane !== undefined) {
+    parts.push(text(`lane ${refs.lane}`));
+  }
+  if (refs.pr !== undefined) {
+    parts.push(text(`PR #${refs.pr}`));
+  }
+  return parts.length === 0
+    ? undefined
+    : el("p", {
+        attrs: { class: "project-event-refs" },
+        children: parts.flatMap((part, at) =>
+          at === 0 ? [part] : [text(" · "), part],
+        ),
+      });
+}
+
+/**
+ * One event: a single element holding everything the event said, so a reader
+ * can see which detail and which refs belong to which line. The line reads
+ * `<date> · <topic> · <text>` with each field in an element of its own, the
+ * `detail` beneath when present, and the refs beneath when present.
+ */
+function eventLine(event, project) {
+  const children = [
+    el("p", {
+      attrs: { class: "project-event-line" },
+      children: [
+        el("span", {
+          attrs: { class: "project-event-date" },
+          text: calendarDate(event.receivedAt),
+        }),
+        text(" · "),
+        el("span", {
+          attrs: { class: "project-event-topic" },
+          text: event.event.topic,
+        }),
+        text(" · "),
+        el("span", {
+          attrs: { class: "project-event-text" },
+          text: event.event.text,
+        }),
+      ],
+    }),
   ];
+  if (event.event.detail !== undefined) {
+    children.push(
+      el("p", {
+        attrs: { class: "project-event-detail" },
+        text: event.event.detail,
+      }),
+    );
+  }
   const refs = event.event.refs;
   if (refs !== undefined) {
-    const refParts = [];
-    if (refs.wave !== undefined) {
-      refParts.push(`wave ${refs.wave}`);
-    }
-    if (refs.lane !== undefined) {
-      refParts.push(`lane ${refs.lane}`);
-    }
-    if (refs.pr !== undefined) {
-      refParts.push(`PR #${refs.pr}`);
-    }
-    if (refParts.length > 0) {
-      parts.push(refParts.join(" · "));
+    const line = eventRefs(refs, project);
+    if (line !== undefined) {
+      children.push(line);
     }
   }
-  return el("p", {
+  return el("article", {
     attrs: { class: "project-event" },
-    text: parts.join(" · "),
+    children,
   });
 }
 
 /**
  * The events section: always drawn, under the "Events" heading. Empty shows
- * "No events."; otherwise one line per event in the order given (newest first,
- * as the API answers), a `detail` on its own line beneath when it carried one,
- * and a line noting the cap when exactly 200 are shown.
+ * "No events."; otherwise one element per event in the order given (newest
+ * first, as the API answers), each holding its own detail and refs, and a
+ * line noting the cap when exactly 200 are shown.
  */
-export function eventsList(events) {
+export function eventsList(events, project) {
   const children = [el("h3", { text: "Events" })];
   if (events.length === 0) {
     children.push(
@@ -119,15 +163,7 @@ export function eventsList(events) {
     );
   } else {
     for (const event of events) {
-      children.push(eventLine(event));
-      if (event.event.detail !== undefined) {
-        children.push(
-          el("p", {
-            attrs: { class: "project-event-detail" },
-            text: event.event.detail,
-          }),
-        );
-      }
+      children.push(eventLine(event, project));
     }
     if (events.length === MAX_EVENTS) {
       children.push(

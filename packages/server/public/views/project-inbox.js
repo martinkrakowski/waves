@@ -83,7 +83,7 @@ export function renderProjectInbox(view, name, events, nowMs) {
       el("p", { attrs: { class: "project-inbox-empty" }, text: EMPTY }),
     );
   }
-  children.push(eventsList(events));
+  children.push(eventsList(events, view.project));
   children.push(el("p", { attrs: { class: "inbox-footer" }, text: FOOTER }));
   return el("section", {
     attrs: { class: "view project-inbox" },
