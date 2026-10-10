@@ -148,6 +148,17 @@ describe("the inbox line", () => {
     );
   });
 
+  it("shows only the link when all four counts are zero", () => {
+    const host = renderProjectView({
+      lanes: NO_REPO,
+      decisions: { waiting: 0, oneWay: 0, reported: 0, closed: 0 },
+    });
+    expect(textsOf(host, ".inbox-line")).toStrictEqual(["Inbox"]);
+    expect(oneOf(host, ".inbox-line a")?.getAttribute("href")).toBe(
+      "/p/alpha/inbox",
+    );
+  });
+
   it("is drawn on a wave's page, with the same href", () => {
     const host = renderProjectView({
       lanes: projectLanes({ waves: [waveSummary({ wave: "w-3" })] }),
