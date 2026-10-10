@@ -127,3 +127,18 @@ export function inboxModel(view) {
   );
   return { projects, totals: totals(view.projects) };
 }
+
+/**
+ * Whether a project has any decision to count: the four counts are present and
+ * at least one of them is greater than zero. A line of zeros says nothing a
+ * reader needs, so absent and all-zero are treated the same.
+ */
+export function hasCounts(counts) {
+  return (
+    counts !== undefined &&
+    (counts.waiting > 0 ||
+      counts.oneWay > 0 ||
+      counts.reported > 0 ||
+      counts.closed > 0)
+  );
+}

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { countLine, inboxModel } from "../../public/views/inbox-model.js";
+import {
+  countLine,
+  hasCounts,
+  inboxModel,
+} from "../../public/views/inbox-model.js";
 
 import { inboxCounts, inboxHead, inboxProject, inboxView } from "./fixtures.js";
 
@@ -245,5 +249,41 @@ describe("the inbox model", () => {
         closed: 0,
       });
     });
+  });
+});
+
+describe("hasCounts", () => {
+  it("is false when the counts are absent", () => {
+    expect(hasCounts(undefined)).toBe(false);
+  });
+
+  it("is false when all four counts are zero", () => {
+    expect(hasCounts({ waiting: 0, oneWay: 0, reported: 0, closed: 0 })).toBe(
+      false,
+    );
+  });
+
+  it("is true when only waiting is greater than zero", () => {
+    expect(hasCounts({ waiting: 1, oneWay: 0, reported: 0, closed: 0 })).toBe(
+      true,
+    );
+  });
+
+  it("is true when only reported is greater than zero", () => {
+    expect(hasCounts({ waiting: 0, oneWay: 0, reported: 1, closed: 0 })).toBe(
+      true,
+    );
+  });
+
+  it("is true when only closed is greater than zero", () => {
+    expect(hasCounts({ waiting: 0, oneWay: 0, reported: 0, closed: 1 })).toBe(
+      true,
+    );
+  });
+
+  it("is true when waiting and oneWay are both greater than zero", () => {
+    expect(hasCounts({ waiting: 1, oneWay: 1, reported: 0, closed: 0 })).toBe(
+      true,
+    );
   });
 });
