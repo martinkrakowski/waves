@@ -149,3 +149,98 @@
   font-size: 0.8rem;
   margin: 1rem 0 0;
 }
+
+/*
+ * The project's inbox page: the history of decisions that left the inbox, and
+ * the project's notice events, both below the three groups. An event is one
+ * bordered block holding its own detail and refs, so the two read as parts of
+ * the line above them and never of the block below.
+ */
+
+/* The history block: a collapsed list, its summary the way into it. */
+.project-inbox-history {
+  margin: 1rem 0;
+}
+
+.project-inbox-history summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.project-inbox-history summary:hover,
+.project-inbox-history summary:focus-visible {
+  color: var(--text);
+}
+
+.project-inbox-history-line {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin: 0.3rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+/* The events section, always drawn under its heading. */
+.inbox-events {
+  margin: 1.25rem 0 0;
+}
+
+.inbox-events h3 {
+  color: var(--muted);
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  margin: 0.75rem 0 0.3rem;
+  text-transform: uppercase;
+}
+
+/* One event: a compact row, no larger than a decision card's small text. */
+.project-event {
+  background: var(--bg-raise);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  margin: 0 0 0.5rem;
+  padding: 0.4rem 0.6rem;
+}
+
+.project-event-line {
+  color: var(--text);
+  font-size: 0.8rem;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The date and the topic are quieter than the text they sit beside. */
+.project-event-date,
+.project-event-topic {
+  color: var(--muted);
+  font-family: var(--mono);
+}
+
+/* The detail and the refs are subordinate to the event that carries them. */
+.project-event-detail,
+.project-event-refs {
+  color: var(--muted);
+  font-size: 0.72rem;
+  margin: 0.2rem 0 0;
+  overflow-wrap: anywhere;
+  padding-left: 0.75rem;
+}
+
+.project-event-refs {
+  font-family: var(--mono);
+}
+
+/* "No events.", the cap line and the empty line read like .inbox-empty. */
+.project-inbox-events-empty,
+.project-inbox-events-limit,
+.project-inbox-empty {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+  padding: 0.5rem 0;
+}
+
+.project-inbox-events-limit {
+  font-size: 0.8rem;
+}
