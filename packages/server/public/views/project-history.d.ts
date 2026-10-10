@@ -13,8 +13,11 @@ export declare function historyHeads(
 
 /**
  * The events section: always drawn, under the "Events" heading. Empty shows
- * "No events."; otherwise one line per event in the order given, a `detail` on
- * its own line beneath when present, and a cap notice when exactly 200 are
- * shown.
+ * "No events."; otherwise one element per event in the order given, each
+ * holding its own detail and refs beneath it, and a cap notice when exactly
+ * 200 are shown.
  */
-export declare function eventsList(events: readonly StoredEvent[]): HTMLElement;
+export declare function eventsList(
+  events: readonly StoredEvent[],
+  project: string,
+): HTMLElement;

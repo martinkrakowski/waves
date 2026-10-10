@@ -498,12 +498,55 @@ describe("renderProjectInbox", () => {
         "Alpha",
         [inboxEvent()],
       );
-      expect(textsOf(host, ".project-event")).toStrictEqual([
+      expect(textsOf(host, ".project-event-line")).toStrictEqual([
         "2026-04-01 at 12:00 UTC · relay · Round 3 sent to five sessions",
+      ]);
+      expect(textsOf(host, ".project-event-date")).toStrictEqual([
+        "2026-04-01 at 12:00 UTC",
+      ]);
+      expect(textsOf(host, ".project-event-topic")).toStrictEqual(["relay"]);
+      expect(textsOf(host, ".project-event-text")).toStrictEqual([
+        "Round 3 sent to five sessions",
       ]);
     });
 
-    it("draws the detail on its own line beneath", () => {
+    it("draws one event element per event, in the order given", () => {
+      const host = draw(
+        projectInboxView({
+          counts: { waiting: 0, oneWay: 0, reported: 0, closed: 0 },
+          decisions: [],
+        }),
+        "Alpha",
+        [
+          inboxEvent({
+            event: {
+              ...inboxEvent().event,
+              text: "first in the response",
+            },
+          }),
+          inboxEvent({
+            event: {
+              ...inboxEvent().event,
+              text: "second in the response",
+            },
+          }),
+          inboxEvent({
+            event: {
+              ...inboxEvent().event,
+              text: "third in the response",
+            },
+          }),
+        ],
+      );
+      expect(host.querySelectorAll(".project-event")).toHaveLength(3);
+      expect(textsOf(host, ".project-event-text")).toStrictEqual([
+        "first in the response",
+        "second in the response",
+        "third in the response",
+      ]);
+    });
+
+    it("draws the detail inside its event's element", () => {
       const host = draw(
         projectInboxView({
           counts: { waiting: 0, oneWay: 0, reported: 0, closed: 0 },
@@ -516,15 +559,28 @@ describe("renderProjectInbox", () => {
           }),
         ],
       );
-      expect(textsOf(host, ".project-event")).toStrictEqual([
-        "2026-04-01 at 12:00 UTC · relay · Round 3 sent to five sessions",
-      ]);
-      expect(textsOf(host, ".project-event-detail")).toStrictEqual([
-        "with more context",
-      ]);
+      const events = host.querySelectorAll(".project-event");
+      expect(events).toHaveLength(1);
+      const detail = events[0]?.querySelector(".project-event-detail") ?? null;
+      expect(textOf(detail)).toBe("with more context");
     });
 
-    it("draws a wave ref as plain text", () => {
+    it("draws no detail and no refs elements when the event has neither", () => {
+      const host = draw(
+        projectInboxView({
+          counts: { waiting: 0, oneWay: 0, reported: 0, closed: 0 },
+          decisions: [],
+        }),
+        "Alpha",
+        [inboxEvent()],
+      );
+      const events = host.querySelectorAll(".project-event");
+      expect(events).toHaveLength(1);
+      expect(events[0]?.querySelector(".project-event-detail")).toBeNull();
+      expect(events[0]?.querySelector(".project-event-refs")).toBeNull();
+    });
+
+    it("links a wave ref to that wave's page", () => {
       const host = draw(
         projectInboxView({
           counts: { waiting: 0, oneWay: 0, reported: 0, closed: 0 },
@@ -537,12 +593,15 @@ describe("renderProjectInbox", () => {
           }),
         ],
       );
-      expect(textsOf(host, ".project-event")).toStrictEqual([
-        "2026-04-01 at 12:00 UTC · relay · Round 3 sent to five sessions · wave w-1",
-      ]);
+      const link = host.querySelector(
+        ".project-event-refs a[href='/p/alpha/w/w-1']",
+      );
+      expect(link).not.toBeNull();
+      expect(textOf(link)).toBe("wave w-1");
+      expect(textsOf(host, ".project-event-refs")).toStrictEqual(["wave w-1"]);
     });
 
-    it("draws a lane ref as plain text", () => {
+    it("draws a lane ref as plain text and not a link", () => {
       const host = draw(
         projectInboxView({
           counts: { waiting: 0, oneWay: 0, reported: 0, closed: 0 },
@@ -555,12 +614,11 @@ describe("renderProjectInbox", () => {
           }),
         ],
       );
-      expect(textsOf(host, ".project-event")).toStrictEqual([
-        "2026-04-01 at 12:00 UTC · relay · Round 3 sent to five sessions · lane l-1",
-      ]);
+      expect(textsOf(host, ".project-event-refs")).toStrictEqual(["lane l-1"]);
+      expect(host.querySelectorAll(".project-event-refs a")).toHaveLength(0);
     });
 
-    it("draws a PR ref as plain text", () => {
+    it("draws a PR ref as plain text and not a link", () => {
       const host = draw(
         projectInboxView({
           counts: { waiting: 0, oneWay: 0, reported: 0, closed: 0 },
@@ -573,12 +631,33 @@ describe("renderProjectInbox", () => {
           }),
         ],
       );
-      expect(textsOf(host, ".project-event")).toStrictEqual([
-        "2026-04-01 at 12:00 UTC · relay · Round 3 sent to five sessions · PR #42",
-      ]);
+      expect(textsOf(host, ".project-event-refs")).toStrictEqual(["PR #42"]);
+      expect(host.querySelectorAll(".project-event-refs a")).toHaveLength(0);
     });
 
-    it("draws no refs text when the refs object is empty", () => {
+    it("joins the refs it holds with a middle dot, only the ones present", () => {
+      const host = draw(
+        projectInboxView({
+          counts: { waiting: 0, oneWay: 0, reported: 0, closed: 0 },
+          decisions: [],
+        }),
+        "Alpha",
+        [
+          inboxEvent({
+            event: {
+              ...inboxEvent().event,
+              refs: { wave: "w-1", lane: "l-1", pr: 42 },
+            },
+          }),
+        ],
+      );
+      expect(textsOf(host, ".project-event-refs")).toStrictEqual([
+        "wave w-1 · lane l-1 · PR #42",
+      ]);
+      expect(host.querySelectorAll(".project-event-refs a")).toHaveLength(1);
+    });
+
+    it("draws no refs element when the refs object is empty", () => {
       const host = draw(
         projectInboxView({
           counts: { waiting: 0, oneWay: 0, reported: 0, closed: 0 },
@@ -591,9 +670,7 @@ describe("renderProjectInbox", () => {
           }),
         ],
       );
-      expect(textsOf(host, ".project-event")).toStrictEqual([
-        "2026-04-01 at 12:00 UTC · relay · Round 3 sent to five sessions",
-      ]);
+      expect(host.querySelectorAll(".project-event-refs")).toHaveLength(0);
     });
 
     it("shows the cap line when exactly 200 events are shown", () => {
