@@ -159,6 +159,16 @@ describe("the inbox line", () => {
     );
   });
 
+  it("shows the counts when only closed is greater than zero", () => {
+    const host = renderProjectView({
+      lanes: NO_REPO,
+      decisions: { waiting: 0, oneWay: 0, reported: 0, closed: 1 },
+    });
+    expect(textsOf(host, ".inbox-line")).toStrictEqual([
+      "0 waiting (0 one-way doors) · 0 reported · 1 closed by a session · Inbox",
+    ]);
+  });
+
   it("is drawn on a wave's page, with the same href", () => {
     const host = renderProjectView({
       lanes: projectLanes({ waves: [waveSummary({ wave: "w-3" })] }),
