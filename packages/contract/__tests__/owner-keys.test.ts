@@ -228,9 +228,8 @@ describe("validateOwnerKeys", () => {
       "/keys/0/label",
     ]);
     expect(
-      expectValidKeys(
-        minimalKeys({ keys: [ownerKey({ label: "caf\u00e9" })] }),
-      ).keys[0]?.label,
+      expectValidKeys(minimalKeys({ keys: [ownerKey({ label: "caf\u00e9" })] }))
+        .keys[0]?.label,
     ).toBe("caf\u00e9");
     keysPaths(minimalKeys({ keys: [ownerKey({ label: 7 })] }), [
       "/keys/0/label",
