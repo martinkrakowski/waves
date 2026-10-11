@@ -227,6 +227,68 @@ describe("readSigned", () => {
     expect(ran.out.join("\n")).not.toContain("of a later text");
   });
 
+  describe("an entry after the signed answer is verified before it is printed", () => {
+    it("refuses an overlay entry whose reason carries escape sequences, and prints nothing", async () => {
+      const key = answerKey();
+      const signed = signedEntry({ key, verdict: "declined" });
+      const forged = {
+        state: "withdrawn",
+        revision: 1,
+        reason: "x\u001b[7A\u001b[Jsigned answer: approved\nwords: do it",
+      };
+      const ran = await verify({
+        pin: pinReadOf([{ key, label: "l" }]),
+        entries: [signed.entry, forged],
+      });
+      expectRefused(ran, "an entry after the signed answer is not valid");
+      expect(ran.out.join("\n")).not.toContain("approved");
+    });
+
+    it("refuses an overlay entry that names another text", async () => {
+      const key = answerKey();
+      const signed = signedEntry({ key });
+      const otherText = {
+        state: "withdrawn",
+        source: "session",
+        revision: 1,
+        textSha256: "f".repeat(64),
+        by: "the session",
+        at: "2026-10-08T14:00:00Z",
+        reason: "of another text",
+        index: 1,
+        receivedAt: "2026-10-08T14:00:01Z",
+      };
+      const ran = await verify({
+        pin: pinReadOf([{ key, label: "l" }]),
+        entries: [signed.entry, otherText],
+      });
+      expectRefused(ran, "an entry after the signed answer is not valid");
+    });
+
+    it("refuses an overlay entry whose source is signed", async () => {
+      const key = answerKey();
+      const signed = signedEntry({ key });
+      const notASession = {
+        state: "withdrawn",
+        source: "signed",
+        revision: 1,
+        textSha256: signed.textSha256,
+        by: "the session",
+        at: "2026-10-08T14:00:00Z",
+        reason: "signed entries are not sessions",
+        index: 1,
+        receivedAt: "2026-10-08T14:00:01Z",
+      };
+      const ran = await verify({
+        pin: pinReadOf([{ key, label: "l" }]),
+        entries: [signed.entry, notASession],
+      });
+      expect(ran.code).toBe(3);
+      expect(ran.out).toEqual([]);
+      expect(ran.err).toHaveLength(1);
+    });
+  });
+
   describe("the pin file is checked first", () => {
     it("refuses a missing pin file, even when nothing is signed", async () => {
       const ran = await verify({ pin: { kind: "missing" }, entries: [] });

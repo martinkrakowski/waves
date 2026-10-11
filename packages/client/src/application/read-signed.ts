@@ -2,6 +2,7 @@ import {
   decisionBindingText,
   validateDecision,
   validateOwnerKeys,
+  validateStoredStateEntry,
   type OwnerKeys,
 } from "@hexagen-monaco/waves-contract";
 
@@ -126,6 +127,19 @@ export async function readSigned(
     return refuse(assertion.reason, EXIT_UNVERIFIED);
   }
 
+  const afterwards = sessionEntryOver(
+    choice.position,
+    entries,
+    revision,
+    textSha256,
+  );
+  if (afterwards === "invalid") {
+    return refuse(
+      "an entry after the signed answer is not valid",
+      EXIT_UNVERIFIED,
+    );
+  }
+
   deps.out(`signed answer: ${choice.verdict}`);
   if (choice.entry.option !== undefined) {
     deps.out(`option: ${choice.entry.option}`);
@@ -139,7 +153,6 @@ export async function readSigned(
   }
   deps.out(`verified against ${PIN_PATH}`);
 
-  const afterwards = sessionEntryOver(choice.position, entries, revision);
   if (afterwards !== undefined) {
     deps.out(
       `afterwards, a session recorded: ${String(own(afterwards, "state"))} by ${String(own(afterwards, "by"))} at ${String(own(afterwards, "at"))}`,
@@ -191,17 +204,20 @@ function pinnedKeysOf(pin: PinRead): OwnerKeys | string {
  * answer, on the same text. It does not change what the signature means (6.2),
  * so it is printed after the answer and the exit stays 0.
  *
- * No entry with `source: "signed"` is looked for here, and none can be seen:
- * the chooser takes the last signed entry of the current revision, so any
- * entry after the chosen one with `source: "signed"` would have been chosen
- * itself — and a chosen entry that is not an answer state is refused before
- * this scan ever runs.
+ * An entry that reaches the user's terminal is as dangerous as the answer
+ * itself, so it is held to the reader's own rules before anything is printed:
+ * the contract must accept it as a stored state entry once the record's own
+ * `index` and `receivedAt` are stripped, it must be a `session`'s, and it must
+ * name the very text the answer was verified against. One that fails is never
+ * skipped in favour of an earlier entry: the whole read is refused, because a
+ * server that appends such an entry is trying to rewrite the verdict.
  */
 function sessionEntryOver(
   position: number,
   entries: readonly unknown[],
   revision: number,
-): Record<string, unknown> | undefined {
+  textSha256: string,
+): Record<string, unknown> | "invalid" | undefined {
   let found: Record<string, unknown> | undefined;
   for (let index = position + 1; index < entries.length; index += 1) {
     const entry = entries[index];
@@ -215,6 +231,24 @@ function sessionEntryOver(
     ) {
       found = entry;
     }
+  }
+  if (found === undefined) {
+    return undefined;
+  }
+  const stripped: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(found)) {
+    if (key !== "index" && key !== "receivedAt") {
+      stripped[key] = value;
+    }
+  }
+  const validated = validateStoredStateEntry(stripped);
+  if (
+    !validated.ok ||
+    validated.value.source !== "session" ||
+    validated.value.revision !== revision ||
+    validated.value.textSha256 !== textSha256
+  ) {
+    return "invalid";
   }
   return found;
 }
