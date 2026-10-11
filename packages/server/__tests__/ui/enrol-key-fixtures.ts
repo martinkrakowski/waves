@@ -23,6 +23,32 @@ export const HOSTNAME = "enrol.test";
 export const ORIGIN = "https://enrol.test";
 export const LOCATION = { origin: ORIGIN, hostname: HOSTNAME };
 
+/** The error a browser answers a credential argument without `publicKey` with. */
+export function notSupported(): Error {
+  return Object.assign(
+    new Error(
+      "Only exactly one of 'password', 'federated', and 'publicKey' credential types are currently supported.",
+    ),
+    { name: "NotSupportedError" },
+  );
+}
+
+/**
+ * A browser-shaped read of a `credentials.create`/`get` argument: the options
+ * live under `publicKey`, and an argument without that key is refused with a
+ * `NotSupportedError`, exactly as the browser does.
+ */
+export function publicKeyArgument(argument: unknown): { publicKey: unknown } {
+  if (
+    typeof argument !== "object" ||
+    argument === null ||
+    (argument as { publicKey?: unknown }).publicKey === undefined
+  ) {
+    throw notSupported();
+  }
+  return argument as { publicKey: unknown };
+}
+
 /** A 32-byte credential id, fixed so a test can compare it byte for byte. */
 export const CREDENTIAL_ID = Buffer.from(
   new Uint8Array(32).map((_, i) => i + 1),

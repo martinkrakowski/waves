@@ -31,18 +31,20 @@ import {
   makeCrypto,
   ORIGIN,
   OTHER_KEY,
+  publicKeyArgument,
   SPKI,
 } from "./enrol-key-fixtures.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SOURCE = join(HERE, "..", "..", "public", "enrol-key.js");
 
-/** A `credentials.create` as this page calls it. */
-type CreateFn = (
-  options: PublicKeyCredentialCreationOptions,
-) => Promise<unknown>;
-/** A `credentials.get` as this page calls it. */
-type GetFn = (options: PublicKeyCredentialRequestOptions) => Promise<unknown>;
+/**
+ * A `credentials.create` as this page calls it: the options under `publicKey`,
+ * the shape the browser takes and nothing else.
+ */
+type CreateFn = (options: CredentialCreationOptions) => Promise<unknown>;
+/** A `credentials.get` as this page calls it, options under `publicKey`. */
+type GetFn = (options: CredentialRequestOptions) => Promise<unknown>;
 
 /** A `credentials` whose `create` resolves to `response` and `get` to `assertion`. */
 function fakeCredentials(
@@ -53,8 +55,14 @@ function fakeCredentials(
   get: Mock<GetFn>;
 } {
   return {
-    create: vi.fn<CreateFn>().mockResolvedValue(response),
-    get: vi.fn<GetFn>().mockResolvedValue(assertion),
+    create: vi.fn<CreateFn>().mockImplementation((options) => {
+      publicKeyArgument(options);
+      return Promise.resolve(response);
+    }),
+    get: vi.fn<GetFn>().mockImplementation((options) => {
+      publicKeyArgument(options);
+      return Promise.resolve(assertion);
+    }),
   };
 }
 
@@ -79,22 +87,25 @@ describe("enrolKey.intro", () => {
 });
 
 describe("enrolKey.create options", () => {
-  it("hands credentials.create the exact P-256 platform passkey options", async () => {
+  it("hands credentials.create the exact P-256 platform passkey options under publicKey", async () => {
     const creds = fakeCredentials(makeCreation());
     const controller = enrolKey(creds, makeCrypto(0x41), LOCATION);
 
     await controller.create();
 
-    // Every field, down to the only-alg `-7` list, the platform selection and
-    // the 16-byte owner id, is checked by the exact-options assertion.
-    expect(creds.create).toHaveBeenCalledWith(
+    // The browser takes the WebAuthn options under `publicKey`, and the
+    // argument carries that key and nothing else beside it.
+    const argument = creds.create.mock.calls[0]?.[0];
+    expect(Object.keys(argument ?? {})).toStrictEqual(["publicKey"]);
+    // Every field of the options, down to the only-alg `-7` list, the platform
+    // selection and the 16-byte owner id, is checked by the equality below.
+    expect(argument?.publicKey).toEqual(
       createOptions(HOSTNAME, fillBytes(32, 0x41), fillBytes(16, 0x41)),
     );
     // Pinned against literals rather than against `createOptions` again: the
     // assertion above compares the call with the builder, so a builder that grew
     // an algorithm would satisfy both and say nothing. These do not.
-    const options = creds.create.mock.calls[0]?.[0] as
-      PublicKeyCredentialCreationOptions | undefined;
+    const options = argument?.publicKey;
     expect(options?.rp).toEqual({ id: HOSTNAME, name: "waves" });
     expect(options?.pubKeyCredParams).toStrictEqual([
       { type: "public-key", alg: -7 },
@@ -122,11 +133,13 @@ describe("enrolKey.get options", () => {
 
     await controller.test();
 
-    expect(creds.get).toHaveBeenCalledWith(
+    // The get options too live under `publicKey`, and nowhere else.
+    const argument = creds.get.mock.calls[0]?.[0];
+    expect(Object.keys(argument ?? {})).toStrictEqual(["publicKey"]);
+    expect(argument?.publicKey).toEqual(
       getOptions(HOSTNAME, fillBytes(32, 0x41), new Uint8Array(CREDENTIAL_ID)),
     );
-    const options = creds.get.mock.calls[0]?.[0] as
-      PublicKeyCredentialRequestOptions | undefined;
+    const options = argument?.publicKey;
     expect(options?.rpId).toBe(HOSTNAME);
     expect(options?.userVerification).toBe("required");
     expect(options?.timeout).toBe(120_000);

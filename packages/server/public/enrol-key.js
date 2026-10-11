@@ -403,7 +403,7 @@ export function enrolKey(credentials, crypto, location) {
       const options = createOptions(location.hostname, challenge, userId);
       let attestation;
       try {
-        attestation = await credentials.create(options);
+        attestation = await credentials.create({ publicKey: options });
       } catch (error) {
         return {
           kind: "createError",
@@ -426,7 +426,7 @@ export function enrolKey(credentials, crypto, location) {
       const options = getOptions(created.rpId, challenge, created.rawId);
       let assertion;
       try {
-        assertion = await credentials.get(options);
+        assertion = await credentials.get({ publicKey: options });
       } catch (error) {
         return {
           kind: "verified",

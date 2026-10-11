@@ -15,6 +15,7 @@ import {
   makeCreation,
   makeCrypto,
   ORIGIN,
+  publicKeyArgument,
   SPKI,
 } from "./enrol-key-fixtures.js";
 import { attentionView, NOW_MS, projectCard } from "./fixtures.js";
@@ -34,7 +35,11 @@ const TEST = "Test: sign once with this passkey";
 const SENDS = "This page sends nothing to the server";
 const NO_PK = "PublicKeyCredential is not available in this browser";
 
-/** A `credentials` whose `create` answers `response` and `get` answers `assertion`. */
+/**
+ * A `credentials` whose `create` answers `response` and `get` answers
+ * `assertion`, reading its options under `publicKey` and refusing anything
+ * else with a `NotSupportedError`, as the browser does.
+ */
 function credentials(
   response: unknown,
   assertion?: unknown,
@@ -43,8 +48,14 @@ function credentials(
   get: ReturnType<typeof vi.fn>;
 } {
   return {
-    create: vi.fn().mockResolvedValue(response),
-    get: vi.fn().mockResolvedValue(assertion),
+    create: vi.fn().mockImplementation((options: unknown) => {
+      publicKeyArgument(options);
+      return Promise.resolve(response);
+    }),
+    get: vi.fn().mockImplementation((options: unknown) => {
+      publicKeyArgument(options);
+      return Promise.resolve(assertion);
+    }),
   };
 }
 

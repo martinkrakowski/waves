@@ -62,13 +62,15 @@ export type EnrolState =
   EnrolIntro | EnrolReady | EnrolRefused | EnrolCreateError | EnrolVerified;
 
 /**
- * The browser objects the logic reads from, faked in tests. The results are
- * `unknown` on purpose: the module reads the attestation and the assertion
- * duck-typed, so `navigator.credentials` and a hand-built fake both fit.
+ * The browser objects the logic reads from, faked in tests. Both calls take
+ * their WebAuthn options under `publicKey`, as `navigator.credentials` does;
+ * the results are `unknown` on purpose: the module reads the attestation and
+ * the assertion duck-typed, so `navigator.credentials` and a hand-built fake
+ * both fit.
  */
 export interface EnrolCredentials {
-  create(options: PublicKeyCredentialCreationOptions): Promise<unknown>;
-  get(options: PublicKeyCredentialRequestOptions): Promise<unknown>;
+  create(options: CredentialCreationOptions): Promise<unknown>;
+  get(options: CredentialRequestOptions): Promise<unknown>;
 }
 
 export interface EnrolLocation {
