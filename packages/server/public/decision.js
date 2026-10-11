@@ -308,8 +308,9 @@ function decisionHead(head, project, id) {
  * Whether a response is a decision page this app can draw at all. The shape says
  * "no": a response that carries a head the page cannot pin to a path, revisions
  * that do not number 1 to n in order, or entries that name a revision the page
- * does not hold is a broken endpoint — the app treats it as a failed load rather
- * than replacing a page that was right with one it could only half fill.
+ * does not hold — or whose own index is not the position they stand at — is a
+ * broken endpoint; the app treats it as a failed load rather than replacing a
+ * page that was right with one it could only half fill.
  */
 export function drawableDecision(view, project, id) {
   if (
@@ -337,7 +338,11 @@ export function drawableDecision(view, project, id) {
   if (!Array.isArray(entries)) {
     return false;
   }
-  if (!entries.every((entry) => storedEntry(entry, nums, hashes))) {
+  if (
+    !entries.every(
+      (entry, i) => entry.index === i && storedEntry(entry, nums, hashes),
+    )
+  ) {
     return false;
   }
   const last = revisions[revisions.length - 1];

@@ -732,6 +732,38 @@ const INVALID: readonly (readonly [string, unknown])[] = [
       ],
     },
   ],
+  [
+    "a signed entry whose own index is not its position",
+    {
+      ...decisionResponse(),
+      head: inboxHead({
+        group: "reported",
+        state: "approved",
+        source: "signed",
+        entries: 2,
+      }),
+      entries: [
+        decisionEntry(),
+        signedDecisionEntry({ index: 0, signature: answerSignature(0) }),
+      ],
+    },
+  ],
+  [
+    "a signed entry at position 1 whose signature index is 0",
+    {
+      ...decisionResponse(),
+      head: inboxHead({
+        group: "reported",
+        state: "approved",
+        source: "signed",
+        entries: 2,
+      }),
+      entries: [
+        decisionEntry(),
+        signedDecisionEntry({ index: 1, signature: answerSignature(0) }),
+      ],
+    },
+  ],
 ];
 
 describe("drawableDecision", () => {
@@ -868,6 +900,24 @@ describe("drawableDecision", () => {
     ).toBe(true);
   });
 
+  it("takes a signed entry at position 1 with its signature bound there", () => {
+    expect(
+      drawableDecision(
+        decisionResponse({
+          head: inboxHead({
+            group: "reported",
+            state: "approved",
+            source: "signed",
+            entries: 2,
+          }),
+          entries: [decisionEntry(), signedDecisionEntry({ index: 1 })],
+        }),
+        PROJECT,
+        ID,
+      ),
+    ).toBe(true);
+  });
+
   it("takes a decision with all optional fields set", () => {
     expect(
       drawableDecision(
@@ -949,6 +999,7 @@ describe("drawableDecision", () => {
               words: "yes",
             }),
             decisionEntry({
+              index: 1,
               state: "withdrawn",
               source: "session",
               revision: 1,
