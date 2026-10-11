@@ -1163,9 +1163,7 @@ describe("the answer flow's signing", () => {
         calls.push({
           method,
           path,
-          ...(init?.body !== undefined
-            ? { body: JSON.parse(init.body) }
-            : {}),
+          ...(init?.body !== undefined ? { body: JSON.parse(init.body) } : {}),
         });
         if (path === DECISION("d1") && method === "GET") {
           decisionGets += 1;
