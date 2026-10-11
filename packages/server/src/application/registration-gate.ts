@@ -12,9 +12,7 @@ export interface RegistrationIdentity {
 }
 
 /** The registration of a project as it was read: only the two fields above. */
-export function registrationOf(
-  project: Project,
-): RegistrationIdentity {
+export function registrationOf(project: Project): RegistrationIdentity {
   return {
     tokenSha256: project.tokenSha256,
     registeredAt: project.registeredAt,

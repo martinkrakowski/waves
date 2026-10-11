@@ -841,7 +841,9 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
         return denied(res, method, socket, address, refused(decision));
       }
       const power = decision.kind;
-      if (!rate.take(power === "enroll" ? ENROLL_LIMITER_KEY : ADMIN_LIMITER_KEY)) {
+      if (
+        !rate.take(power === "enroll" ? ENROLL_LIMITER_KEY : ADMIN_LIMITER_KEY)
+      ) {
         return answer(
           res,
           method,

@@ -1,6 +1,9 @@
 import type { Project, StoredSnapshot } from "@hexagen-monaco/waves-contract";
 
-import { type RegistrationIdentity, registrationOf } from "./registration-gate.js";
+import {
+  type RegistrationIdentity,
+  registrationOf,
+} from "./registration-gate.js";
 import type { StorePort } from "./ports/store.js";
 
 /**

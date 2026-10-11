@@ -237,12 +237,7 @@ describe("a write whose registration is swapped after authentication", () => {
     const { started, store } = await wired();
     reregister(store);
 
-    const response = await json(
-      started,
-      "PUT",
-      statusPath(),
-      statusDocument(),
-    );
+    const response = await json(started, "PUT", statusPath(), statusDocument());
 
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({ error: "unauthorized" });
