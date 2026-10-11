@@ -1505,6 +1505,35 @@ describe("the answer flow's steps before signing", () => {
     h.app.stop();
   });
 
+  it("shows a problem and keeps the draft for words with a line break", async () => {
+    const h = setup();
+    await settle();
+
+    press("answer-words-open");
+    await flush();
+
+    const area = textarea("answer-words");
+    area.value = "line one\nline two";
+    area.dispatchEvent(new Event("input", { bubbles: true }));
+    await flush();
+
+    press("answer-continue");
+    await flush();
+
+    expect(textOf(root().querySelector("p.answer-problem"))).toBe(
+      "Write it as one line: a line break or a tab cannot be signed.",
+    );
+    expect(textarea("answer-words").value).toBe("line one\nline two");
+    expect(root().querySelector("div.answer-confirm")).toBeNull();
+    expect(
+      h.fetchImpl.calls.filter(
+        (c) => c.method === "POST" && c.path === NONCE("d1"),
+      ),
+    ).toHaveLength(0);
+
+    h.app.stop();
+  });
+
   it("trims own words before confirming them", async () => {
     const h = setup();
     await settle();
