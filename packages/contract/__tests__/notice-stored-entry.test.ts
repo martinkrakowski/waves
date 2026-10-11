@@ -291,7 +291,7 @@ describe("validateStoredStateEntry", () => {
   it("refuses a signature whose six fields break the answer request's bounds", () => {
     for (const [field, value] of [
       ["credentialId", "A".repeat(15)],
-      ["authenticatorData", "B".repeat(49)],
+      ["authenticatorData", "B".repeat(48)],
       ["clientDataJSON", "C".repeat(19)],
       ["signature", "D".repeat(7)],
       ["nonce", "A".repeat(42)],
