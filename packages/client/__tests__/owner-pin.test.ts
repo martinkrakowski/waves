@@ -189,9 +189,20 @@ describe("ownerPinFile", () => {
 });
 
 describe("the pin the real client reads", () => {
-  it("is the design's path, so a run of `read --signed` opens it", async () => {
-    // The default factory reads the constant's path; on this host that file
-    // does not exist, so the honest answer is `missing`, not a throw.
-    await expect(ownerPinFile().read()).resolves.toEqual({ kind: "missing" });
+  it("is the design's path, whatever this machine holds at it", async () => {
+    // The default factory's path is asserted through an injected open, so the
+    // test says what the client would open — never what this machine answers,
+    // which is the owner's to decide by installing the pin file or not.
+    const opened: { path: string; flags: number }[] = [];
+    const inject: OpenPinFile = async (path, flags) => {
+      opened.push({ path, flags });
+      throw { code: "ENOENT" };
+    };
+    await expect(ownerPinFile(undefined, inject).read()).resolves.toEqual({
+      kind: "missing",
+    });
+    expect(opened).toEqual([
+      { path: OWNER_KEYS_PATH, flags: expect.any(Number) },
+    ]);
   });
 });

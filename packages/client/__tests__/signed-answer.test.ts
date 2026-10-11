@@ -81,6 +81,8 @@ describe("the byte helpers", () => {
 
   it("decodes standard base64 with its padding", () => {
     expect([...decodeBase64("AAEC")!]).toEqual([0, 1, 2]);
+    expect([...decodeBase64("AAE=")!]).toEqual([0, 1]);
+    expect([...decodeBase64("AA==")!]).toEqual([0]);
   });
 
   it("refuses what is not base64url", () => {
@@ -154,12 +156,12 @@ describe("chooseSignedAnswer", () => {
     const broken = { ...built.entry };
     delete broken.signature;
     const choice = chooseSignedAnswer([broken], 1, built.textSha256);
-    expect(choice).toMatchObject({ ok: false });
-    if (!choice.ok && !("none" in choice)) {
-      expect(choice.reason).toContain(
+    expect(choice).toEqual({
+      ok: false,
+      reason: expect.stringContaining(
         "the signed entry is not a valid stored state entry",
-      );
-    }
+      ),
+    });
   });
 
   it("refuses a signed entry copied to a later position", () => {
