@@ -58,6 +58,34 @@ describe("verifyAssertion", () => {
     }
   });
 
+  it("returns the second of two pinned keys when it signed", () => {
+    const first = buildAssertion();
+    const second = buildAssertion({ credentialSeed: "assertion-credential-2" });
+    const keys = [...first.keys, ...second.keys];
+
+    const result = verifyAssertion(second.input, second.text, keys);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.key.credentialId).toBe(second.keys[0]!.key.credentialId);
+      expect(result.key.credentialId).not.toBe(first.keys[0]!.key.credentialId);
+    }
+  });
+
+  it("refuses an assertion carrying the other key's credential id", () => {
+    const first = buildAssertion();
+    const second = buildAssertion({ credentialSeed: "assertion-credential-2" });
+    const keys = [...first.keys, ...second.keys];
+
+    const result = verifyAssertion(
+      { ...second.input, credentialId: first.keys[0]!.key.credentialId },
+      second.text,
+      keys,
+    );
+
+    expect(result).toEqual({ ok: false, reason: "bad-signature" });
+  });
+
   it("refuses a credential no key names", () => {
     const built = buildAssertion();
     const result = verifyAssertion(

@@ -49,6 +49,8 @@ export interface Changes {
   readonly tamperData?: (bytes: Buffer) => void;
   /** Sign with another private key than the one the keys list holds. */
   readonly signingKey?: KeyObject;
+  /** Distinct text the credential id is built from, so two built keys differ. */
+  readonly credentialSeed?: string;
 }
 
 export interface Built {
@@ -75,9 +77,9 @@ function sha256(bytes: Buffer): Buffer {
  */
 export function buildAssertion(changes: Changes = {}): Built {
   const pair = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
-  const credentialId = Buffer.from("assertion-credential-1").toString(
-    "base64url",
-  );
+  const credentialId = Buffer.from(
+    changes.credentialSeed ?? "assertion-credential-1",
+  ).toString("base64url");
   const ownerKey: OwnerKey = {
     credentialId,
     publicKeySpki: pair.publicKey
