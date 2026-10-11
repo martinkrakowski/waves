@@ -218,11 +218,30 @@ function inspectCreation(response, location) {
     );
   }
   const spki = bytesToUint8(publicKey);
-  const algorithm = r.getPublicKeyAlgorithm();
+  const reason =
+    "this browser does not return the public key; enrolment cannot be done here";
+  if (typeof r?.getPublicKeyAlgorithm !== "function") {
+    return refused(reason);
+  }
+  let algorithm;
+  try {
+    algorithm = r.getPublicKeyAlgorithm();
+  } catch {
+    return refused(reason);
+  }
   if (algorithm !== ES256) {
     return refused("the passkey uses a key type this page does not support");
   }
-  const authData = bytesToUint8(r.getAuthenticatorData());
+  if (typeof r?.getAuthenticatorData !== "function") {
+    return refused(reason);
+  }
+  let authDataBytes;
+  try {
+    authDataBytes = r.getAuthenticatorData();
+  } catch {
+    return refused(reason);
+  }
+  const authData = bytesToUint8(authDataBytes);
   const flags = flagsOf(authData[32]);
   if (!flags.userVerified) {
     return refused("this passkey was not user-verified");

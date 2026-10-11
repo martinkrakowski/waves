@@ -284,6 +284,40 @@ describe("enrolKey.create results", () => {
     });
   });
 
+  it.each<[string, Record<string, unknown>]>([
+    ["without getPublicKeyAlgorithm", { getPublicKeyAlgorithm: undefined }],
+    ["without getAuthenticatorData", { getAuthenticatorData: undefined }],
+    [
+      "whose getPublicKeyAlgorithm throws",
+      {
+        getPublicKeyAlgorithm: () => {
+          throw new Error("no algorithm");
+        },
+      },
+    ],
+    [
+      "whose getAuthenticatorData throws",
+      {
+        getAuthenticatorData: () => {
+          throw new Error("no authenticator data");
+        },
+      },
+    ],
+  ])("refuses a create response %s", async (_label, overrides) => {
+    const base = makeCreation() as Record<string, unknown>;
+    const response = {
+      ...(base.response as Record<string, unknown>),
+      ...overrides,
+    };
+    const creds = fakeCredentials({ ...base, response });
+    const controller = enrolKey(creds, makeCrypto(0x41), LOCATION);
+    expect(await controller.create("platform")).toEqual({
+      kind: "refused",
+      reason:
+        "this browser does not return the public key; enrolment cannot be done here",
+    });
+  });
+
   it("refuses a passkey whose algorithm is not -7", async () => {
     const creds = fakeCredentials(makeCreation({ algorithm: -257 }));
     const controller = enrolKey(creds, makeCrypto(0x41), LOCATION);
