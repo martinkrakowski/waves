@@ -98,6 +98,9 @@ export interface Answerer {
   abandon(): void;
 }
 
+/** The contract's bound on `words` (`MAX_TEXT_CHARS`), by its page name. */
+export declare const MAX_WORDS_CHARS: number;
+
 /**
  * Whether the page may offer answer controls for the model it is showing,
  * and if not, the one reason why.

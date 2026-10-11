@@ -15,6 +15,7 @@ import {
   answerability,
   choiceOf,
   createAnswerer,
+  MAX_WORDS_CHARS,
   prepareWords,
   probeAnswering,
 } from "../../public/answer.js";
@@ -471,6 +472,10 @@ describe("prepareWords", () => {
       ok: false,
       reason: "too-long",
     });
+  });
+
+  it("exports the bound it checks as the contract's own number", () => {
+    expect(MAX_WORDS_CHARS).toBe(MAX_TEXT_CHARS);
   });
 
   it("refuses a control character inside the words before he signs", () => {

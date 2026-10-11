@@ -21,7 +21,7 @@ import {
  * because `public/` has no build step and cannot import the contract package;
  * the test imports the contract's number and holds the two together.
  */
-const MAX_WORDS_CHARS = 2000;
+export const MAX_WORDS_CHARS = 2000;
 
 /**
  * A second, in milliseconds: shorter than the enrol page's ceiling on purpose,
