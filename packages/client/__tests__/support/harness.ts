@@ -7,6 +7,7 @@ import type {
   Environment,
   Files,
   HttpRequest,
+  PinRead,
   RunOutcome,
   RunRequest,
   Runner,
@@ -248,6 +249,8 @@ export interface HarnessInput {
   readonly files?: Readonly<Record<string, FileEntry>>;
   readonly stdin?: string;
   readonly now?: number;
+  /** What the pin port answers, for a `read --signed` that expects one. */
+  readonly pins?: PinRead;
   /** A clock of the test's own, for a run that measures how long it took. */
   readonly clock?: { now(): number };
 }
@@ -280,6 +283,7 @@ export function harness(input: HarnessInput = {}): Harness {
     },
     transport: scripted.factory,
     runner: programs.runner,
+    ownerPins: { read: async () => input.pins ?? { kind: "missing" } },
     out: recorded.io.out,
     err: recorded.io.err,
   };

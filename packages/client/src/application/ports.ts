@@ -65,6 +65,34 @@ export interface Files {
   writeSecret(path: string, secret: string): Promise<void>;
 }
 
+/**
+ * What the reader found at the pin path. A file that is not there is `missing`,
+ * and everything else is `present` with what the descriptor said about it: the
+ * kind of thing it is, the uid that owns it and the permission bits, plus its
+ * text when it is a regular file that could be read. A link is never followed,
+ * so its `text` is `undefined` and its `type` says what it is.
+ */
+export type PinRead =
+  | { readonly kind: "missing" }
+  | {
+      readonly kind: "present";
+      readonly type: "file" | "symlink" | "other";
+      readonly uid: number;
+      readonly mode: number;
+      readonly text: string | undefined;
+    };
+
+/**
+ * The owner's pinned public keys, read from a path this port's adapter owns: a
+ * session can point nothing at the file it would like the reader to trust. The
+ * checks on what was found — root-owned, not group- or world-writable, a valid
+ * owner-keys document — belong to the use case, so a fake port can exercise
+ * every one of them.
+ */
+export interface OwnerPins {
+  read(): Promise<PinRead>;
+}
+
 export interface InputStream {
   read(): Promise<string>;
 }
@@ -183,6 +211,7 @@ export interface CliDeps {
   readonly sleeper: Sleeper;
   readonly transport: TransportFactory;
   readonly runner: Runner;
+  readonly ownerPins: OwnerPins;
 }
 
 /** The ports plus the two streams the use cases report on. */
