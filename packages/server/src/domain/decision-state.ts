@@ -108,6 +108,24 @@ export function earlierAnswer(
 }
 
 /**
+ * Whether the current text already holds a signed answer (design 4.2): after
+ * one, no reported entry on that text is accepted. The current text is its
+ * hash, not its run: a signed entry anywhere in the history whose
+ * `textSha256` equals the current revision's shuts reported entries out,
+ * even when the text returns after later revisions — the same hash is the
+ * same text (rule 1 and rule 4).
+ */
+export function signedOnCurrentText(decision: StoredDecision): boolean {
+  const run = currentTextRun(decision);
+  if (run === undefined) {
+    return false;
+  }
+  return decision.entries.some(
+    (entry) => entry.source === "signed" && entry.textSha256 === run.hash,
+  );
+}
+
+/**
  * A reported answer is fresh for 14 days from the entry's receive time; after
  * that it lives on in the project's history. The same window closes a
  * session-closed decision.
