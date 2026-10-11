@@ -870,7 +870,11 @@ describe("sign: what the answers route answers", () => {
     ["off for a 404", { status: 404 }, { kind: "off" }],
     ["busy for a 429", { status: 429 }, { kind: "busy" }],
     ["failed for a 500", { status: 500 }, { kind: "failed" }],
-    ["failed for a rejected fetch", { reject: true }, { kind: "failed" }],
+    [
+      "unknown for a rejected fetch: the answer may have been stored",
+      { reject: true },
+      { kind: "unknown" },
+    ],
     [
       "failed for a reply that is not JSON",
       { status: 201, jsonThrows: true },

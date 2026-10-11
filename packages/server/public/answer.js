@@ -271,26 +271,33 @@ async function signOnce(model, choice, browser) {
     return { kind: "cancelled" };
   }
 
-  const answerResponse = await fetchImpl(
-    answersPath(model.head.project, model.head.id),
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(
-        answerBody(
-          {
-            revision: model.currentRevision.revision,
-            textSha256,
-            index,
-            verdict: choice.verdict,
-            words: choice.words,
-            nonce: nonceReply.nonce,
-          },
-          assertion,
+  let answerResponse;
+  try {
+    answerResponse = await fetchImpl(
+      answersPath(model.head.project, model.head.id),
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(
+          answerBody(
+            {
+              revision: model.currentRevision.revision,
+              textSha256,
+              index,
+              verdict: choice.verdict,
+              words: choice.words,
+              nonce: nonceReply.nonce,
+            },
+            assertion,
+          ),
         ),
-      ),
-    },
-  );
+      },
+    );
+  } catch {
+    // The connection dropped on the way back: the answer may have been
+    // stored, so this is not "not recorded".
+    return { kind: "unknown" };
+  }
   if (answerResponse.status === 201) {
     const stored = await answerResponse.json();
     if (!isStoredReply(stored)) {

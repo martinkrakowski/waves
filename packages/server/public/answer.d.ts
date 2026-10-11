@@ -58,6 +58,7 @@ export type AnswerOutcome =
   | { readonly kind: "refused"; readonly reason: RefusalReason }
   | { readonly kind: "not-answerable"; readonly reason: NoAnswerReason }
   | { readonly kind: "in-progress" }
+  | { readonly kind: "unknown" }
   | { readonly kind: "failed" };
 
 /** A response as this page reads it: the status and, when it asks, the JSON. */
