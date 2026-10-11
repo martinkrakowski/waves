@@ -521,21 +521,54 @@ describe("the answer model", () => {
   it("counts only signed entries against the cap when a session wrote over one", async () => {
     const h = harness();
     await raised(h.store, [
-      signedEntry(0),
-      storedEntry(1, {
+      ...Array.from({ length: MAX_SIGNED_ENTRIES_PER_DECISION - 1 }, (_, n) =>
+        signedEntry(n),
+      ),
+      storedEntry(MAX_SIGNED_ENTRIES_PER_DECISION - 1, {
         state: "withdrawn",
         source: "session",
         reason: "pulled back",
       }),
     ]);
-    expect(await h.model.answer(PROJECT, ID, answerBody({ index: 2 }))).toEqual(
-      {
-        kind: "stored",
-        index: 2,
-        state: "approved",
-      },
+    expect(
+      await h.model.answer(
+        PROJECT,
+        ID,
+        answerBody({ index: MAX_SIGNED_ENTRIES_PER_DECISION }),
+      ),
+    ).toEqual({
+      kind: "stored",
+      index: MAX_SIGNED_ENTRIES_PER_DECISION,
+      state: "approved",
+    });
+    const entry = await readBack(
+      h.store,
+      MAX_SIGNED_ENTRIES_PER_DECISION,
     );
-    const entry = await readBack(h.store, 2);
-    expect(entry.signature?.index).toBe(2);
+    expect(entry.signature?.index).toBe(MAX_SIGNED_ENTRIES_PER_DECISION);
+  });
+
+  it("refuses with signed-cap when the decision already holds the cap of signed entries", async () => {
+    const h = harness();
+    await raised(h.store, [
+      ...Array.from({ length: MAX_SIGNED_ENTRIES_PER_DECISION }, (_, n) =>
+        signedEntry(n),
+      ),
+      storedEntry(MAX_SIGNED_ENTRIES_PER_DECISION, {
+        state: "withdrawn",
+        source: "session",
+        reason: "pulled back",
+      }),
+    ]);
+    expect(
+      await h.model.answer(
+        PROJECT,
+        ID,
+        answerBody({ index: MAX_SIGNED_ENTRIES_PER_DECISION + 1 }),
+      ),
+    ).toEqual({ kind: "refused", reason: "signed-cap" });
+    expect((await h.store.getDecision(PROJECT, ID))?.entries).toHaveLength(
+      MAX_SIGNED_ENTRIES_PER_DECISION + 1,
+    );
   });
 });
