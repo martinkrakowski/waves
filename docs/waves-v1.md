@@ -600,6 +600,16 @@ three, and a length of 4n+1 is refused. The bits at the end of the last characte
 that no byte uses must be zero here as well, so one run of bytes has one spelling
 in this document too.
 
+**The reader's own check.** `waves decision read <id> --signed` verifies the
+current signed answer for itself (design W63): it recomputes `textSha256` from
+the revision's own fields, rebuilds the challenge from what it is answering, and
+checks the assertion against the owner keys pinned in `/etc/waves/owner-keys.json`
+— a regular file, owned by root, writable by neither group nor others, and never
+a link. Any failed check, a bad pin file included, is exit 3 with one sentence
+naming the check; no signed answer on the current text is exit 4. Exit 0 prints
+the verified answer, and nothing the server said is trusted where the reader can
+recompute it.
+
 ### The event
 
 `validateEvent` is the gate (`packages/contract/src/domain/notice-event.ts`). An
