@@ -344,10 +344,10 @@ describe("signedOnCurrentText", () => {
     expect(signedOnCurrentText(d)).toBe(false);
   });
 
-  it("stays false when the signed answer's text returns after a revision", () => {
+  it("is true when the signed answer's text returns after a revision", () => {
     // Revision 1 is text A with the signed answer, revision 2 is text B,
-    // revision 3 is text A again: the current run starts at 3 and does not
-    // reach back to the signed answer, so reported entries are not shut out.
+    // revision 3 is text A again: the same hash is the same text, wherever
+    // in the history the signed entry is.
     const d = {
       project: "p",
       id: "d",
@@ -360,7 +360,7 @@ describe("signedOnCurrentText", () => {
         entry({ index: 0, revision: 1, textSha256: HASH_A, source: "signed" }),
       ],
     };
-    expect(signedOnCurrentText(d)).toBe(false);
+    expect(signedOnCurrentText(d)).toBe(true);
   });
 });
 

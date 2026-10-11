@@ -653,7 +653,7 @@ describe("postState", () => {
     ).toEqual({ kind: "posted", index: 1 });
   });
 
-  it("accepts a reported answer when the signed answer's text returns", async () => {
+  it("refuses a reported answer when the signed answer's text returns", async () => {
     const store = new MemoryStore();
     const m = model(store);
     await m.raiseDecision(PROJECT, ID, BODY);
@@ -668,8 +668,8 @@ describe("postState", () => {
       question: "New question?",
     });
     await m.raiseDecision(PROJECT, ID, changed);
-    // The original text returns as revision 3: the signed answer stayed on
-    // revision 1's run and does not shut this reported answer out.
+    // The original text returns as revision 3: the same hash is the same
+    // text, so the signed answer on it still shuts reported entries out.
     expect(await m.raiseDecision(PROJECT, ID, BODY)).toMatchObject({
       kind: "stored",
       revision: 3,
@@ -681,7 +681,10 @@ describe("postState", () => {
         ID,
         stateEntry({ revision: 3, expectedEntries: 1 }),
       ),
-    ).toEqual({ kind: "posted", index: 1 });
+    ).toMatchObject({
+      kind: "conflict",
+      error: "a signed answer exists on this text",
+    });
   });
 });
 

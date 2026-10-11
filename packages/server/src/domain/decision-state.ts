@@ -108,11 +108,12 @@ export function earlierAnswer(
 }
 
 /**
- * Whether the current text's run already holds a signed answer (design 4.2):
- * after one, no reported entry on that text is accepted. "On this text" is the
- * current text's run, so a signed entry on an earlier run shuts nothing out —
- * not even when the old text returns later, since the run does not reach back
- * to it (rule 1 and rule 4).
+ * Whether the current text already holds a signed answer (design 4.2): after
+ * one, no reported entry on that text is accepted. The current text is its
+ * hash, not its run: a signed entry anywhere in the history whose
+ * `textSha256` equals the current revision's shuts reported entries out,
+ * even when the text returns after later revisions — the same hash is the
+ * same text (rule 1 and rule 4).
  */
 export function signedOnCurrentText(decision: StoredDecision): boolean {
   const run = currentTextRun(decision);
@@ -120,7 +121,7 @@ export function signedOnCurrentText(decision: StoredDecision): boolean {
     return false;
   }
   return decision.entries.some(
-    (entry) => entry.source === "signed" && isOnCurrentText(entry, run),
+    (entry) => entry.source === "signed" && entry.textSha256 === run.hash,
   );
 }
 
