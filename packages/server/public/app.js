@@ -252,16 +252,16 @@ export function createApp(deps) {
   /** The state the enrol-key page last answered with, replayed on each draw. */
   let enrolCurrent = undefined;
   /**
-    * The answerer behind a decision page's answer controls, built for the
-    * page open from the browser objects it reads as parameters. It allows one
-    * sign at a time, so a passkey prompt left open on a visit the reader has
-    * left must not answer for the next: the answerer belongs to the page, and
-    * a navigation away drops it with everything else. Everything else the
-    * answer flow holds does too: the step the flow is on, the draft the
-    * reader typed, the probe's answer and the decision the flow was opened
-    * against all belong to the decision on screen, and a navigation away
-    * drops every one of them.
-    */
+   * The answerer behind a decision page's answer controls, built for the
+   * page open from the browser objects it reads as parameters. It allows one
+   * sign at a time, so a passkey prompt left open on a visit the reader has
+   * left must not answer for the next: the answerer belongs to the page, and
+   * a navigation away drops it with everything else. Everything else the
+   * answer flow holds does too: the step the flow is on, the draft the
+   * reader typed, the probe's answer and the decision the flow was opened
+   * against all belong to the decision on screen, and a navigation away
+   * drops every one of them.
+   */
   let answerLogic = undefined;
   /** The step of the answer flow the reader is on; `idle` before any press. */
   let answerUi = { kind: "idle" };

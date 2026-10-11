@@ -839,9 +839,7 @@ describe("the answer flow's signing", () => {
 
     expect(messageText()).toBe("The answer was not recorded. Try again.");
     expect(h.getCalls).toHaveLength(0);
-    expect(
-      fetchImpl.calls.filter((c) => c.method === "POST"),
-    ).toHaveLength(0);
+    expect(fetchImpl.calls.filter((c) => c.method === "POST")).toHaveLength(0);
 
     h.app.stop();
   });
