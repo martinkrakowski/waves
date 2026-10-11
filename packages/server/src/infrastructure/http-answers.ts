@@ -6,7 +6,10 @@ import {
   type StoredSnapshot,
 } from "@hexagen-monaco/waves-contract";
 
-import { createAnswerModel, type AnswerRefusal } from "../application/answer-model.js";
+import {
+  createAnswerModel,
+  type AnswerRefusal,
+} from "../application/answer-model.js";
 import type { FailureLimiter, RateLimiter } from "../application/limiters.js";
 import { createNonceStore } from "../application/nonce-store.js";
 import type { NonceSource } from "../application/ports/nonce-source.js";
@@ -39,7 +42,7 @@ const ANSWER_KEY_PREFIX = ":answer:";
 
 /** A refusal the model answered with goes out with the connection, because
  * the capped read was abandoned and the rest of the body has no reader. */
-const CONNECTION_CLOSE = { "Connection": "close" } as const;
+const CONNECTION_CLOSE = { Connection: "close" } as const;
 
 /** A short sentence per refusal word, for the 409 body a caller can read. */
 const REFUSAL_SENTENCES: Readonly<Record<AnswerRefusal, string>> = {
@@ -245,7 +248,10 @@ export function createAnswerHandler(deps: AnswerDeps): AnswerHandler {
       if ((await store.getProject(matched.project)) === undefined) {
         return refuse(req, res, NOT_FOUND);
       }
-      const decision = await noticeStore.getDecision(matched.project, matched.id);
+      const decision = await noticeStore.getDecision(
+        matched.project,
+        matched.id,
+      );
       if (decision === undefined) {
         return refuse(req, res, NOT_FOUND);
       }
