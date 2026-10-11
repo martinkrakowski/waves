@@ -13,6 +13,10 @@ import { FileNoticeStore } from "./infrastructure/file-notice-store.js";
 import { createHttpServer } from "./infrastructure/http-server.js";
 import { listen } from "./infrastructure/listen.js";
 import { readReadToken } from "./infrastructure/read-token.js";
+import {
+  readOwnerKeysIfConfigured,
+  type OwnerKeysSetting,
+} from "./infrastructure/owner-keys-file.js";
 import { sha256Hex } from "./infrastructure/sha256.js";
 
 const SHUTDOWN_MS = 5000;
@@ -79,6 +83,25 @@ async function loadSecret(
   }
 }
 
+/**
+ * The owner's public keys are a setting with two shapes, not a secret with a
+ * grammar: the variable absent means the feature is off, which one line says,
+ * and any failure to load the file it names is a refusal to start. The keys are
+ * held here and passed nowhere yet: no route exists to answer with them.
+ */
+async function loadOwnerKeys(config: Config): Promise<OwnerKeysSetting> {
+  try {
+    const ownerKeys = await readOwnerKeysIfConfigured(config.ownerKeysFile);
+    if (ownerKeys === undefined) {
+      io.out("waves: signed answers disabled");
+    }
+    return ownerKeys;
+  } catch (error) {
+    fail(error);
+    return undefined;
+  }
+}
+
 async function start(): Promise<number> {
   const config = readConfig();
   if (config === undefined) {
@@ -113,6 +136,10 @@ async function start(): Promise<number> {
     io.err(
       "waves: WAVES_ENROLL_TOKEN_FILE holds the admin token; the two must differ",
     );
+    return EXIT_INVALID_ENVIRONMENT;
+  }
+  const ownerKeys = await loadOwnerKeys(config);
+  if (config.ownerKeysFile !== undefined && ownerKeys === undefined) {
     return EXIT_INVALID_ENVIRONMENT;
   }
 

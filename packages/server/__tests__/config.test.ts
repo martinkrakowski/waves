@@ -6,6 +6,7 @@ import {
   DATA_DIR_VARIABLE,
   ENROLL_TOKEN_FILE_VARIABLE,
   HOST_VARIABLE,
+  OWNER_KEYS_FILE_VARIABLE,
   parseConfig,
   PORT_VARIABLE,
   READ_TOKEN_FILE_VARIABLE,
@@ -23,6 +24,7 @@ describe("parseConfig", () => {
       readTokenFile: undefined,
       adminTokenFile: undefined,
       enrollTokenFile: undefined,
+      ownerKeysFile: undefined,
       trustProxy: false,
     });
   });
@@ -36,6 +38,7 @@ describe("parseConfig", () => {
         [READ_TOKEN_FILE_VARIABLE]: "/run/secrets/waves-read",
         [ADMIN_TOKEN_FILE_VARIABLE]: "/run/secrets/waves-admin/token",
         [ENROLL_TOKEN_FILE_VARIABLE]: "/run/secrets/waves-enroll/token",
+        [OWNER_KEYS_FILE_VARIABLE]: "/run/secrets/waves-owner-keys.json",
         [TRUST_PROXY_VARIABLE]: "1",
       }),
     ).toEqual({
@@ -45,8 +48,26 @@ describe("parseConfig", () => {
       readTokenFile: "/run/secrets/waves-read",
       adminTokenFile: "/run/secrets/waves-admin/token",
       enrollTokenFile: "/run/secrets/waves-enroll/token",
+      ownerKeysFile: "/run/secrets/waves-owner-keys.json",
       trustProxy: true,
     });
+  });
+
+  it("takes the owner keys file on its own, as an optional one", () => {
+    expect(
+      parseConfig({
+        ...DATA_DIR,
+        [OWNER_KEYS_FILE_VARIABLE]: "/run/secrets/waves-owner-keys.json",
+      }),
+    ).toMatchObject({
+      ownerKeysFile: "/run/secrets/waves-owner-keys.json",
+    });
+  });
+
+  it("rejects an empty owner keys file path", () => {
+    expect(() =>
+      parseConfig({ ...DATA_DIR, [OWNER_KEYS_FILE_VARIABLE]: "" }),
+    ).toThrow(OWNER_KEYS_FILE_VARIABLE);
   });
 
   it("takes the enrollment file on its own, as an optional one", () => {
