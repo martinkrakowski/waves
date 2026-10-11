@@ -1328,8 +1328,14 @@ export function createApp(deps) {
             draw();
             // At once, after every outcome: the entry the answer became — or
             // the change the page missed while the reply was lost — is on the
-            // page he is looking at and not on the next refresh's.
-            void refreshOnce().then(schedule, schedule);
+            // page he is looking at and not on the next refresh's. A pass that
+            // was already in flight read the decision before the answer, so
+            // the pass it returns is followed by exactly one more; a
+            // rejection anywhere still ends in `schedule`.
+            const stale = inFlight !== undefined;
+            void refreshOnce()
+              .then(() => (stale ? refreshOnce() : undefined))
+              .then(schedule, schedule);
           });
       },
       maxWords: MAX_WORDS_CHARS,

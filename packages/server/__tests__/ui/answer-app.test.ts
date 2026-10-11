@@ -1121,6 +1121,96 @@ describe("the answer flow's signing", () => {
     h.app.stop();
   });
 
+  it("re-reads once more when the answer stored under a pass already in flight", async () => {
+    let releaseAnswers!: (reply: SigningReply) => void;
+    const base = signingFetch({
+      nonce: () => GOOD_NONCE,
+      answers: () =>
+        new Promise<SigningReply>((resolve) => {
+          releaseAnswers = resolve;
+        }),
+      decision: openDecision(),
+    });
+    // Every decision GET after the page's first load is held open until the
+    // test releases it, and answers with whatever body `setDecision` holds at
+    // that moment, so a pass can be caught in flight and released stale.
+    let decisionGets = 0;
+    const held: (() => void)[] = [];
+    const calls: SigningCall[] = [];
+    const fetchImpl = Object.assign(
+      async (
+        path: string,
+        init?: {
+          method?: string;
+          headers?: Record<string, string>;
+          body?: string;
+        },
+      ): Promise<Awaited<ReturnType<typeof base>>> => {
+        const method = init?.method ?? "GET";
+        calls.push({
+          method,
+          path,
+          ...(init?.body !== undefined
+            ? { body: JSON.parse(init.body) }
+            : {}),
+        });
+        if (path === DECISION("d1") && method === "GET") {
+          decisionGets += 1;
+          if (decisionGets > 1) {
+            return new Promise((resolve) => {
+              held.push(() => {
+                resolve(base(path, init));
+              });
+            });
+          }
+        }
+        return base(path, init);
+      },
+      { calls, setDecision: base.setDecision },
+    );
+    const key = passkeyFor("re-read-under-a-held-pass");
+    const h = signingHarness("/p/alpha/d/d1", fetchImpl, key.handler);
+    h.app.start();
+    await settle();
+
+    press("answer-yes");
+    await flush();
+    press("answer-sign");
+    await settle();
+
+    // A ten-second pass starts now and is caught holding the decision GET.
+    h.timers.runLast();
+    await flush();
+    expect(held).toHaveLength(1);
+
+    // The answer stores while that pass is still in flight.
+    releaseAnswers({ status: 201, body: { index: 0, state: "approved" } });
+    await flush();
+
+    // The pass the outcome waited for is released with the OLD decision, so
+    // the entry is not on the page it drew.
+    held.shift()?.();
+    await settle();
+    expect(messageText()).toBe("Signed and recorded.");
+    expect(
+      root().querySelector(".decision-history")?.textContent ?? "",
+    ).not.toContain("signed with your passkey");
+
+    // One more decision GET follows — the in-flight pass read the decision
+    // before the answer — and it is drawn with the entry the answer became.
+    expect(held).toHaveLength(1);
+    fetchImpl.setDecision(openDecision([signedApprovedEntry()]));
+    held.shift()?.();
+    await settle();
+
+    expect(decisionGets).toBe(3);
+    expect(
+      root().querySelector(".decision-history")?.textContent ?? "",
+    ).toContain("signed with your passkey");
+
+    h.app.stop();
+  });
+
   const END_CASES: [string, SigningReply, SigningReply, string][] = [
     [
       "nonce 404",
