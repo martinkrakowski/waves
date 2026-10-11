@@ -3,9 +3,9 @@
  * the controller with no DOM in it. The page asks the server for a nonce,
  * hashes the revision it is showing, builds the challenge itself, asks the
  * passkey to sign it, and posts the answer. Nothing here reads the browser:
- * `fetch`, `credentials`, `subtle` and `location` all arrive as arguments, so
- * a test can pass fakes for every one of them, and the outcomes are all the
- * buttons will ever be told.
+ * `fetch`, `credentials`, `subtle`, `location` and `now` all arrive as
+ * arguments, so a test can pass fakes for every one of them, and the
+ * outcomes are all the buttons will ever be told.
  */
 
 import {
@@ -237,6 +237,7 @@ async function signOnce(model, choice, browser) {
   if (!isNonceReply(nonceReply)) {
     return { kind: "failed" };
   }
+  const issuedAt = browser.now();
   const index = model.currentEntries.length + model.earlierEntries.length;
   if (nonceReply.index !== index) {
     return { kind: "moved" };
@@ -263,11 +264,19 @@ async function signOnce(model, choice, browser) {
         userVerification: "required",
         timeout: TIMEOUT_MS,
       },
+      signal: browser.signal,
     });
   } catch {
     return { kind: "cancelled" };
   }
   if (!isAssertion(assertion)) {
+    return { kind: "cancelled" };
+  }
+  // The `timeout` handed to `credentials.get` is only a hint a browser may
+  // stretch; the page keeps its own deadline from the moment the nonce
+  // arrived, and a prompt that outlives it — or one the page has abandoned —
+  // signs nothing and posts nothing.
+  if (browser.signal.aborted || browser.now() - issuedAt >= TIMEOUT_MS) {
     return { kind: "cancelled" };
   }
 
@@ -333,30 +342,52 @@ async function signOnce(model, choice, browser) {
 /**
  * The answerer the buttons will call, bound to the browser objects it reads
  * from: `fetch` for the two routes, `credentials` for the passkey, `subtle`
- * for the hashes and `location` for the relying party. One `sign` runs at a
- * time on the same answerer — a press while one runs answers `in-progress` —
- * and the guard is released in a `finally` whatever happened, so a failed or
- * thrown attempt never wedges the page.
+ * for the hashes, `location` for the relying party, `now` for the page's
+ * own deadline and `AbortController` for the signal it gives up on a prompt
+ * with. One `sign` runs at a time on the same answerer — a press
+ * while one runs answers `in-progress` — and the guard is released in a
+ * `finally` whatever happened, so a failed or thrown attempt never wedges
+ * the page. `abandon` gives up on the running sign, if there is one, so a
+ * prompt left open when he leaves the page can never POST later; a sign
+ * that starts afterwards gets a fresh signal of its own.
  */
-export function createAnswerer({ fetch, credentials, subtle, location }) {
+export function createAnswerer({
+  fetch,
+  credentials,
+  subtle,
+  location,
+  now,
+  AbortController,
+}) {
   let signing = false;
+  let current;
   return {
     async sign(model, choice) {
       if (signing) {
         return { kind: "in-progress" };
       }
       signing = true;
+      const controller = new AbortController();
+      current = controller;
       try {
         return await signOnce(model, choice, {
           fetch,
           credentials,
           subtle,
           location,
+          now,
+          signal: controller.signal,
         });
       } catch {
         return { kind: "failed" };
       } finally {
         signing = false;
+        current = undefined;
+      }
+    },
+    abandon() {
+      if (current !== undefined) {
+        current.abort();
       }
     },
   };

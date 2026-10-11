@@ -2,8 +2,8 @@ import type { DecisionModel } from "./views/decision-model.js";
 
 /**
  * The answer page's logic, with no DOM in it: the browser objects it reads
- * from — `fetch`, `credentials`, `subtle`, `location` — all arrive as
- * arguments, so a test can pass fakes for every one of them.
+ * from — `fetch`, `credentials`, `subtle`, `location`, `now` — all arrive
+ * as arguments, so a test can pass fakes for every one of them.
  */
 
 /** Why a decision is not answerable on this page, in the page's own words. */
@@ -85,11 +85,17 @@ export interface AnswererDeps {
   };
   readonly subtle: SubtleCrypto;
   readonly location: { readonly hostname: string };
+  /** The clock the page keeps its own deadline with, in milliseconds. */
+  readonly now: () => number;
+  /** Builds the signal the page gives up on a prompt with. */
+  readonly AbortController: typeof AbortController;
 }
 
 /** The answerer the buttons call; one `sign` runs at a time. */
 export interface Answerer {
   sign(model: DecisionModel, choice: Choice): Promise<AnswerOutcome>;
+  /** Give up on the running sign, if there is one; never posts after it. */
+  abandon(): void;
 }
 
 /**

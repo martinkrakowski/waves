@@ -296,6 +296,7 @@ async function signWith(
   choice: Choice,
   script: readonly Scripted[],
   handler: GetFn,
+  now: () => number = () => 0,
 ) {
   const wired = recordingFetch(script);
   const creds = recordingCredentials(handler);
@@ -304,6 +305,8 @@ async function signWith(
     credentials: creds.credentials,
     subtle,
     location: LOCATION,
+    now,
+    AbortController,
   });
   return {
     calls: wired.calls,
@@ -566,6 +569,8 @@ describe("sign: the order of the steps", () => {
       credentials: creds.credentials,
       subtle,
       location: LOCATION,
+      now: () => 0,
+      AbortController,
     });
     const model = modelOf();
     const first = answerer.sign(model, okChoice("yes"));
@@ -837,6 +842,8 @@ describe("sign: the order of the steps", () => {
       credentials: creds.credentials,
       subtle,
       location: LOCATION,
+      now: () => 0,
+      AbortController,
     });
     const model = modelOf();
     const outcome = await answerer.sign(model, okChoice("yes"));
@@ -1102,7 +1109,7 @@ describe("the calls the ceremony makes", () => {
     );
     const argument = run.getCalls[0];
     expect(argument).toBeDefined();
-    expect(Object.keys(argument ?? {})).toStrictEqual(["publicKey"]);
+    expect(Object.keys(argument ?? {})).toStrictEqual(["publicKey", "signal"]);
     const pk = (argument as unknown as { publicKey: Record<string, unknown> })
       .publicKey;
     expect(pk.rpId).toBe(LOCATION.hostname);
@@ -1114,6 +1121,11 @@ describe("the calls the ceremony makes", () => {
     expect(pk).not.toHaveProperty("allowCredentials");
     expect(pk.challenge).toBeInstanceOf(Uint8Array);
     expect((pk.challenge as Uint8Array).length).toBe(32);
+    // The page's own way to give up on the prompt, beside the `timeout`
+    // hint a browser may stretch.
+    const signal = (argument as unknown as { signal: AbortSignal }).signal;
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(signal.aborted).toBe(false);
   });
 });
 
@@ -1131,6 +1143,8 @@ describe("the guard", () => {
       credentials: creds.credentials,
       subtle,
       location: LOCATION,
+      now: () => 0,
+      AbortController,
     });
     const model = modelOf();
     const choice = okChoice("yes");
@@ -1164,6 +1178,8 @@ describe("the guard", () => {
       credentials: creds.credentials,
       subtle,
       location: LOCATION,
+      now: () => 0,
+      AbortController,
     });
     const model = modelOf();
     const choice = okChoice("yes");
@@ -1175,5 +1191,196 @@ describe("the guard", () => {
       index: ENTRY_COUNT,
       state: "approved",
     });
+  });
+});
+
+describe("the page's own deadline and its abandonment", () => {
+  /**
+   * A passkey handler that parks its first answer behind a gate, so a test
+   * can abandon the sign while the prompt is open and only then let the
+   * prompt answer.
+   */
+  function gatedPrompt(markAsked: () => void, seed: string) {
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const handler: GetFn = (options) => {
+      const pk = (
+        options as unknown as { publicKey: { challenge: Uint8Array } }
+      ).publicKey;
+      const built = assertionFor(pk.challenge, seed);
+      markAsked();
+      return gate.then(() => browserAssertion(built.input));
+    };
+    return {
+      handler,
+      release: (): void => {
+        release?.();
+      },
+    };
+  }
+
+  /** Resolves once the passkey has been asked, so the prompt is open. */
+  function askedOnce() {
+    let mark: () => void = () => {};
+    const asked = new Promise<void>((resolve) => {
+      mark = resolve;
+    });
+    return { mark, asked };
+  }
+
+  it("abandons a sign while the prompt is open: cancelled, and the answer is never posted", async () => {
+    const wired = recordingFetch([GOOD_NONCE]);
+    const { mark, asked } = askedOnce();
+    const prompt = gatedPrompt(mark, "abandoned-prompt");
+    const creds = recordingCredentials(prompt.handler);
+    const answerer = createAnswerer({
+      fetch: wired.fetch,
+      credentials: creds.credentials,
+      subtle,
+      location: LOCATION,
+      now: () => 0,
+      AbortController,
+    });
+    const sign = answerer.sign(modelOf(), okChoice("yes"));
+    await asked;
+    answerer.abandon();
+    prompt.release();
+    expect(await sign).toStrictEqual({ kind: "cancelled" });
+    // The nonce was asked for and spent; the answer was never posted.
+    expect(wired.calls).toHaveLength(1);
+    expect(wired.calls[0]?.path).toBe(NONCE_PATH);
+  });
+
+  it("cancels when the prompt is abandoned and the passkey rejects with it", async () => {
+    const wired = recordingFetch([GOOD_NONCE]);
+    const { mark, asked } = askedOnce();
+    const handler: GetFn = (options) => {
+      mark();
+      const signal = (options as unknown as { signal: AbortSignal }).signal;
+      return new Promise<unknown>((_resolve, reject) => {
+        signal.addEventListener("abort", () => {
+          reject(new Error("AbortError: the prompt went away"));
+        });
+      });
+    };
+    const creds = recordingCredentials(handler);
+    const answerer = createAnswerer({
+      fetch: wired.fetch,
+      credentials: creds.credentials,
+      subtle,
+      location: LOCATION,
+      now: () => 0,
+      AbortController,
+    });
+    const sign = answerer.sign(modelOf(), okChoice("yes"));
+    await asked;
+    answerer.abandon();
+    expect(await sign).toStrictEqual({ kind: "cancelled" });
+    expect(wired.calls).toHaveLength(1);
+  });
+
+  it("cancels a prompt that outlives the page's own deadline, and never posts", async () => {
+    let calls = 0;
+    const run = await signWith(
+      modelOf(),
+      okChoice("yes"),
+      [
+        GOOD_NONCE,
+        { status: 201, body: { index: ENTRY_COUNT, state: "approved" } },
+      ],
+      passkeyFor("deadline-over").handler,
+      () => {
+        calls += 1;
+        return calls === 1 ? 0 : 90_000;
+      },
+    );
+    expect(run.outcome).toStrictEqual({ kind: "cancelled" });
+    expect(run.calls).toHaveLength(1);
+  });
+
+  it("posts a prompt that comes back inside the deadline", async () => {
+    let calls = 0;
+    const run = await signWith(
+      modelOf(),
+      okChoice("yes"),
+      [
+        GOOD_NONCE,
+        { status: 201, body: { index: ENTRY_COUNT, state: "approved" } },
+      ],
+      passkeyFor("deadline-under").handler,
+      () => {
+        calls += 1;
+        return calls === 1 ? 0 : 89_999;
+      },
+    );
+    expect(run.outcome).toStrictEqual({
+      kind: "stored",
+      index: ENTRY_COUNT,
+      state: "approved",
+    });
+    expect(run.calls).toHaveLength(2);
+  });
+
+  it("does nothing to abandon with no sign running, and a later sign gets a fresh signal", async () => {
+    const wired = recordingFetch([
+      GOOD_NONCE,
+      GOOD_NONCE,
+      { status: 201, body: { index: ENTRY_COUNT, state: "approved" } },
+    ]);
+    const { mark, asked } = askedOnce();
+    const signals: AbortSignal[] = [];
+    let held = true;
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const handler: GetFn = (options) => {
+      const pk = (
+        options as unknown as { publicKey: { challenge: Uint8Array } }
+      ).publicKey;
+      const built = assertionFor(pk.challenge, "fresh-signal");
+      signals.push((options as unknown as { signal: AbortSignal }).signal);
+      if (held) {
+        held = false;
+        mark();
+        return gate.then(() => browserAssertion(built.input));
+      }
+      return browserAssertion(built.input);
+    };
+    const creds = recordingCredentials(handler);
+    const answerer = createAnswerer({
+      fetch: wired.fetch,
+      credentials: creds.credentials,
+      subtle,
+      location: LOCATION,
+      now: () => 0,
+      AbortController,
+    });
+    const model = modelOf();
+
+    // Abandoning with no sign running does nothing at all.
+    answerer.abandon();
+
+    const first = answerer.sign(model, okChoice("yes"));
+    await asked;
+    answerer.abandon();
+    release?.();
+    expect(await first).toStrictEqual({ kind: "cancelled" });
+    expect(wired.calls).toHaveLength(1);
+
+    // The abandoned sign has ended; abandoning again does nothing, and a
+    // new sign on the same answerer gets a fresh, un-aborted signal.
+    answerer.abandon();
+    expect(await answerer.sign(model, okChoice("yes"))).toStrictEqual({
+      kind: "stored",
+      index: ENTRY_COUNT,
+      state: "approved",
+    });
+    expect(wired.calls).toHaveLength(3);
+    expect(signals).toHaveLength(2);
+    expect(signals[0]?.aborted).toBe(true);
+    expect(signals[1]?.aborted).toBe(false);
   });
 });
