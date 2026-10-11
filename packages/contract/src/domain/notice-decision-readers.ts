@@ -1,6 +1,14 @@
 import { isLaneId, type ProjectId } from "./ids.js";
 import { readProjectId } from "./fields.js";
-import type { DecisionOption, DoorValue, NoticeEvidence } from "./model.js";
+import { readAnswerSignature } from "./notice-answer.js";
+import type {
+  DecisionOption,
+  DecisionState,
+  DoorValue,
+  NoticeEvidence,
+  StateSource,
+  StoredStateEntry,
+} from "./model.js";
 import {
   MAX_OPTIONS,
   MAX_COMMITS,
@@ -11,11 +19,26 @@ import {
 import {
   TEXT_RULE,
   LABEL_RULE,
+  SHA256_RULE,
   readNoticeText,
   readOptionKey,
 } from "./notice.js";
-import type { Collector } from "./validation.js";
-import { own, readClosedObject } from "./validation.js";
+import type { Collector, ValidationResult } from "./validation.js";
+import {
+  IssueCollector,
+  normalise,
+  own,
+  readClosedObject,
+  readEnum,
+  readIntegerAtLeast,
+  readOptional,
+  readText,
+  readTimestamp,
+} from "./validation.js";
+
+const ANSWER_STATES = new Set(["approved", "declined", "answered"]);
+
+const SESSION_STATES = new Set(["delegated", "withdrawn", "superseded"]);
 
 export const DECISION_KEYS = [
   "schema",
@@ -330,4 +353,182 @@ export function applyShapeRules(
   if (shape === "instruction" && appliesTo.length === 0) {
     ctx.add("/appliesTo", "expected at least one entry for an instruction");
   }
+}
+
+const STORED_ENTRY_KEYS = [
+  "state",
+  "source",
+  "revision",
+  "textSha256",
+  "by",
+  "at",
+  "words",
+  "option",
+  "reason",
+  "supersededBy",
+  "signature",
+];
+
+const STORED_SOURCES = ["session", "reported", "signed"] as const;
+
+const STORED_STATES = [
+  "delegated",
+  "approved",
+  "declined",
+  "answered",
+  "withdrawn",
+  "superseded",
+] as const;
+
+/**
+ * What a stored entry says about itself: the same source-by-state table the
+ * session route enforces (W57), plus the rule stage 2 adds — `signed` is an
+ * answer state only, it comes with a `signature`, and no other source's entry
+ * carries one.
+ */
+function applyStoredSourceRules(
+  ctx: Collector,
+  state: string,
+  source: string | undefined,
+  wordsPresent: boolean,
+  reasonPresent: boolean,
+  optionPresent: boolean,
+  supersededByPresent: boolean,
+  signaturePresent: boolean,
+): void {
+  if (source === undefined) return;
+  if (ANSWER_STATES.has(state)) {
+    if (source === "session") {
+      ctx.add("/source", "expected reported or signed for an answer state");
+    }
+    if (source === "reported" && !wordsPresent) {
+      ctx.add("/words", "expected words for a reported answer");
+    }
+  } else if (SESSION_STATES.has(state) && source !== "session") {
+    ctx.add("/source", "expected session for this state");
+  }
+  if (state === "delegated" && !optionPresent && !wordsPresent) {
+    ctx.add("/option", "expected option or words for a delegated state");
+  }
+  if (state === "withdrawn" && !reasonPresent) {
+    ctx.add("/reason", "expected a reason for a withdrawn state");
+  }
+  if (state === "superseded" && !supersededByPresent) {
+    ctx.add("/supersededBy", "expected supersededBy for a superseded state");
+  }
+  if (state !== "superseded" && supersededByPresent) {
+    ctx.add("/supersededBy", "expected no supersededBy for this state");
+  }
+  if (source === "signed" && !signaturePresent) {
+    ctx.add("/signature", "expected a signature for a signed entry");
+  }
+  if (source !== "signed" && signaturePresent) {
+    ctx.add("/signature", "expected no signature for this source");
+  }
+}
+
+function readStoredStateEntry(
+  ctx: Collector,
+  input: unknown,
+): StoredStateEntry | undefined {
+  const record = readClosedObject(ctx, input, "", STORED_ENTRY_KEYS);
+  if (record === undefined) return undefined;
+
+  const state = readEnum(ctx, own(record, "state"), "/state", STORED_STATES);
+  const source = readEnum(
+    ctx,
+    own(record, "source"),
+    "/source",
+    STORED_SOURCES,
+  );
+  const revision = readIntegerAtLeast(
+    ctx,
+    own(record, "revision"),
+    "/revision",
+    1,
+  );
+  const textSha256 = readText(
+    ctx,
+    own(record, "textSha256"),
+    "/textSha256",
+    SHA256_RULE,
+  );
+  const by = readNoticeText(ctx, own(record, "by"), "/by", LABEL_RULE);
+  const at = readTimestamp(ctx, own(record, "at"), "/at");
+  const wordsRaw = own(record, "words");
+  const words =
+    wordsRaw === undefined
+      ? undefined
+      : readNoticeText(ctx, wordsRaw, "/words", TEXT_RULE);
+  const option = readOptional(
+    ctx,
+    own(record, "option"),
+    "/option",
+    readOptionKey,
+  );
+  const reasonRaw = own(record, "reason");
+  const reason =
+    reasonRaw === undefined
+      ? undefined
+      : readNoticeText(ctx, reasonRaw, "/reason", TEXT_RULE);
+  const supersededBy = readOptional(
+    ctx,
+    own(record, "supersededBy"),
+    "/supersededBy",
+    readLaneId,
+  );
+  const signature = readOptional(
+    ctx,
+    own(record, "signature"),
+    "/signature",
+    readAnswerSignature,
+  );
+
+  applyStoredSourceRules(
+    ctx,
+    state ?? "",
+    source,
+    wordsRaw !== undefined,
+    reasonRaw !== undefined,
+    own(record, "option") !== undefined,
+    own(record, "supersededBy") !== undefined,
+    own(record, "signature") !== undefined,
+  );
+
+  if (ctx.issues.length > 0) return undefined;
+
+  return {
+    state: state as DecisionState,
+    source: source as StateSource,
+    revision: revision!,
+    textSha256: textSha256!,
+    by: by!,
+    at: at!,
+    words,
+    option,
+    reason,
+    supersededBy,
+    signature,
+  };
+}
+
+/**
+ * One state entry as the store holds it, against the rules of design 4.2 and
+ * the stored half of W61. This is the entry a route reads back, not the body a
+ * session posts: it has no `expectedEntries`, and it is the only place
+ * `source: "signed"` is accepted.
+ */
+export function validateStoredStateEntry(
+  input: unknown,
+): ValidationResult<StoredStateEntry> {
+  const normalised = normalise(input, "stored state entry");
+  if (!normalised.ok) {
+    return { ok: false, errors: normalised.errors };
+  }
+  const ctx = new IssueCollector();
+  const value = readStoredStateEntry(ctx, normalised.value);
+  if (value === undefined) {
+    return { ok: false, errors: ctx.issues };
+  }
+  return { ok: true, value };
 }

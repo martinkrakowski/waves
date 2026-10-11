@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   answerChallengeText,
+  validateAnswerRequest,
   type AnswerChallengeValues,
+  type AnswerRequest,
 } from "../src/index.js";
+import { errorsOf } from "./support.js";
 
 const NONCE = "A".repeat(43);
 const HASH = "0".repeat(64);
@@ -100,5 +103,253 @@ describe("answerChallengeText", () => {
 
   it("no white space falls between the tokens", () => {
     expect(answerChallengeText(values())).not.toMatch(/[\n\t] /);
+  });
+});
+
+const CREDENTIAL_ID = "A".repeat(16);
+const AUTHENTICATOR_DATA = "B".repeat(50);
+const CLIENT_DATA = "C".repeat(20);
+const SIGNATURE = "D".repeat(8);
+
+function minimalAnswer(): Record<string, unknown> {
+  return {
+    revision: 1,
+    textSha256: HASH,
+    index: 0,
+    verdict: "approved",
+    nonce: NONCE,
+    credentialId: CREDENTIAL_ID,
+    authenticatorData: AUTHENTICATOR_DATA,
+    clientDataJSON: CLIENT_DATA,
+    signature: SIGNATURE,
+  };
+}
+
+function expectValidAnswer(input: unknown): AnswerRequest {
+  const result = validateAnswerRequest(input);
+  if (!result.ok) {
+    throw new Error(
+      `expected a valid answer, got ${JSON.stringify(result.errors)}`,
+    );
+  }
+  return result.value;
+}
+
+function answerPaths(input: unknown, expected: readonly string[]): void {
+  expect(errorsOf(validateAnswerRequest(input)).map((e) => e.path)).toEqual(
+    expected,
+  );
+}
+
+describe("validateAnswerRequest", () => {
+  it("accepts an approved answer with neither option nor words", () => {
+    expect(expectValidAnswer(minimalAnswer()).verdict).toBe("approved");
+  });
+
+  it("accepts a declined answer and an answered answer with words", () => {
+    expect(
+      expectValidAnswer({ ...minimalAnswer(), verdict: "declined" }).verdict,
+    ).toBe("declined");
+    expect(
+      expectValidAnswer({
+        ...minimalAnswer(),
+        verdict: "answered",
+        words: "go with b",
+      }).words,
+    ).toBe("go with b");
+  });
+
+  it("accepts an answered answer with an option", () => {
+    expect(
+      expectValidAnswer({
+        ...minimalAnswer(),
+        verdict: "answered",
+        option: "b",
+      }).option,
+    ).toBe("b");
+  });
+
+  it("refuses a non-object root", () => {
+    answerPaths("answer", [""]);
+  });
+
+  it("refuses an input that is not serialisable", () => {
+    answerPaths({ ...minimalAnswer(), big: 1n }, [""]);
+  });
+
+  it("refuses an unknown key", () => {
+    answerPaths({ ...minimalAnswer(), project: "alpha" }, ["/project"]);
+  });
+
+  it("bounds revision to an integer of at least 1", () => {
+    answerPaths({ ...minimalAnswer(), revision: 0 }, ["/revision"]);
+    answerPaths({ ...minimalAnswer(), revision: 1.5 }, ["/revision"]);
+    expect(
+      expectValidAnswer({ ...minimalAnswer(), revision: 1 }).revision,
+    ).toBe(1);
+  });
+
+  it("bounds textSha256 to 64 lower-case hex characters", () => {
+    answerPaths({ ...minimalAnswer(), textSha256: "0".repeat(63) }, [
+      "/textSha256",
+    ]);
+    answerPaths({ ...minimalAnswer(), textSha256: "A".repeat(64) }, [
+      "/textSha256",
+    ]);
+    expect(
+      expectValidAnswer({ ...minimalAnswer(), textSha256: HASH }).textSha256,
+    ).toBe(HASH);
+  });
+
+  it("bounds index to an integer of at least 0", () => {
+    answerPaths({ ...minimalAnswer(), index: -1 }, ["/index"]);
+    answerPaths({ ...minimalAnswer(), index: 0.5 }, ["/index"]);
+    expect(expectValidAnswer({ ...minimalAnswer(), index: 0 }).index).toBe(0);
+  });
+
+  it("refuses a verdict outside the three answers", () => {
+    answerPaths({ ...minimalAnswer(), verdict: "open" }, ["/verdict"]);
+    answerPaths({ ...minimalAnswer(), verdict: "withdrawn" }, ["/verdict"]);
+  });
+
+  it("refuses an option that is not an option key", () => {
+    answerPaths({ ...minimalAnswer(), option: "B" }, ["/option"]);
+    answerPaths({ ...minimalAnswer(), option: "toolongkey" }, ["/option"]);
+    expect(expectValidAnswer({ ...minimalAnswer(), option: "b2" }).option).toBe(
+      "b2",
+    );
+  });
+
+  it("refuses words that are not NFC notice text within its bound", () => {
+    answerPaths({ ...minimalAnswer(), words: "" }, ["/words"]);
+    answerPaths({ ...minimalAnswer(), words: "w".repeat(2001) }, ["/words"]);
+    answerPaths({ ...minimalAnswer(), words: " words" }, ["/words"]);
+    answerPaths({ ...minimalAnswer(), words: "words " }, ["/words"]);
+    answerPaths({ ...minimalAnswer(), words: "cafe\u0301" }, ["/words"]);
+    expect(
+      expectValidAnswer({ ...minimalAnswer(), words: "w".repeat(2000) }).words,
+    ).toBe("w".repeat(2000));
+  });
+
+  it("refuses an answered verdict with neither option nor words", () => {
+    answerPaths({ ...minimalAnswer(), verdict: "answered" }, ["/verdict"]);
+  });
+
+  it("refuses an option on a declined verdict", () => {
+    answerPaths({ ...minimalAnswer(), verdict: "declined", option: "b" }, [
+      "/option",
+    ]);
+  });
+
+  it("bounds the nonce to exactly 43 base64url characters", () => {
+    answerPaths({ ...minimalAnswer(), nonce: "A".repeat(42) }, ["/nonce"]);
+    answerPaths({ ...minimalAnswer(), nonce: "A".repeat(44) }, ["/nonce"]);
+    expect(expectValidAnswer(minimalAnswer()).nonce).toBe(NONCE);
+  });
+
+  it("bounds credentialId to 16 to 1366 base64url characters", () => {
+    answerPaths({ ...minimalAnswer(), credentialId: "A".repeat(15) }, [
+      "/credentialId",
+    ]);
+    answerPaths({ ...minimalAnswer(), credentialId: "A".repeat(1367) }, [
+      "/credentialId",
+    ]);
+    expect(
+      expectValidAnswer({ ...minimalAnswer(), credentialId: "A".repeat(1366) })
+        .credentialId,
+    ).toHaveLength(1366);
+    expect(
+      expectValidAnswer({ ...minimalAnswer(), credentialId: "A".repeat(16) })
+        .credentialId,
+    ).toBe(CREDENTIAL_ID);
+  });
+
+  it("bounds authenticatorData to 50 to 1024 base64url characters", () => {
+    answerPaths({ ...minimalAnswer(), authenticatorData: "B".repeat(49) }, [
+      "/authenticatorData",
+    ]);
+    answerPaths({ ...minimalAnswer(), authenticatorData: "B".repeat(1025) }, [
+      "/authenticatorData",
+    ]);
+    expect(
+      expectValidAnswer({
+        ...minimalAnswer(),
+        authenticatorData: "B".repeat(50),
+      }).authenticatorData,
+    ).toBe(AUTHENTICATOR_DATA);
+    expect(
+      expectValidAnswer({
+        ...minimalAnswer(),
+        authenticatorData: "B".repeat(1024),
+      }).authenticatorData,
+    ).toHaveLength(1024);
+  });
+
+  it("bounds clientDataJSON to 20 to 2048 base64url characters", () => {
+    answerPaths({ ...minimalAnswer(), clientDataJSON: "C".repeat(19) }, [
+      "/clientDataJSON",
+    ]);
+    answerPaths({ ...minimalAnswer(), clientDataJSON: "C".repeat(2049) }, [
+      "/clientDataJSON",
+    ]);
+    expect(
+      expectValidAnswer({ ...minimalAnswer(), clientDataJSON: "C".repeat(20) })
+        .clientDataJSON,
+    ).toBe(CLIENT_DATA);
+    expect(
+      expectValidAnswer({
+        ...minimalAnswer(),
+        clientDataJSON: "C".repeat(2048),
+      }).clientDataJSON,
+    ).toHaveLength(2048);
+  });
+
+  it("bounds signature to 8 to 200 base64url characters", () => {
+    answerPaths({ ...minimalAnswer(), signature: "D".repeat(7) }, [
+      "/signature",
+    ]);
+    answerPaths({ ...minimalAnswer(), signature: "D".repeat(201) }, [
+      "/signature",
+    ]);
+    expect(
+      expectValidAnswer({ ...minimalAnswer(), signature: "D".repeat(8) })
+        .signature,
+    ).toBe(SIGNATURE);
+    expect(
+      expectValidAnswer({ ...minimalAnswer(), signature: "D".repeat(200) })
+        .signature,
+    ).toHaveLength(200);
+  });
+
+  it("refuses padding and the standard base64 alphabet in every byte string", () => {
+    answerPaths({ ...minimalAnswer(), nonce: `${"A".repeat(42)}=` }, [
+      "/nonce",
+    ]);
+    answerPaths({ ...minimalAnswer(), credentialId: "A".repeat(14) + "+" }, [
+      "/credentialId",
+    ]);
+    answerPaths(
+      { ...minimalAnswer(), authenticatorData: "B".repeat(49) + "/" },
+      ["/authenticatorData"],
+    );
+    answerPaths({ ...minimalAnswer(), clientDataJSON: "C".repeat(19) + "=" }, [
+      "/clientDataJSON",
+    ]);
+    answerPaths({ ...minimalAnswer(), signature: "D".repeat(9) + "+" }, [
+      "/signature",
+    ]);
+    expect(expectValidAnswer(minimalAnswer()).credentialId).toBe(CREDENTIAL_ID);
+  });
+
+  it("names every path it refuses", () => {
+    answerPaths(
+      {
+        ...minimalAnswer(),
+        verdict: "answered",
+        nonce: "A".repeat(42),
+        signature: "D".repeat(7),
+      },
+      ["/nonce", "/signature", "/verdict"],
+    );
   });
 });

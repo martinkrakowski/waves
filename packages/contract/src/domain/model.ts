@@ -219,6 +219,50 @@ export interface StateEntryRequest {
   readonly supersededBy?: LaneId;
 }
 
+/** The body of a signed answer, as the page posts it. The server rebuilds the
+ * challenge from it and checks the assertion; the contract only bounds it. */
+export interface AnswerRequest {
+  readonly revision: number;
+  readonly textSha256: string;
+  readonly index: number;
+  readonly verdict: AnswerVerdict;
+  readonly option?: string;
+  readonly words?: string;
+  readonly nonce: string;
+  readonly credentialId: string;
+  readonly authenticatorData: string;
+  readonly clientDataJSON: string;
+  readonly signature: string;
+}
+
+/** The assertion a signed answer keeps: the credential that signed, the three
+ * opaque byte strings it signed over, and the nonce and position it bound. */
+export interface AnswerSignature {
+  readonly credentialId: string;
+  readonly authenticatorData: string;
+  readonly clientDataJSON: string;
+  readonly signature: string;
+  readonly nonce: string;
+  readonly index: number;
+}
+
+/** One state entry as the store holds it: the writer's entry minus the
+ * `expectedEntries` it pinned on. A `signed` entry carries the assertion that
+ * bound it; no other source's entry carries one. */
+export interface StoredStateEntry {
+  readonly state: DecisionState;
+  readonly source: StateSource;
+  readonly revision: number;
+  readonly textSha256: string;
+  readonly by: string;
+  readonly at: string;
+  readonly words?: string;
+  readonly option?: string;
+  readonly reason?: string;
+  readonly supersededBy?: LaneId;
+  readonly signature?: AnswerSignature;
+}
+
 export interface NoticeEvent {
   readonly schema: typeof NOTICE_SCHEMA;
   readonly kind: "event";

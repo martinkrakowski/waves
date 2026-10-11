@@ -18,6 +18,8 @@ export {
   OPTION_KEY_PATTERN,
 } from "./domain/model.js";
 export type {
+  AnswerRequest,
+  AnswerSignature,
   AnswerVerdict,
   Backlog,
   BacklogGit,
@@ -52,6 +54,7 @@ export type {
   StateEntryRequest,
   StateSource,
   StoredSnapshot,
+  StoredStateEntry,
 } from "./domain/model.js";
 export {
   validateDecision,
@@ -60,8 +63,10 @@ export {
 export {
   ANSWER_CHALLENGE_SCHEMA,
   answerChallengeText,
+  validateAnswerRequest,
 } from "./domain/notice-answer.js";
 export type { AnswerChallengeValues } from "./domain/notice-answer.js";
+export { validateStoredStateEntry } from "./domain/notice-decision-readers.js";
 export { validateEvent } from "./domain/notice-event.js";
 export { validateProject } from "./domain/project.js";
 export { isRetained, isStale, staleAfterMs } from "./domain/staleness.js";
