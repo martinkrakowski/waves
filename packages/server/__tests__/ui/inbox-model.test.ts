@@ -207,6 +207,69 @@ describe("the inbox model", () => {
       expect(project.reported.map((h) => h.id)).toStrictEqual(["r1"]);
       expect(project.closed.map((h) => h.id)).toStrictEqual([]);
     });
+
+    it("takes the signed answers out of the reported group", () => {
+      const model = inboxModel(
+        inboxView({
+          projects: [
+            inboxProject({
+              id: "alpha",
+              name: "Alpha",
+              decisions: [
+                inboxHead({
+                  id: "s1",
+                  group: "reported",
+                  state: "approved",
+                  source: "signed",
+                }),
+                inboxHead({
+                  id: "r1",
+                  group: "reported",
+                  state: "declined",
+                  source: "reported",
+                }),
+                inboxHead({
+                  id: "s2",
+                  group: "reported",
+                  state: "answered",
+                  source: "signed",
+                }),
+              ],
+            }),
+          ],
+        }),
+      );
+      const project = model.projects[0]!;
+      expect(project.signed.map((h) => h.id)).toStrictEqual(["s1", "s2"]);
+      expect(project.reported.map((h) => h.id)).toStrictEqual(["r1"]);
+    });
+
+    it("sorts a project with only a signed answer above one with nothing", () => {
+      const model = inboxModel(
+        inboxView({
+          projects: [
+            inboxProject({ id: "empty", name: "Empty" }),
+            inboxProject({
+              id: "signed-only",
+              name: "Signed Only",
+              counts: inboxCounts({ reported: 1 }),
+              decisions: [
+                inboxHead({
+                  id: "s",
+                  group: "reported",
+                  state: "approved",
+                  source: "signed",
+                }),
+              ],
+            }),
+          ],
+        }),
+      );
+      expect(model.projects.map((p) => p.id)).toStrictEqual([
+        "signed-only",
+        "empty",
+      ]);
+    });
   });
 
   describe("totals", () => {

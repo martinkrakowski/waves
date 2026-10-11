@@ -372,6 +372,37 @@ export function decisionEntry(
 }
 
 /**
+ * The assertion a signed entry carries: fixed strings, so no test depends on
+ * the bytes of a real key or nonce, bound to the index it stands at.
+ */
+export function answerSignature(
+  index: number,
+): NonNullable<StoredEntry["signature"]> {
+  return {
+    credentialId: "c".repeat(20),
+    authenticatorData: "d".repeat(52),
+    clientDataJSON: "e".repeat(20),
+    signature: "s".repeat(8),
+    nonce: "A".repeat(43),
+    index,
+  };
+}
+
+/**
+ * A signed answer as the store holds it: an answer state, `source: "signed"`
+ * and the assertion bound to the index it stands at.
+ */
+export function signedDecisionEntry(
+  overrides: Partial<StoredEntry> = {},
+): StoredEntry {
+  const entry = decisionEntry({ ...overrides, source: "signed" });
+  return {
+    ...entry,
+    signature: overrides.signature ?? answerSignature(entry.index),
+  } as StoredEntry;
+}
+
+/**
  * The whole response `GET /api/v1/projects/<project>/decisions/<id>` gives, built
  * from the helpers above so every baseline is consistent: the head's revision,
  * revision count, hash and entry count all agree with the arrays.

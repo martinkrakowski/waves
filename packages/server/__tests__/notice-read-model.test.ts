@@ -87,6 +87,45 @@ describe("the notice read model", () => {
     });
   });
 
+  it("carries the covered answer under a waiting delegation", async () => {
+    const { store, model } = await harness();
+    await store.appendRevision("alpha", "d1", storedRevision(1), 0, 10);
+    await store.appendEntry(
+      "alpha",
+      "d1",
+      storedEntry(0, { words: undefined, option: "a" }, RECENT),
+      0,
+      1,
+    );
+    await store.appendEntry(
+      "alpha",
+      "d1",
+      storedEntry(
+        1,
+        {
+          state: "delegated",
+          source: "session",
+          words: undefined,
+          option: "a",
+        },
+        RECENT,
+      ),
+      1,
+      1,
+    );
+
+    const [head] = await model.decisions("alpha");
+    expect(head?.group).toBe("waiting");
+    expect(head?.state).toBe("delegated");
+    expect(head?.coveredAnswer).toEqual({
+      state: "approved",
+      source: "reported",
+      at: RECENT,
+      by: "owner",
+      option: "a",
+    });
+  });
+
   it("orders heads of one group and one door by their time, oldest first", async () => {
     const { store, model } = await harness();
     const later = { ...storedRevision(1), receivedAt: "2026-10-09T00:00:00Z" };

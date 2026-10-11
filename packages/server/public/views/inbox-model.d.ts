@@ -12,7 +12,9 @@ export interface InboxProjectModel {
   readonly counts: NoticeCounts;
   /** The heads waiting on the reader, in the order the server sorted them. */
   readonly waiting: readonly Head[];
-  /** The heads reported as answered. */
+  /** The heads the owner answered himself, signed with his passkey. */
+  readonly signed: readonly Head[];
+  /** The heads a session reports as answered. */
   readonly reported: readonly Head[];
   /** The heads closed by a session. */
   readonly closed: readonly Head[];

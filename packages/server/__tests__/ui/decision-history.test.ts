@@ -342,6 +342,154 @@ describe("historyBlock", () => {
       "owner recorded that you approved on 2026-04-01 at 12:00 UTC reported, not signed",
     );
   });
+
+  it("draws a signed answer as the owner's own, with option and words", () => {
+    const host = drawHistory(
+      decisionModel(
+        decisionResponse({
+          head: inboxHead({ revision: 1, revisions: 1, entries: 1 }),
+          entries: [
+            decisionEntry({
+              state: "approved",
+              source: "signed",
+              option: "a",
+              words: "yes",
+            }),
+          ],
+        }),
+      ),
+    );
+    expect(textsOf(host, ".history-event")).toContain(
+      'You approved (a) on 2026-04-01 at 12:00 UTC: "yes" signed with your passkey (owner)',
+    );
+  });
+
+  it("draws a signed answer with an option and no words", () => {
+    const host = drawHistory(
+      decisionModel(
+        decisionResponse({
+          head: inboxHead({ revision: 1, revisions: 1, entries: 1 }),
+          entries: [
+            decisionEntry({
+              state: "answered",
+              source: "signed",
+              option: "a",
+              words: undefined,
+            }),
+          ],
+        }),
+      ),
+    );
+    expect(textsOf(host, ".history-event")).toContain(
+      "You answered (a) on 2026-04-01 at 12:00 UTC signed with your passkey (owner)",
+    );
+  });
+
+  it("draws a signed answer with words and no option", () => {
+    const host = drawHistory(
+      decisionModel(
+        decisionResponse({
+          head: inboxHead({ revision: 1, revisions: 1, entries: 1 }),
+          entries: [
+            decisionEntry({
+              state: "declined",
+              source: "signed",
+              words: "no",
+              option: undefined,
+            }),
+          ],
+        }),
+      ),
+    );
+    expect(textsOf(host, ".history-event")).toContain(
+      'You declined on 2026-04-01 at 12:00 UTC: "no" signed with your passkey (owner)',
+    );
+  });
+
+  it("draws a signed answer with neither words nor an option", () => {
+    const host = drawHistory(
+      decisionModel(
+        decisionResponse({
+          head: inboxHead({ revision: 1, revisions: 1, entries: 1 }),
+          entries: [
+            decisionEntry({
+              state: "approved",
+              source: "signed",
+              words: undefined,
+              option: undefined,
+            }),
+          ],
+        }),
+      ),
+    );
+    expect(textsOf(host, ".history-event")).toContain(
+      "You approved on 2026-04-01 at 12:00 UTC signed with your passkey (owner)",
+    );
+  });
+
+  it("draws a reported and a signed answer in one history, each with its own line", () => {
+    const host = drawHistory(
+      decisionModel(
+        decisionResponse({
+          head: inboxHead({ revision: 1, revisions: 1, entries: 2 }),
+          entries: [
+            decisionEntry({
+              state: "declined",
+              source: "reported",
+              words: "no",
+              receivedAt: "2026-10-08T13:00:00Z",
+            }),
+            decisionEntry({
+              index: 1,
+              state: "approved",
+              source: "signed",
+              option: "a",
+              words: "yes",
+              receivedAt: "2026-10-08T13:30:00Z",
+            }),
+          ],
+        }),
+      ),
+    );
+    const lines = textsOf(host, ".history-event");
+    expect(lines).toContain(
+      'You approved (a) on 2026-10-08 at 13:30 UTC: "yes" signed with your passkey (owner)',
+    );
+    expect(lines).toContain(
+      'owner recorded that you declined on 2026-10-08 at 13:00 UTC: "no" reported, not signed',
+    );
+  });
+
+  it("keeps the wording sentence when the answer it covers was signed", () => {
+    const OTHER_HASH = "b".repeat(64);
+    const host = drawHistory(
+      decisionModel(
+        decisionResponse({
+          head: inboxHead({ revision: 2, revisions: 2, entries: 1 }),
+          revisions: [
+            storedRevision({ revision: 1, textSha256: HASH }),
+            storedRevision({
+              revision: 2,
+              textSha256: OTHER_HASH,
+              decision: decisionRevision({ question: "Changed?" }),
+              receivedAt: "2026-10-09T12:00:00Z",
+            }),
+          ],
+          entries: [
+            decisionEntry({
+              revision: 1,
+              textSha256: HASH,
+              state: "approved",
+              source: "signed",
+            }),
+          ],
+        }),
+      ),
+    );
+    expect(textsOf(host, ".history-event")).toContain(
+      "Revision 2 on 2026-10-09 at 12:00 UTC: question changed. The wording an answer was given to is no longer current.",
+    );
+  });
 });
 
 describe("earlierTextsBlock", () => {

@@ -3,10 +3,12 @@ import { describe, expect, it } from "vitest";
 import { drawableDecision } from "../../public/decision.js";
 
 import {
+  answerSignature,
   decisionEntry,
   decisionRevision,
   decisionResponse,
   inboxHead,
+  signedDecisionEntry,
   storedRevision,
 } from "./fixtures.js";
 
@@ -579,9 +581,187 @@ const INVALID: readonly (readonly [string, unknown])[] = [
   [
     "a head whose entries count does not match the array",
     {
-      ...decisionResponse({
-        head: inboxHead({ entries: 1 }),
+      ...decisionResponse(),
+      head: inboxHead({ entries: 1 }),
+    },
+  ],
+  [
+    "a signed entry whose signature index is off by one",
+    {
+      ...decisionResponse(),
+      head: inboxHead({ entries: 1 }),
+      entries: [
+        {
+          ...signedDecisionEntry(),
+          signature: { ...answerSignature(0), index: 1 },
+        },
+      ],
+    },
+  ],
+  [
+    "a signed entry whose signature index is not a count",
+    {
+      ...decisionResponse(),
+      head: inboxHead({ entries: 1 }),
+      entries: [
+        {
+          ...signedDecisionEntry(),
+          signature: { ...answerSignature(0), index: -1 },
+        },
+      ],
+    },
+  ],
+  [
+    "a signed entry with no signature",
+    {
+      ...decisionResponse(),
+      head: inboxHead({ entries: 1 }),
+      entries: [{ ...signedDecisionEntry(), signature: undefined }],
+    },
+  ],
+  [
+    "a signed entry whose signature is not an object",
+    {
+      ...decisionResponse(),
+      head: inboxHead({ entries: 1 }),
+      entries: [{ ...signedDecisionEntry(), signature: "no" }],
+    },
+  ],
+  [
+    "a signed entry whose signature misses a field",
+    {
+      ...decisionResponse(),
+      head: inboxHead({ entries: 1 }),
+      entries: [
+        {
+          ...signedDecisionEntry(),
+          signature: {
+            credentialId: "c".repeat(20),
+            authenticatorData: "d".repeat(52),
+            clientDataJSON: "e".repeat(20),
+            signature: "s".repeat(8),
+            index: 0,
+          },
+        },
+      ],
+    },
+  ],
+  [
+    "a signed entry whose signature has an empty field",
+    {
+      ...decisionResponse(),
+      head: inboxHead({ entries: 1 }),
+      entries: [
+        {
+          ...signedDecisionEntry(),
+          signature: { ...answerSignature(0), nonce: "" },
+        },
+      ],
+    },
+  ],
+  [
+    "a signed entry in a withdrawn state",
+    {
+      ...decisionResponse(),
+      head: inboxHead({ entries: 1 }),
+      entries: [
+        {
+          ...signedDecisionEntry(),
+          state: "withdrawn",
+          reason: "gone",
+          words: undefined,
+        },
+      ],
+    },
+  ],
+  [
+    "a signed declined entry with an option",
+    {
+      ...decisionResponse(),
+      head: inboxHead({ entries: 1 }),
+      entries: [{ ...signedDecisionEntry(), state: "declined", option: "a" }],
+    },
+  ],
+  [
+    "a signed answered entry with neither words nor an option",
+    {
+      ...decisionResponse(),
+      head: inboxHead({ entries: 1 }),
+      entries: [
+        { ...signedDecisionEntry(), state: "answered", words: undefined },
+      ],
+    },
+  ],
+  [
+    "a reported entry with a signature",
+    {
+      ...decisionResponse(),
+      head: inboxHead({ entries: 1 }),
+      entries: [{ ...decisionEntry(), signature: answerSignature(0) }],
+    },
+  ],
+  [
+    "a session entry with a signature",
+    {
+      ...decisionResponse(),
+      head: inboxHead({ entries: 1 }),
+      entries: [
+        {
+          ...decisionEntry(),
+          state: "withdrawn",
+          source: "session",
+          reason: "gone",
+          words: undefined,
+          signature: answerSignature(0),
+        },
+      ],
+    },
+  ],
+  [
+    "a reported entry that is not an answer state",
+    {
+      ...decisionResponse(),
+      head: inboxHead({ entries: 1 }),
+      entries: [
+        {
+          ...decisionEntry(),
+          state: "withdrawn",
+          reason: "gone",
+          words: undefined,
+        },
+      ],
+    },
+  ],
+  [
+    "a signed entry whose own index is not its position",
+    {
+      ...decisionResponse(),
+      head: inboxHead({
+        group: "reported",
+        state: "approved",
+        source: "signed",
+        entries: 2,
       }),
+      entries: [
+        decisionEntry(),
+        signedDecisionEntry({ index: 0, signature: answerSignature(0) }),
+      ],
+    },
+  ],
+  [
+    "a signed entry at position 1 whose signature index is 0",
+    {
+      ...decisionResponse(),
+      head: inboxHead({
+        group: "reported",
+        state: "approved",
+        source: "signed",
+        entries: 2,
+      }),
+      entries: [
+        decisionEntry(),
+        signedDecisionEntry({ index: 1, signature: answerSignature(0) }),
+      ],
     },
   ],
 ];
@@ -617,6 +797,120 @@ describe("drawableDecision", () => {
             state: "approved",
             source: "reported",
           }),
+        }),
+        PROJECT,
+        ID,
+      ),
+    ).toBe(true);
+  });
+
+  it("takes a reported head whose source is signed", () => {
+    expect(
+      drawableDecision(
+        decisionResponse({
+          head: inboxHead({
+            group: "reported",
+            state: "approved",
+            source: "signed",
+            entries: 1,
+          }),
+          entries: [signedDecisionEntry()],
+        }),
+        PROJECT,
+        ID,
+      ),
+    ).toBe(true);
+  });
+
+  it("takes a signed answer entry with its signature", () => {
+    expect(
+      drawableDecision(
+        decisionResponse({
+          head: inboxHead({
+            group: "reported",
+            state: "approved",
+            source: "signed",
+            entries: 1,
+          }),
+          entries: [signedDecisionEntry()],
+        }),
+        PROJECT,
+        ID,
+      ),
+    ).toBe(true);
+  });
+
+  it("takes a signed declined entry with words and no option", () => {
+    expect(
+      drawableDecision(
+        decisionResponse({
+          head: inboxHead({
+            group: "reported",
+            state: "declined",
+            source: "signed",
+            entries: 1,
+          }),
+          entries: [signedDecisionEntry({ state: "declined", words: "no" })],
+        }),
+        PROJECT,
+        ID,
+      ),
+    ).toBe(true);
+  });
+
+  it("takes a signed answered entry with an option and no words", () => {
+    expect(
+      drawableDecision(
+        decisionResponse({
+          head: inboxHead({
+            group: "reported",
+            state: "answered",
+            source: "signed",
+            entries: 1,
+          }),
+          entries: [
+            signedDecisionEntry({
+              state: "answered",
+              words: undefined,
+              option: "a",
+            }),
+          ],
+        }),
+        PROJECT,
+        ID,
+      ),
+    ).toBe(true);
+  });
+
+  it("takes a signed approved entry with no words", () => {
+    expect(
+      drawableDecision(
+        decisionResponse({
+          head: inboxHead({
+            group: "reported",
+            state: "approved",
+            source: "signed",
+            entries: 1,
+          }),
+          entries: [signedDecisionEntry({ words: undefined })],
+        }),
+        PROJECT,
+        ID,
+      ),
+    ).toBe(true);
+  });
+
+  it("takes a signed entry at position 1 with its signature bound there", () => {
+    expect(
+      drawableDecision(
+        decisionResponse({
+          head: inboxHead({
+            group: "reported",
+            state: "approved",
+            source: "signed",
+            entries: 2,
+          }),
+          entries: [decisionEntry(), signedDecisionEntry({ index: 1 })],
         }),
         PROJECT,
         ID,
@@ -705,6 +999,7 @@ describe("drawableDecision", () => {
               words: "yes",
             }),
             decisionEntry({
+              index: 1,
               state: "withdrawn",
               source: "session",
               revision: 1,

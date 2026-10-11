@@ -291,6 +291,358 @@ describe("the inbox page rules", () => {
     );
   });
 
+  describe("the owner's signed answers", () => {
+    /** One project whose inbox holds one head of each drawn kind. */
+    function fourKinds() {
+      return inboxView({
+        projects: [
+          {
+            id: "alpha",
+            name: "Alpha",
+            counts: { waiting: 1, oneWay: 0, reported: 1, closed: 1 },
+            decisions: [
+              inboxHead({
+                id: "w",
+                question: "Wait?",
+                group: "waiting",
+                state: "open",
+              }),
+              inboxHead({
+                id: "s",
+                question: "Mine?",
+                group: "reported",
+                state: "approved",
+                source: "signed",
+                at: "2026-10-08T13:00:00Z",
+                entries: 1,
+              }),
+              inboxHead({
+                id: "r",
+                question: "Theirs?",
+                group: "reported",
+                state: "declined",
+                source: "reported",
+                at: "2026-10-08T13:00:00Z",
+                entries: 1,
+              }),
+              inboxHead({
+                id: "c",
+                question: "Closed?",
+                group: "closed",
+                state: "withdrawn",
+                entries: 1,
+              }),
+            ],
+          },
+        ],
+      });
+    }
+
+    it("draws Answered by you before Reported as answered, each card in its own", () => {
+      const host = draw(fourKinds());
+      expect(textsOf(host, ".inbox-group h3")).toStrictEqual([
+        "Waiting on you",
+        "Answered by you",
+        "Reported as answered",
+        "Closed by a session",
+      ]);
+      const signed = host.querySelector(".inbox-group.inbox-signed");
+      expect(signed).not.toBeNull();
+      expect(textOf(signed as Element)).toContain("Mine?");
+      expect(textOf(signed as Element)).not.toContain("Theirs?");
+      const reported = host.querySelector(".inbox-group.inbox-reported");
+      expect(reported).not.toBeNull();
+      expect(textOf(reported as Element)).toContain("Theirs?");
+      expect(textOf(reported as Element)).not.toContain("Mine?");
+    });
+
+    it("never says a signed answer was reported, or a reported one signed", () => {
+      const host = draw(fourKinds());
+      const signedCard = host.querySelector(
+        ".inbox-group.inbox-signed .inbox-card",
+      );
+      const reportedCard = host.querySelector(
+        ".inbox-group.inbox-reported .inbox-card",
+      );
+      expect(signedCard).not.toBeNull();
+      expect(reportedCard).not.toBeNull();
+      expect(textOf(signedCard as Element)).toContain(
+        "You approved this on 2026-10-08 at 13:00 UTC.",
+      );
+      expect(textOf(signedCard as Element)).toContain(
+        "Signed with your passkey. The server checked the signature when it was given; this page does not check it again.",
+      );
+      expect(textOf(reportedCard as Element)).toContain(
+        "The alpha session reports you declined this on 2026-10-08 at 13:00 UTC.",
+      );
+      expect(textOf(reportedCard as Element)).toContain(
+        "Reported by a session, not signed by you.",
+      );
+      expect(textOf(signedCard as Element)).not.toContain(
+        "Reported by a session",
+      );
+      expect(textOf(reportedCard as Element)).not.toMatch(
+        /signed with your passkey/i,
+      );
+    });
+
+    it("draws no Reported as answered heading when the only answer is signed", () => {
+      const host = draw(
+        inboxView({
+          projects: [
+            {
+              id: "alpha",
+              name: "Alpha",
+              counts: { waiting: 0, oneWay: 0, reported: 1, closed: 0 },
+              decisions: [
+                inboxHead({
+                  id: "s",
+                  question: "Mine?",
+                  group: "reported",
+                  state: "answered",
+                  source: "signed",
+                  at: "2026-10-08T13:00:00Z",
+                  entries: 1,
+                }),
+              ],
+            },
+          ],
+        }),
+      );
+      expect(textsOf(host, ".inbox-group h3")).toStrictEqual([
+        "Answered by you",
+      ]);
+      const signed = host.querySelector(".inbox-group.inbox-signed");
+      expect(textOf(signed as Element)).toContain("Mine?");
+    });
+
+    it("gives a signed answer its own two sentences, word for word", () => {
+      const host = draw(
+        inboxView({
+          projects: [
+            {
+              id: "alpha",
+              name: "Alpha",
+              counts: { waiting: 0, oneWay: 0, reported: 1, closed: 0 },
+              decisions: [
+                inboxHead({
+                  question: "Mine?",
+                  group: "reported",
+                  state: "approved",
+                  source: "signed",
+                  at: "2026-10-08T13:00:00Z",
+                  entries: 1,
+                }),
+              ],
+            },
+          ],
+        }),
+      );
+      expect(textsOf(host, ".card-state")).toStrictEqual([
+        "You approved this on 2026-10-08 at 13:00 UTC.",
+      ]);
+      expect(textsOf(host, ".card-small")).toStrictEqual([
+        "Signed with your passkey. The server checked the signature when it was given; this page does not check it again.",
+      ]);
+    });
+
+    it("says a covered signed answer in the owner's voice", () => {
+      const host = draw(
+        inboxView({
+          projects: [
+            {
+              id: "alpha",
+              name: "Alpha",
+              counts: { waiting: 0, oneWay: 0, reported: 0, closed: 1 },
+              decisions: [
+                inboxHead({
+                  question: "Withdrawn?",
+                  state: "withdrawn",
+                  group: "closed",
+                  at: "2026-10-08T13:00:00Z",
+                  entries: 2,
+                  coveredAnswer: {
+                    state: "approved",
+                    source: "signed",
+                    at: "2026-10-08T13:00:00Z",
+                    by: "owner",
+                    words: "Yes, go ahead",
+                  },
+                }),
+              ],
+            },
+          ],
+        }),
+      );
+      expect(textOf(host)).toContain(
+        'You had approved this, signed with your passkey: "Yes, go ahead".',
+      );
+    });
+
+    it("says a covered signed answer under a waiting delegation", () => {
+      const host = draw(
+        inboxView({
+          projects: [
+            {
+              id: "alpha",
+              name: "Alpha",
+              counts: { waiting: 1, oneWay: 0, reported: 0, closed: 0 },
+              decisions: [
+                inboxHead({
+                  question: "Delegated?",
+                  state: "delegated",
+                  group: "waiting",
+                  at: "2026-10-08T13:00:00Z",
+                  entries: 2,
+                  coveredAnswer: {
+                    state: "approved",
+                    source: "signed",
+                    at: "2026-10-08T13:00:00Z",
+                    by: "owner",
+                    words: "Yes, go ahead",
+                  },
+                }),
+              ],
+            },
+          ],
+        }),
+      );
+      const text = textOf(host);
+      expect(text).toContain(
+        "Decided under delegation. Awaiting your confirmation.",
+      );
+      expect(text).toContain(
+        'You had approved this, signed with your passkey: "Yes, go ahead".',
+      );
+    });
+
+    it("says a covered reported answer under a waiting delegation", () => {
+      const host = draw(
+        inboxView({
+          projects: [
+            {
+              id: "alpha",
+              name: "Alpha",
+              counts: { waiting: 1, oneWay: 0, reported: 0, closed: 0 },
+              decisions: [
+                inboxHead({
+                  question: "Delegated?",
+                  state: "delegated",
+                  group: "waiting",
+                  at: "2026-10-08T13:00:00Z",
+                  entries: 2,
+                  coveredAnswer: {
+                    state: "approved",
+                    source: "reported",
+                    at: "2026-10-08T13:00:00Z",
+                    by: "owner",
+                    words: "Yes, go ahead",
+                  },
+                }),
+              ],
+            },
+          ],
+        }),
+      );
+      const text = textOf(host);
+      expect(text).toContain(
+        "Decided under delegation. Awaiting your confirmation.",
+      );
+      expect(text).toContain(
+        'It had been reported that you approved: "Yes, go ahead".',
+      );
+    });
+
+    it("draws no covered note under a waiting delegation with no covered answer", () => {
+      const host = draw(
+        inboxView({
+          projects: [
+            {
+              id: "alpha",
+              name: "Alpha",
+              counts: { waiting: 1, oneWay: 0, reported: 0, closed: 0 },
+              decisions: [
+                inboxHead({
+                  question: "Delegated?",
+                  state: "delegated",
+                  group: "waiting",
+                  at: "2026-10-08T13:00:00Z",
+                  entries: 1,
+                }),
+              ],
+            },
+          ],
+        }),
+      );
+      expect(textsOf(host, ".card-covered")).toStrictEqual([]);
+      expect(textOf(host)).toContain(
+        "Decided under delegation. Awaiting your confirmation.",
+      );
+    });
+
+    it("names a signed earlier answer as a signed one", () => {
+      const host = draw(
+        inboxView({
+          projects: [
+            {
+              id: "alpha",
+              name: "Alpha",
+              counts: { waiting: 1, oneWay: 0, reported: 0, closed: 0 },
+              decisions: [
+                inboxHead({
+                  question: "Changed?",
+                  state: "open",
+                  group: "waiting",
+                  earlierAnswer: {
+                    state: "declined",
+                    source: "signed",
+                    at: "2026-10-08T13:00:00Z",
+                    by: "owner",
+                    words: "no",
+                  },
+                }),
+              ],
+            },
+          ],
+        }),
+      );
+      expect(textOf(host)).toContain(
+        'A signed answer exists on an earlier text: declined, with the words "no".',
+      );
+    });
+
+    it("names a signed earlier answer with no words as the verdict alone", () => {
+      const host = draw(
+        inboxView({
+          projects: [
+            {
+              id: "alpha",
+              name: "Alpha",
+              counts: { waiting: 1, oneWay: 0, reported: 0, closed: 0 },
+              decisions: [
+                inboxHead({
+                  question: "Changed?",
+                  state: "open",
+                  group: "waiting",
+                  earlierAnswer: {
+                    state: "declined",
+                    source: "signed",
+                    at: "2026-10-08T13:00:00Z",
+                    by: "owner",
+                  },
+                }),
+              ],
+            },
+          ],
+        }),
+      );
+      expect(textOf(host)).toContain(
+        "A signed answer exists on an earlier text: declined.",
+      );
+      expect(textOf(host)).not.toContain(", with the words");
+    });
+  });
+
   it("shows a closed decision with its covered answer beside it", () => {
     const host = draw(
       inboxView({
@@ -386,6 +738,36 @@ describe("the inbox page rules", () => {
     expect(textOf(host)).toContain(
       "An earlier text of this decision was answered: declined. That answer does not apply to the current text.",
     );
+  });
+
+  it("shows a project with nothing as one line, not a block of zeros", () => {
+    const host = draw(
+      inboxView({
+        projects: [
+          inboxProject({ id: "alpha", name: "Alpha" }),
+          inboxProject({
+            id: "beta",
+            name: "Beta",
+            counts: { waiting: 0, oneWay: 0, reported: 1, closed: 0 },
+            decisions: [
+              inboxHead({
+                id: "s",
+                question: "Mine?",
+                group: "reported",
+                state: "approved",
+                source: "signed",
+                at: "2026-10-08T13:00:00Z",
+                entries: 1,
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+    expect(textsOf(host, ".inbox-empty")).toStrictEqual([
+      "Alpha · nothing waiting",
+    ]);
+    expect(textsOf(host, ".inbox-group h3")).toStrictEqual(["Answered by you"]);
   });
 
   it("shows an empty inbox with zero totals and the footer", () => {
