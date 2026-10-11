@@ -1673,3 +1673,212 @@ describe("a refresh must not let him sign something he has not read", () => {
     h.app.stop();
   });
 });
+
+describe("leaving the decision resets the answer flow", () => {
+  /** A nonce reply that agrees with the page's zero-entry count. */
+  const NONCE_OK: SigningReply = {
+    status: 200,
+    body: { nonce: NONCE_VALUE, index: 0 },
+  };
+
+  /** d2's decision, as `GET …/decisions/d2` answers it. */
+  const otherDecision = () =>
+    decisionResponse({
+      head: inboxHead({ id: "d2" }),
+      revisions: [
+        storedRevision({ decision: decisionRevision({ id: "d2" }) }),
+      ] as never,
+    });
+
+  /**
+   * signingFetch's shape, but serving several decisions so a test can
+   * navigate between them: the probe answers 405 and the nonce POST is
+   * test-supplied for every decision alike, and `setDecision` replaces d1's
+   * body the same way the refresh tests do.
+   */
+  function leavingFetch(options: {
+    nonce?: () => SigningReply;
+    answers?: () => SigningReply;
+    decisions: Record<string, unknown>;
+  }) {
+    const calls: SigningCall[] = [];
+    const bodies = new Map(Object.entries(options.decisions));
+    const impl = async (
+      path: string,
+      init?: {
+        method?: string;
+        headers?: Record<string, string>;
+        body?: string;
+      },
+    ) => {
+      const method = init?.method ?? "GET";
+      calls.push({
+        method,
+        path,
+        ...(init?.body !== undefined ? { body: JSON.parse(init.body) } : {}),
+      });
+      let reply: SigningReply;
+      if (path === "/api/v1/projects") {
+        reply = { status: 200, body: [projectCard()] };
+      } else if (path === "/api/v1/attention") {
+        reply = { status: 200, body: attentionView() };
+      } else {
+        reply = { status: 404 };
+        for (const [id, body] of bodies) {
+          if (path === NONCE(id) && method === "GET") {
+            reply = { status: 405 };
+          } else if (path === NONCE(id) && method === "POST") {
+            reply = options.nonce === undefined
+              ? { status: 405 }
+              : options.nonce();
+          } else if (path === ANSWERS(id) && method === "POST") {
+            reply = options.answers === undefined
+              ? { status: 201, body: { index: 0, state: "approved" } }
+              : options.answers();
+          } else if (path === DECISION(id)) {
+            reply = { status: 200, body };
+          } else {
+            continue;
+          }
+          break;
+        }
+      }
+      return {
+        ok: reply.status >= 200 && reply.status < 300,
+        status: reply.status,
+        json: () => Promise.resolve(reply.body),
+      };
+    };
+    return Object.assign(impl, {
+      calls,
+      setDecision: (body: unknown) => {
+        bodies.set("d1", body);
+      },
+    });
+  }
+
+  /** The three states the flow can be left in on the decision it belongs to. */
+  const ARRIVALS: [string, () => Promise<void>][] = [
+    [
+      "from the confirm step",
+      async () => {
+        press("answer-yes");
+        await flush();
+      },
+    ],
+    [
+      "from his own words with a draft typed",
+      async () => {
+        press("answer-words-open");
+        await flush();
+        const area = textarea("answer-words");
+        area.value = "my own words";
+        area.dispatchEvent(new Event("input", { bubbles: true }));
+        await flush();
+      },
+    ],
+    [
+      "from a message after a cancelled ceremony",
+      async () => {
+        press("answer-yes");
+        await flush();
+        press("answer-sign");
+        await settle();
+        expect(messageText()).toBe(
+          "The passkey prompt was cancelled or timed out. Nothing was signed.",
+        );
+      },
+    ],
+  ];
+
+  for (const [name, arrive] of ARRIVALS) {
+    it(`resets the answer flow when the reader leaves ${name}`, async () => {
+      const fetchImpl = leavingFetch({
+        nonce: () => NONCE_OK,
+        decisions: { d1: openDecision(), d2: otherDecision() },
+      });
+      const h = signingHarness("/p/alpha/d/d1", fetchImpl, () => null);
+      h.app.start();
+      await settle();
+
+      await arrive();
+      h.app.navigate("/p/alpha/d/d2");
+      await settle();
+
+      expect(textsOf(root(), "section.answer button")).toEqual([
+        "Yes",
+        "No",
+        "Answer in my own words",
+      ]);
+      expect(root().querySelector("p.answer-message")).toBeNull();
+
+      press("answer-words-open");
+      await flush();
+      expect(textarea("answer-words").value).toBe("");
+
+      h.app.navigate("/p/alpha/d/d1");
+      await settle();
+      expect(root().querySelector("p.answer-message")).toBeNull();
+
+      press("answer-words-open");
+      await flush();
+      expect(textarea("answer-words").value).toBe("");
+
+      h.app.stop();
+    });
+  }
+
+  it("drops an answer that settles after the reader has left", async () => {
+    let releaseGet!: () => void;
+    const fetchImpl = leavingFetch({
+      nonce: () => NONCE_OK,
+      answers: () => ({ status: 201, body: { index: 0, state: "approved" } }),
+      decisions: { d1: openDecision(), d2: otherDecision() },
+    });
+    const h = signingHarness("/p/alpha/d/d1", fetchImpl, (options) => {
+      const pk = (
+        options as unknown as { publicKey: { challenge: Uint8Array } }
+      ).publicKey;
+      const made = assertionFor(pk.challenge, "settled-after-leaving");
+      return new Promise<unknown>((resolve) => {
+        releaseGet = () => resolve(browserAssertion(made.input));
+      });
+    });
+    h.app.start();
+    await settle();
+
+    press("answer-yes");
+    await flush();
+    press("answer-sign");
+    await settle();
+
+    const getsBefore = fetchImpl.calls.filter(
+      (c) => c.method === "GET" && c.path === DECISION("d1"),
+    ).length;
+
+    h.app.navigate("/");
+    await settle();
+
+    expect(root().querySelector("section.answer")).toBeNull();
+    expect(root().querySelector("p.answer-message")).toBeNull();
+
+    releaseGet();
+    await settle();
+
+    expect(root().querySelector("section.answer")).toBeNull();
+    expect(root().querySelector("p.answer-message")).toBeNull();
+    expect(root().textContent ?? "").not.toContain("Signed and recorded.");
+    expect(
+      fetchImpl.calls.filter(
+        (c) => c.method === "GET" && c.path === DECISION("d1"),
+      ),
+    ).toHaveLength(getsBefore);
+
+    h.app.navigate("/p/alpha/d/d1");
+    await settle();
+    expect(root().querySelector("p.answer-message")).toBeNull();
+    expect(root().textContent ?? "").not.toContain("Signed and recorded.");
+
+    h.app.stop();
+  });
+});
