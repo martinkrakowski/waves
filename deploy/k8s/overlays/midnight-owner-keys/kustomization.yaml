@@ -1,0 +1,59 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# This overlay adds the owner-keys mount: the owner's PUBLIC passkey keys,
+# from the Secret `waves-owner-keys`, mounted read-only at
+# /run/secrets/waves-owner-keys with WAVES_OWNER_KEYS_FILE pointing at
+# owner-keys.json inside it. It holds PUBLIC keys only — nothing here ever
+# touches a private key.
+#
+# It must be used only AFTER the Secret exists: the Secret is not optional, so
+# with it missing the pod waits with the event "secret not found", which names
+# the cause, while the server would refuse to start on a named but missing
+# file. Apply it with:
+#
+#   WAVES_OVERLAY=deploy/k8s/overlays/midnight-owner-keys sh deploy/deploy.sh
+#
+# A later deploy WITHOUT this overlay removes the mount again, which turns the
+# two answer routes off (they answer 404) and loses no data.
+
+resources:
+  - ../midnight
+
+patches:
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: waves
+    patch: |-
+      [
+        {
+          "op": "add",
+          "path": "/spec/template/spec/volumes/-",
+          "value": {
+            "name": "owner-keys",
+            "secret": {
+              "secretName": "waves-owner-keys",
+              "defaultMode": 288
+            }
+          }
+        },
+        {
+          "op": "add",
+          "path": "/spec/template/spec/containers/0/volumeMounts/-",
+          "value": {
+            "name": "owner-keys",
+            "mountPath": "/run/secrets/waves-owner-keys",
+            "readOnly": true
+          }
+        },
+        {
+          "op": "add",
+          "path": "/spec/template/spec/containers/0/env/-",
+          "value": {
+            "name": "WAVES_OWNER_KEYS_FILE",
+            "value": "/run/secrets/waves-owner-keys/owner-keys.json"
+          }
+        }
+      ]
