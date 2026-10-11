@@ -31,28 +31,13 @@ function counter(): () => string {
   return () => `nonce-${(issued += 1)}`;
 }
 
-function store(time: { now: () => number }): {
-  readonly store: NonceStore;
-  readonly issued: string[];
-} {
-  const source = counter();
-  const created = createNonceStore({ now: time.now, source });
-  const issued: string[] = [];
-  return {
-    store: created,
-    issued,
-  };
+function store(time: { now: () => number }): NonceStore {
+  return createNonceStore({ now: time.now, source: counter() });
 }
 
-/** Issues one nonce for one decision and remembers it in `issued`. */
-function mint(
-  subject: { store: NonceStore; issued: string[] },
-  project = "alpha",
-  decision = "d1",
-): string {
-  const nonce = subject.store.issue(project, decision);
-  subject.issued.push(nonce);
-  return nonce;
+/** Issues one nonce for one decision. */
+function mint(subject: NonceStore, project = "alpha", decision = "d1"): string {
+  return subject.issue(project, decision);
 }
 
 describe("createNonceStore", () => {
@@ -60,26 +45,26 @@ describe("createNonceStore", () => {
     const subject = store(clock());
     const nonce = mint(subject);
 
-    expect(subject.store.consume("alpha", "d1", nonce)).toBe(true);
+    expect(subject.consume("alpha", "d1", nonce)).toBe(true);
     // Single use: the nonce is spent, and a second attempt is a miss.
-    expect(subject.store.consume("alpha", "d1", nonce)).toBe(false);
+    expect(subject.consume("alpha", "d1", nonce)).toBe(false);
   });
 
   it("refuses a nonce held for another decision, project, or none", () => {
     const subject = store(clock());
     const wrongDecision = mint(subject);
-    expect(subject.store.consume("alpha", "d2", wrongDecision)).toBe(false);
+    expect(subject.consume("alpha", "d2", wrongDecision)).toBe(false);
     // The attempt spent the nonce, whatever it answered.
-    expect(subject.store.consume("alpha", "d1", wrongDecision)).toBe(false);
+    expect(subject.consume("alpha", "d1", wrongDecision)).toBe(false);
 
     const wrongProject = mint(subject);
-    expect(subject.store.consume("beta", "d1", wrongProject)).toBe(false);
+    expect(subject.consume("beta", "d1", wrongProject)).toBe(false);
 
-    expect(subject.store.consume("alpha", "d1", "never-issued")).toBe(false);
+    expect(subject.consume("alpha", "d1", "never-issued")).toBe(false);
 
     // The refusals were about the mismatch: a fresh nonce still answers.
     const fresh = mint(subject);
-    expect(subject.store.consume("alpha", "d1", fresh)).toBe(true);
+    expect(subject.consume("alpha", "d1", fresh)).toBe(true);
   });
 
   it("holds a nonce for exactly the ttl, and no longer", () => {
@@ -92,9 +77,9 @@ describe("createNonceStore", () => {
     const old = mint(subject);
 
     time.at(NONCE_TTL_MS - 1);
-    expect(subject.store.consume("alpha", "d1", young)).toBe(true);
+    expect(subject.consume("alpha", "d1", young)).toBe(true);
     time.at(NONCE_TTL_MS);
-    expect(subject.store.consume("alpha", "d1", old)).toBe(false);
+    expect(subject.consume("alpha", "d1", old)).toBe(false);
   });
 
   it("removes expired nonces on issue, so a cap never drops a live one", () => {
@@ -114,12 +99,12 @@ describe("createNonceStore", () => {
     time.at(150_000);
     const fresh = mint(subject);
 
-    expect(subject.store.consume("alpha", "d1", expiredSecond)).toBe(false);
-    expect(subject.store.consume("alpha", "d1", expiredThird)).toBe(false);
-    expect(subject.store.consume("alpha", "d1", expiredFourth)).toBe(false);
+    expect(subject.consume("alpha", "d1", expiredSecond)).toBe(false);
+    expect(subject.consume("alpha", "d1", expiredThird)).toBe(false);
+    expect(subject.consume("alpha", "d1", expiredFourth)).toBe(false);
     // The oldest was kept: the dead ones made the room.
-    expect(subject.store.consume("alpha", "d1", oldest)).toBe(true);
-    expect(subject.store.consume("alpha", "d1", fresh)).toBe(true);
+    expect(subject.consume("alpha", "d1", oldest)).toBe(true);
+    expect(subject.consume("alpha", "d1", fresh)).toBe(true);
   });
 
   it("counts only live nonces at a cap", () => {
@@ -138,36 +123,39 @@ describe("createNonceStore", () => {
     }
 
     for (const nonce of fresh) {
-      expect(subject.store.consume("alpha", "d1", nonce)).toBe(true);
+      expect(subject.consume("alpha", "d1", nonce)).toBe(true);
     }
   });
 
   it("drops the oldest nonce in total at the total cap", () => {
     const subject = store(clock());
     // Sixteen decisions of four nonces each fill the total cap to the brim,
-    // and every nonce is live.
-    for (let index = 0; index < MAX_NONCES; index += 1) {
-      mint(subject, "alpha", `d${Math.floor(index / MAX_NONCES_PER_DECISION)}`);
-    }
-    const oldest = subject.issued[0];
-    const newcomer = mint(subject, "alpha", "fresh-decision");
-
-    // The 65th nonce made room by dropping the first issued, and by no one
-    // else: every other nonce still answers.
-    expect(subject.store.consume("alpha", "d0", oldest)).toBe(false);
+    // and every nonce is live. The first issued is the one the 65th must
+    // spend; the rest are kept, each answerable for its own decision.
+    const oldest = mint(subject, "alpha", "d0");
+    const middle: string[] = [];
     for (let index = 1; index < MAX_NONCES; index += 1) {
-      const nonce = subject.issued[index];
-      expect(
-        subject.store.consume(
+      middle.push(
+        mint(
+          subject,
           "alpha",
           `d${Math.floor(index / MAX_NONCES_PER_DECISION)}`,
+        ),
+      );
+    }
+    const newcomer = mint(subject, "alpha", "fresh-decision");
+
+    expect(subject.consume("alpha", "d0", oldest)).toBe(false);
+    for (const [index, nonce] of middle.entries()) {
+      expect(
+        subject.consume(
+          "alpha",
+          `d${Math.floor((index + 1) / MAX_NONCES_PER_DECISION)}`,
           nonce,
         ),
       ).toBe(true);
     }
-    expect(subject.store.consume("alpha", "fresh-decision", newcomer)).toBe(
-      true,
-    );
+    expect(subject.consume("alpha", "fresh-decision", newcomer)).toBe(true);
   });
 
   it("drops only the decision's oldest at the per-decision cap", () => {
@@ -175,17 +163,18 @@ describe("createNonceStore", () => {
     // Another decision's nonce sits in front, so dropping this decision's
     // oldest means walking past it and leaving it alone.
     const untouched = mint(subject, "alpha", "d1");
-    const own: string[] = [];
-    for (let index = 0; index < MAX_NONCES_PER_DECISION; index += 1) {
-      own.push(mint(subject, "alpha", "d2"));
+    const oldest = mint(subject, "alpha", "d2");
+    const later: string[] = [];
+    for (let index = 1; index < MAX_NONCES_PER_DECISION; index += 1) {
+      later.push(mint(subject, "alpha", "d2"));
     }
     const fifth = mint(subject, "alpha", "d2");
 
-    expect(subject.store.consume("alpha", "d2", own[0])).toBe(false);
-    for (let index = 1; index < own.length; index += 1) {
-      expect(subject.store.consume("alpha", "d2", own[index])).toBe(true);
+    expect(subject.consume("alpha", "d2", oldest)).toBe(false);
+    for (const nonce of later) {
+      expect(subject.consume("alpha", "d2", nonce)).toBe(true);
     }
-    expect(subject.store.consume("alpha", "d1", untouched)).toBe(true);
-    expect(subject.store.consume("alpha", "d2", fifth)).toBe(true);
+    expect(subject.consume("alpha", "d1", untouched)).toBe(true);
+    expect(subject.consume("alpha", "d2", fifth)).toBe(true);
   });
 });
