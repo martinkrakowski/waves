@@ -31,6 +31,21 @@ export const GROUP_HEAD = {
 };
 
 /**
+ * The heading of the owner's own answers: a signed answer is his, drawn in a
+ * section of its own before the reported ones so the two are never read alike.
+ */
+export const SIGNED_HEAD = "Answered by you";
+
+/**
+ * Whether a head is the owner's own signed answer: the reported group holds
+ * both kinds, and this is the one drawn under "Answered by you". Exported for
+ * the decision page, which needs the same rule.
+ */
+export function isSignedHead(head) {
+  return head.group === "reported" && head.source === "signed";
+}
+
+/**
  * The shape, in a word: "choice", "action only you run", "standing instruction".
  * These are the page's own words for the three shapes, not the shape value itself.
  */
@@ -117,8 +132,24 @@ export function stateNodes(head) {
     return nodes;
   }
   if (head.group === "reported") {
-    // `state` here is the answer the session reported: approved, declined or
-    // answered — never the bare word, always in the sentence.
+    // `state` here is the answer: approved, declined or answered — never the
+    // bare word, always in the sentence. A signed one is the owner's own and
+    // says so; a reported one is a session's claim and keeps its two sentences.
+    if (isSignedHead(head)) {
+      nodes.push(
+        el("p", {
+          attrs: { class: "card-state" },
+          children: [
+            text(`You ${head.state} this on ${calendarDate(head.at)}.`),
+          ],
+        }),
+        el("small", {
+          attrs: { class: "card-small" },
+          text: "Signed with your passkey. The server checked the signature when it was given; this page does not check it again.",
+        }),
+      );
+      return nodes;
+    }
     nodes.push(
       el("p", {
         attrs: { class: "card-state" },
@@ -150,12 +181,13 @@ export function stateNodes(head) {
   if (head.coveredAnswer) {
     const cover = head.coveredAnswer;
     const withWords = cover.words ? `: "${cover.words}"` : "";
-    nodes.push(
-      el("p", {
-        attrs: { class: "card-covered" },
-        text: `It had been reported that you ${cover.state}${withWords}.`,
-      }),
-    );
+    // The covered answer keeps its own voice: a signed one is the owner's own,
+    // a reported one is the session's claim it always was.
+    const sentence =
+      cover.source === "signed"
+        ? `You had ${cover.state} this, signed with your passkey${withWords}.`
+        : `It had been reported that you ${cover.state}${withWords}.`;
+    nodes.push(el("p", { attrs: { class: "card-covered" }, text: sentence }));
   }
   return nodes;
 }
@@ -171,10 +203,13 @@ export function earlierAnswerNode(head) {
   }
   const ear = head.earlierAnswer;
   const withWords = ear.words ? `: "${ear.words}"` : "";
-  return el("p", {
-    attrs: { class: "card-earlier" },
-    text: `An earlier text of this decision was answered: ${ear.state}${withWords}. That answer does not apply to the current text.`,
-  });
+  // A signed earlier answer is the owner's own on the previous text; a
+  // reported one keeps the sentence the page has always printed.
+  const sentence =
+    ear.source === "signed"
+      ? `A signed answer exists on the previous text: ${ear.state}${withWords}.`
+      : `An earlier text of this decision was answered: ${ear.state}${withWords}. That answer does not apply to the current text.`;
+  return el("p", { attrs: { class: "card-earlier" }, text: sentence });
 }
 
 /**
@@ -255,7 +290,10 @@ export function groupBlock(label, cls, heads, nowMs) {
  */
 function projectBlock(project, nowMs) {
   const hasDecisions =
-    project.waiting.length + project.reported.length + project.closed.length >
+    project.waiting.length +
+      project.signed.length +
+      project.reported.length +
+      project.closed.length >
     0;
   if (!hasDecisions) {
     return el("p", {
@@ -281,6 +319,7 @@ function projectBlock(project, nowMs) {
         ],
       }),
       groupBlock(GROUP_HEAD.waiting, "inbox-waiting", project.waiting, nowMs),
+      groupBlock(SIGNED_HEAD, "inbox-signed", project.signed, nowMs),
       groupBlock(
         GROUP_HEAD.reported,
         "inbox-reported",

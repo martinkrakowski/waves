@@ -24,6 +24,16 @@ const HISTORY_STATE_WORD = {
   superseded: "replaced by a later decision",
 };
 
+/**
+ * The words for a history head the owner signed himself: the same three answer
+ * states, in his own voice, never drawn like a session's claim.
+ */
+const SIGNED_HISTORY_STATE_WORD = {
+  approved: "signed as approved",
+  declined: "signed as declined",
+  answered: "signed as answered",
+};
+
 /** The most events the listing answers with. */
 const MAX_EVENTS = 200;
 
@@ -35,12 +45,16 @@ const MAX_EVENTS = 200;
  */
 function historyHeadLine(head, project) {
   const target = head.from !== undefined ? head.from : project;
+  const signedWord =
+    head.source === "signed"
+      ? SIGNED_HISTORY_STATE_WORD[head.state]
+      : undefined;
   return el("p", {
     attrs: { class: "project-inbox-history-line" },
     children: [
       internalLink(head.question, `/p/${target}/d/${head.id}`),
       text(" · "),
-      text(HISTORY_STATE_WORD[head.state]),
+      text(signedWord ?? HISTORY_STATE_WORD[head.state]),
       text(" · "),
       text(calendarDate(head.at)),
     ],

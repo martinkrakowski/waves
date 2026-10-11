@@ -1,6 +1,7 @@
 /**
  * The page for one project's decisions at `/p/<project>/inbox`: the project's
- * own four counts and its decisions in the inbox's three groups, plus the
+ * own four counts and its decisions in the inbox's groups — the owner's signed
+ * answers in a section of their own before the reported ones — plus the
  * standing instructions other projects raise against it (marked `from`). It
  * reuses the inbox's card, group block and count line so the two pages read the
  * same way — including a `from` card, whose link already goes to the raising
@@ -16,7 +17,13 @@
  */
 
 import { countLine } from "./inbox-model.js";
-import { GROUP_HEAD, FOOTER, groupBlock } from "./inbox.js";
+import {
+  GROUP_HEAD,
+  SIGNED_HEAD,
+  FOOTER,
+  groupBlock,
+  isSignedHead,
+} from "./inbox.js";
 import { eventsList, historyHeads } from "./project-history.js";
 import { el, internalLink, text } from "../dom.js";
 
@@ -24,18 +31,23 @@ import { el, internalLink, text } from "../dom.js";
 const EMPTY = "Nothing is waiting on you in this project.";
 
 /**
- * Decisions split into the four groups the inbox check allows: the three the
- * view draws, and `history`, which it does not. The server already sorted them
- * this way; this is a partition, not a re-sort, so a card the reader is looking
- * for does not jump past its neighbour.
+ * Decisions split into the five lists the page draws: the three inbox groups,
+ * with the reported one's signed answers taken out into a list of their own,
+ * and `history`, which it does not. The server already sorted them this way;
+ * this is a partition, not a re-sort, so a card the reader is looking for does
+ * not jump past its neighbour.
  */
 function groupHeads(decisions) {
   return decisions.reduce(
     (byGroup, head) => {
-      byGroup[head.group].push(head);
+      if (head.group === "reported" && isSignedHead(head)) {
+        byGroup.signed.push(head);
+      } else {
+        byGroup[head.group].push(head);
+      }
       return byGroup;
     },
-    { waiting: [], reported: [], closed: [], history: [] },
+    { waiting: [], signed: [], reported: [], closed: [], history: [] },
   );
 }
 
@@ -53,7 +65,8 @@ function breadcrumbs(view, name) {
 
 /**
  * The whole page: the breadcrumb, the heading, the project's own counts, the
- * three groups of cards, the history details block when there are history
+ * groups of cards — the owner's signed answers before the reported ones — the
+ * history details block when there are history
  * heads, the empty line when there is nothing to draw, the events list always,
  * and the inbox's footer sentence — always, even when the inbox is empty, so
  * the rule sits above the fold as well as named.
@@ -61,9 +74,13 @@ function breadcrumbs(view, name) {
 export function renderProjectInbox(view, name, events, nowMs) {
   const groups = groupHeads(view.decisions);
   const inGroups =
-    groups.waiting.length + groups.reported.length + groups.closed.length;
+    groups.waiting.length +
+    groups.signed.length +
+    groups.reported.length +
+    groups.closed.length;
   const fromCount =
     groups.waiting.filter((head) => head.from !== undefined).length +
+    groups.signed.filter((head) => head.from !== undefined).length +
     groups.reported.filter((head) => head.from !== undefined).length +
     groups.closed.filter((head) => head.from !== undefined).length;
   const children = [
@@ -74,6 +91,7 @@ export function renderProjectInbox(view, name, events, nowMs) {
       text: countLine(view.counts, fromCount),
     }),
     groupBlock(GROUP_HEAD.waiting, "inbox-waiting", groups.waiting, nowMs),
+    groupBlock(SIGNED_HEAD, "inbox-signed", groups.signed, nowMs),
     groupBlock(GROUP_HEAD.reported, "inbox-reported", groups.reported, nowMs),
     groupBlock(GROUP_HEAD.closed, "inbox-closed", groups.closed, nowMs),
     historyHeads(groups.history, view.project),
