@@ -93,6 +93,30 @@ export interface OwnerPins {
   read(): Promise<PinRead>;
 }
 
+/**
+ * The two cryptographic answers the signed-answer checks need, as a port so the
+ * use cases stay pure and an adapter can hand over `node:crypto`'s. A private
+ * key never reaches this interface: only a digest and the verdict on somebody
+ * else's signature.
+ */
+export interface Crypto {
+  /** The SHA-256 digest of the bytes: the hashes the checks recompute. */
+  sha256(data: Uint8Array): Uint8Array;
+  /**
+   * ES256 — ECDSA over P-256 with a SHA-256 digest — of the message against a
+   * public key in SPKI DER form. `ok` says the signature is the key's own;
+   * `bad-signature` says it is not, or that nothing could be read of the key
+   * or the signature at all; `not-p256` says the key is a different curve's or
+   * a different family's, which is a fact about the pin rather than about the
+   * signature, and gets its own answer so it can get its own sentence.
+   */
+  verifyEs256(
+    spki: Uint8Array,
+    message: Uint8Array,
+    derSignature: Uint8Array,
+  ): "ok" | "bad-signature" | "not-p256";
+}
+
 export interface InputStream {
   read(): Promise<string>;
 }
@@ -212,6 +236,7 @@ export interface CliDeps {
   readonly transport: TransportFactory;
   readonly runner: Runner;
   readonly ownerPins: OwnerPins;
+  readonly crypto: Crypto;
 }
 
 /** The ports plus the two streams the use cases report on. */

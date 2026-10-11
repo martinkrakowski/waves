@@ -3,7 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { CliIo } from "../../src/application/entrypoint.js";
+import { nodeCrypto } from "../../src/infrastructure/crypto.js";
 import type {
+  Crypto,
   Environment,
   Files,
   HttpRequest,
@@ -251,6 +253,8 @@ export interface HarnessInput {
   readonly now?: number;
   /** What the pin port answers, for a `read --signed` that expects one. */
   readonly pins?: PinRead;
+  /** The crypto port; the real one by default, because signatures are real. */
+  readonly crypto?: Crypto;
   /** A clock of the test's own, for a run that measures how long it took. */
   readonly clock?: { now(): number };
 }
@@ -284,6 +288,7 @@ export function harness(input: HarnessInput = {}): Harness {
     transport: scripted.factory,
     runner: programs.runner,
     ownerPins: { read: async () => input.pins ?? { kind: "missing" } },
+    crypto: input.crypto ?? nodeCrypto(),
     out: recorded.io.out,
     err: recorded.io.err,
   };

@@ -2,6 +2,7 @@ import { type CliIo, run } from "./application/entrypoint.js";
 import type { CliDeps } from "./application/ports.js";
 import { environment } from "./infrastructure/env.js";
 import { fileSystem } from "./infrastructure/fs.js";
+import { nodeCrypto } from "./infrastructure/crypto.js";
 import { ownerPinFile } from "./infrastructure/owner-pin.js";
 import { processRunner } from "./infrastructure/runner.js";
 import { standardInput } from "./infrastructure/stdin.js";
@@ -43,6 +44,7 @@ export async function main(
     transport: overrides.transport ?? ((options) => createTransport(options)),
     runner: overrides.runner ?? processRunner(),
     ownerPins: overrides.ownerPins ?? ownerPinFile(),
+    crypto: overrides.crypto ?? nodeCrypto(),
   };
   return await run(argv, io, deps);
 }
