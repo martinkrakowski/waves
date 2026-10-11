@@ -5,6 +5,9 @@ import { createApp } from "../../public/app.js";
 import type { ProjectCard } from "../../public/api.js";
 import { el } from "../../public/dom.js";
 import { shell } from "../../public/shell.js";
+import type { AnswerHandlers } from "../../public/views/answer.js";
+import { answerSection } from "../../public/views/answer.js";
+import { decisionModel } from "../../public/views/decision-model.js";
 import type { FleetHandlers } from "../../public/views/fleet.js";
 import { renderFleet } from "../../public/views/fleet.js";
 import type { ProjectHandlers } from "../../public/views/project.js";
@@ -906,6 +909,74 @@ describe("the decision page against stored markup", () => {
     expect(documentText()).not.toContain("http://evil.example");
     app.stop();
   });
+});
+
+/**
+ * The answer controls, where another's words are on screen at their most
+ * dangerous: the question, an option's text and a commitment are the
+ * decision's own text, and his own words are fed back to him to sign. Every
+ * one of the four reaches the page as text — his words as one text node — and
+ * no control is pressed, since a handler here would move the page under the
+ * assertion.
+ */
+describe("the answer controls against stored markup", () => {
+  const NO_HANDLERS: AnswerHandlers = {
+    onYes() {},
+    onNo() {},
+    onWords() {},
+    onDraft() {},
+    onContinue() {},
+    onCancel() {},
+    onSign() {},
+    maxWords: 280,
+  };
+
+  it.each(TEXT_PAYLOADS)(
+    "renders the question, an option, a commitment and his words as text",
+    (payload) => {
+      freshRoot();
+      const host = document.getElementById("root") as HTMLElement;
+      host.append(
+        answerSection(
+          decisionModel(
+            decisionResponse({
+              revisions: [
+                storedRevision({
+                  decision: decisionRevision({
+                    question: payload,
+                    options: [
+                      { key: "a", text: payload, cost: "C1" },
+                      { key: "b", text: "No", cost: "C2" },
+                    ],
+                    commits: [payload],
+                  }),
+                }),
+              ],
+            }),
+          ),
+          { kind: "confirm", choice: { verdict: "answered", words: payload } },
+          NO_HANDLERS,
+        ),
+      );
+      assertNoInjectedMarkup();
+      expect(host.querySelectorAll("img")).toHaveLength(0);
+      expect(host.querySelectorAll("script")).toHaveLength(0);
+      expect(textsOf(host, ".answer-confirm-question")).toStrictEqual([
+        payload,
+      ]);
+      expect(textsOf(host, ".answer-confirm .option-head")).toStrictEqual([
+        `a: ${payload}`,
+        "b: No",
+      ]);
+      expect(textsOf(host, ".answer-confirm .commits li")).toStrictEqual([
+        payload,
+      ]);
+      const quote = host.querySelector("blockquote.answer-confirm-words");
+      expect(quote?.childNodes).toHaveLength(1);
+      expect(textOf(quote)).toBe(payload);
+      expectVerbatim(payload, 4, 0);
+    },
+  );
 });
 
 /** The repository a project registered, when it registered one on GitHub. */

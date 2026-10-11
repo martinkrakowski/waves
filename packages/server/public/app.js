@@ -1,3 +1,10 @@
+import {
+  MAX_WORDS_CHARS,
+  answerability,
+  choiceOf,
+  createAnswerer,
+  probeAnswering,
+} from "./answer.js";
 import { drawableAttention } from "./attention.js";
 import { drawableDecision } from "./decision.js";
 import { drawableInbox } from "./inbox.js";
@@ -14,6 +21,12 @@ import { formatQuery, parseQuery } from "./query.js";
 import { shell } from "./shell.js";
 import { drawableStatus } from "./status.js";
 import { renderDrawer } from "./views/drawer.js";
+import {
+  ANSWER_FOOTER,
+  answerSection,
+  notAnswerableNote,
+  outcomeMessage,
+} from "./views/answer.js";
 import { renderFleet } from "./views/fleet.js";
 import { renderEnrolKey } from "./views/enrol-key.js";
 import { inboxModel } from "./views/inbox-model.js";
@@ -150,6 +163,11 @@ export function createApp(deps) {
      */
     credentials,
     crypto,
+    /**
+     * The browser's own `AbortController`, handed to the answer flow's logic
+     * as the constructor it builds its give-up-on-a-prompt signal with.
+     */
+    AbortController,
     refreshMs = REFRESH_MS,
   } = deps;
   const api = createApi(fetchImpl);
@@ -230,6 +248,50 @@ export function createApp(deps) {
   let enrolLogic = undefined;
   /** The state the enrol-key page last answered with, replayed on each draw. */
   let enrolCurrent = undefined;
+  /**
+   * The answerer behind a decision page's answer controls, built for the
+   * page open from the browser objects it reads as parameters. It allows one
+   * sign at a time, so a passkey prompt left open on a visit the reader has
+   * left must not answer for the next: the answerer belongs to the page, and
+   * a navigation away drops it with everything else. Everything else the
+   * answer flow holds does too: the step the flow is on, the draft the
+   * reader typed, the probe's answer and the decision the flow was opened
+   * against all belong to the decision on screen, and a navigation away
+   * drops every one of them.
+   */
+  let answerLogic = undefined;
+  /** The step of the answer flow the reader is on; `idle` before any press. */
+  let answerUi = { kind: "idle" };
+  /** The draft he typed in his own words, kept while he stays on the page. */
+  let answerDraft = "";
+  /**
+   * Whether the server is taking signed answers for the decision on screen:
+   * `undefined` until the probe answers, so a page that has not asked yet —
+   * and a page the probe answered no to — draws nothing it was not drawing
+   * before.
+   */
+  let answerProbe = undefined;
+  /**
+   * What the decision on screen rests on for an answer: its revision, its
+   * text's hash and its entry count, taken on every pass that lands. A pass
+   * that brings a decision answering to a different one of the three is the
+   * one the flow must not sign over.
+   */
+  let answerOnScreen = undefined;
+  /**
+   * The model the Sign in flight was pressed against. While the passkey prompt
+   * holds him, the confirmation on screen is the one he read at the press, so a
+   * refresh that lands in the meantime redraws the working step from this and
+   * not from the newer data — he is never shown a text his signature does not
+   * cover. Cleared when the outcome settles or the flow is reset.
+   */
+  let answerWorkingModel = undefined;
+  /**
+   * Counted up whenever the answer flow is reset, so a probe or an outcome
+   * that settles after the reader has left the page it was asked for draws
+   * nothing at all.
+   */
+  let answerGeneration = 0;
   /**
    * The dialog the drawer is drawn in, beside `#root` rather than inside it: the
    * page's own chrome is the root's, and a modal over it is not. There is no
@@ -581,7 +643,8 @@ export function createApp(deps) {
       );
     }
     if (data.kind === "decision") {
-      return renderDecision(decisionModel(data.decision));
+      const model = decisionModel(data.decision);
+      return renderDecision(model, answerFor(model));
     }
     if (data.kind === "missing-decision") {
       return el("p", {
@@ -1092,6 +1155,193 @@ export function createApp(deps) {
     };
   }
 
+  /**
+   * The answerer the buttons call, built on first use from the browser objects
+   * it reads as parameters: the fetch for the nonce and the answer, the
+   * credentials for the passkey, the WebCrypto for the hashes, this host
+   * as the relying party, the clock for its own deadline, and the
+   * `AbortController` for the signal it gives up on a prompt with.
+   */
+  function answerer() {
+    if (answerLogic === undefined) {
+      answerLogic = createAnswerer({
+        fetch: fetchImpl,
+        credentials,
+        subtle: crypto === undefined ? undefined : crypto.subtle,
+        location: { hostname: new URL(location.origin).hostname },
+        now: clock,
+        AbortController,
+      });
+    }
+    return answerLogic;
+  }
+
+  /**
+   * Drops everything the answer flow holds: the step, the draft, the probe's
+   * answer, the decision it was asked about and the answerer itself, whose one
+   * sign at a time would otherwise make a prompt left open on a visit answer
+   * for the next. Called when the page is opened anew and when the route
+   * leaves a decision — for another decision as much as for another page —
+   * because the probe is this page's own question, and an answer half-given
+   * on one decision is not a step of another's flow.
+   */
+  function resetAnswerPage() {
+    if (answerLogic !== undefined) {
+      answerLogic.abandon();
+    }
+    answerLogic = undefined;
+    answerUi = { kind: "idle" };
+    answerDraft = "";
+    answerProbe = undefined;
+    answerOnScreen = undefined;
+    answerWorkingModel = undefined;
+    answerGeneration += 1;
+  }
+
+  /**
+   * Asks the server once whether it is taking signed answers for the decision
+   * the route names: a `GET` of the nonce path, answered by the method
+   * difference alone. The refresh never asks again — whether the server takes
+   * answers is a property of the page, not of the pass — and a probe that
+   * settles after the reader has moved on draws nothing.
+   */
+  function askAnswerProbe() {
+    const mine = answerGeneration;
+    void probeAnswering(fetchImpl, route.project, route.id).then(
+      (answering) => {
+        if (mine !== answerGeneration) {
+          return;
+        }
+        answerProbe = answering;
+        draw();
+      },
+    );
+  }
+
+  /**
+   * What an answer on the decision on screen rests on: the revision, the
+   * text's hash and the entry count, exactly as the ceremony binds them.
+   */
+  function answerFingerprint(model) {
+    return `${model.currentRevision.revision}/${model.currentRevision.textSha256}/${model.currentEntries.length + model.earlierEntries.length}`;
+  }
+
+  /**
+   * The answer lane's half of the decision page: what `renderDecision` is
+   * given, and nothing when the page must be exactly the page it was. While
+   * the probe has not answered, and whenever it answers false, that is nothing
+   * at all; when it answers true, an answerable decision gets the controls
+   * and the answer footer, a one-way door gets the note that says where to
+   * answer instead and keeps the page's own footer, and every other reason is
+   * the page as it was.
+   */
+  function answerFor(model) {
+    if (answerProbe !== true) {
+      return undefined;
+    }
+    const canAnswer = answerability(model);
+    if (canAnswer.kind === "answerable") {
+      const ui =
+        answerUi.kind === "words"
+          ? { ...answerUi, draft: answerDraft }
+          : answerUi;
+      // While a sign is in flight the section stays on the model it was
+      // pressed against: the reader is told he is signing what he read, and a
+      // pass that lands meanwhile must not put newer text under that promise.
+      const shown =
+        answerUi.kind === "working" && answerWorkingModel !== undefined
+          ? answerWorkingModel
+          : model;
+      return {
+        answer: {
+          node: answerSection(shown, ui, answerHandlers(shown)),
+          footer: ANSWER_FOOTER,
+        },
+      };
+    }
+    const note = notAnswerableNote(canAnswer.reason);
+    return note === undefined ? undefined : { answer: { node: note } };
+  }
+
+  /**
+   * The presses of the answer controls. Each moves the flow one step and
+   * redraws, so a state on screen is always one the reader chose; the one
+   * exception is `onDraft`, which only stores what he typed, because a redraw
+   * on every key would take the keyboard out from under him. The handlers are
+   * built afresh on every draw and close over the model that draw showed, so
+   * the model a Sign signs is the one that was on screen at the press, never a
+   * newer one a refresh brought in the meantime.
+   */
+  function answerHandlers(model) {
+    return {
+      onYes: () => {
+        answerUi = { kind: "confirm", choice: choiceOf("yes").choice };
+        draw();
+      },
+      onNo: () => {
+        answerUi = { kind: "confirm", choice: choiceOf("no").choice };
+        draw();
+      },
+      onWords: () => {
+        answerUi = { kind: "words", draft: answerDraft };
+        draw();
+      },
+      onDraft: (value) => {
+        answerDraft = value;
+      },
+      onContinue: () => {
+        const chosen = choiceOf("words", answerDraft);
+        answerUi = chosen.ok
+          ? { kind: "confirm", choice: chosen.choice }
+          : { kind: "words", draft: answerDraft, problem: chosen.reason };
+        draw();
+      },
+      onCancel: () => {
+        answerUi = { kind: "idle" };
+        draw();
+      },
+      onSign: () => {
+        // A press that arrives while a sign is already running signs nothing
+        // twice: the buttons are held back, and a press that slips past them
+        // finds the flow no longer on the step it signs from.
+        if (answerUi.kind !== "confirm") {
+          return;
+        }
+        const choice = answerUi.choice;
+        const mine = answerGeneration;
+        answerWorkingModel = model;
+        answerUi = { kind: "working", choice };
+        draw();
+        void answerer()
+          .sign(model, choice)
+          .then((outcome) => {
+            // An outcome that settles after the reader left the page he
+            // pressed Sign on is about a page nobody is on.
+            if (mine !== answerGeneration) {
+              return;
+            }
+            answerWorkingModel = undefined;
+            if (outcome.kind === "stored") {
+              answerDraft = "";
+            }
+            answerUi = { kind: "idle", message: outcomeMessage(outcome) };
+            draw();
+            // At once, after every outcome: the entry the answer became — or
+            // the change the page missed while the reply was lost — is on the
+            // page he is looking at and not on the next refresh's. A pass that
+            // was already in flight read the decision before the answer, so
+            // the pass it returns is followed by exactly one more; a
+            // rejection anywhere still ends in `schedule`.
+            const stale = inFlight !== undefined;
+            void refreshOnce()
+              .then(() => (stale ? refreshOnce() : undefined))
+              .then(schedule, schedule);
+          });
+      },
+      maxWords: MAX_WORDS_CHARS,
+    };
+  }
+
   function draw() {
     doc.title =
       route.kind === "project"
@@ -1175,6 +1425,22 @@ export function createApp(deps) {
       note = "";
       syncedAt = clock();
       syncing = false;
+      // An answer must sign what the reader read. A pass that brings a
+      // decision answering to a different revision, text or entry count than
+      // the one on screen takes the flow back to its choices and says why —
+      // unless the passkey prompt already has him: a sign in flight holds the
+      // model it was pressed against, and answers for itself.
+      const onScreen =
+        next.kind === "decision"
+          ? answerFingerprint(decisionModel(next.decision))
+          : undefined;
+      if (
+        (answerUi.kind === "confirm" || answerUi.kind === "words") &&
+        onScreen !== answerOnScreen
+      ) {
+        answerUi = { kind: "idle", message: outcomeMessage({ kind: "moved" }) };
+      }
+      answerOnScreen = onScreen;
       draw();
     } catch {
       if (mine !== generation) {
@@ -1306,6 +1572,13 @@ export function createApp(deps) {
       enrolLogic = undefined;
       enrolCurrent = undefined;
     }
+    // An answer half-given on one decision is not a step of another page's
+    // flow: the state, the draft, the probe's answer and any message all
+    // belong to the decision the reader has left — and the probe belongs to
+    // the decision the reader has arrived at.
+    if (was.kind === "decision" || route.kind === "decision") {
+      resetAnswerPage();
+    }
     if (
       data !== undefined &&
       ((sameProject(was, route) && wasAll === query.all) ||
@@ -1326,6 +1599,9 @@ export function createApp(deps) {
       data = undefined;
     }
     draw();
+    if (route.kind === "decision") {
+      askAnswerProbe();
+    }
     void refreshOnce().then(schedule, schedule);
   }
 
@@ -1533,6 +1809,12 @@ export function createApp(deps) {
       dialog.addEventListener("mousedown", onDrawerPress);
       dialog.addEventListener("click", onDrawerClick);
       dialog.addEventListener("close", onDrawerClose);
+    }
+    if (route.kind === "decision") {
+      // The answer page starts where every page does: no step of the flow, no
+      // draft, no message, and the probe asked for this decision alone.
+      resetAnswerPage();
+      askAnswerProbe();
     }
     draw();
     void refreshOnce().then(schedule, schedule);

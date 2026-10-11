@@ -52,11 +52,17 @@ export interface AppGlobals {
   readonly crypto?: Crypto;
   readonly credentials?: {
     create(options: PublicKeyCredentialCreationOptions): Promise<unknown>;
-    get(options: PublicKeyCredentialRequestOptions): Promise<unknown>;
+    get(options: CredentialRequestOptions): Promise<unknown>;
   };
   readonly setTimer: (callback: () => void, delayMs: number) => unknown;
   readonly clearTimer: (handle: unknown) => void;
   readonly clock: () => number;
+  /**
+   * The browser's own `AbortController`, handed to the answer flow's logic as
+   * the constructor it builds its give-up-on-a-prompt signal with. Optional
+   * like the passkey objects: a harness whose page never signs needs none.
+   */
+  readonly AbortController?: typeof AbortController;
   readonly refreshMs?: number;
 }
 

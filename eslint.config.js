@@ -102,6 +102,7 @@ export default tseslint.config(
         PublicKeyCredential: "readonly",
         setTimeout: "readonly",
         clearTimeout: "readonly",
+        TextEncoder: "readonly",
         URL: "readonly",
         URLSearchParams: "readonly",
         window: "readonly",

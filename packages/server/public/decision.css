@@ -33,6 +33,7 @@
    inbox.css, the first stylesheet to load; this file only adds the rules
    that are specific to the decision page. */
 
+.answer h2,
 .decision-options h2,
 .decision-commits h2,
 .decision-evidence h2 {
@@ -142,4 +143,122 @@
   font-size: 0.8rem;
   margin: 1rem 0 0;
   overflow-wrap: anywhere;
+}
+
+/*
+ * The answer controls: the section the decision page grows when answering in
+ * the page is switched on. The colours are all tokens another sheet already
+ * reads — amber is the page's warning colour, muted its small print — so
+ * nothing here adds a colour of its own.
+ */
+
+.answer {
+  margin: 1.25rem 0 0.5rem;
+}
+
+/* The buttons sit in one row that wraps, and every target is at least 44px
+   tall: he answers on a phone. */
+.answer-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.answer-button {
+  min-height: 44px;
+  font-size: 1rem;
+  padding: 0.5rem 1rem;
+}
+
+/* The confirmation band, in the card frame the page's other bands use, so the
+   text he is about to sign is set apart from the text he is reading. */
+.answer-confirm {
+  background: var(--bg-raise);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  margin: 0.5rem 0;
+  padding: 0.6rem 0.75rem;
+}
+
+.answer-confirm-lead {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0 0 0.25rem;
+  overflow-wrap: anywhere;
+}
+
+.answer-confirm-question {
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+  overflow-wrap: anywhere;
+}
+
+/* The words he typed, kept exactly as he typed them: the white space survives
+   the redraw, and a word longer than the band breaks rather than the band. */
+.answer-confirm-words {
+  margin: 0.25rem 0 0.5rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.answer-confirm-facts {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  margin: 0 0 0.25rem;
+  overflow-wrap: anywhere;
+}
+
+.answer-message,
+.answer-working {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0.25rem 0;
+  overflow-wrap: anywhere;
+}
+
+/* Why the draft on screen cannot be signed as it stands: the warning colour. */
+.answer-problem {
+  color: var(--amber);
+  font-size: 0.85rem;
+  margin: 0.25rem 0;
+  overflow-wrap: anywhere;
+}
+
+/* The note that stands in for the controls on a decision this page cannot
+   answer, drawn like the door band it sits under. */
+.answer-closed {
+  background: var(--bg-sink);
+  border: 1px solid var(--amber);
+  border-radius: var(--radius-card);
+  color: var(--amber);
+  font-size: 0.85rem;
+  margin: 0.5rem 0;
+  overflow-wrap: anywhere;
+  padding: 0.4rem 0.75rem;
+}
+
+.answer label {
+  color: var(--muted);
+  display: block;
+  font-size: 0.85rem;
+  margin: 0.5rem 0 0.25rem;
+}
+
+.answer-words {
+  background: var(--bg-sink);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.5rem;
+  width: 100%;
+}
+
+.answer-words:focus-visible {
+  border-color: var(--cyan);
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
 }

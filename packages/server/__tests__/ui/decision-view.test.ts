@@ -45,6 +45,35 @@ function draw(view: DecisionView, overrides: Partial<Head> = {}): HTMLElement {
   return host;
 }
 
+/**
+ * The page the app draws with the answer lane switched on, over a decision
+ * with a commitment, an act-elsewhere line and one piece of evidence: the
+ * three places the answer node must sit between.
+ */
+function drawWithAnswer(answer: {
+  readonly node: HTMLElement;
+  readonly footer?: string;
+}): HTMLElement {
+  const view = decisionResponse({
+    revisions: [
+      storedRevision({
+        decision: decisionRevision({
+          commits: ["Ship it"],
+          actElsewhere: { where: "session x", what: "answer there" },
+          evidence: [{ label: "Proof", href: "https://example.com" }],
+        }),
+      }),
+    ],
+  });
+  if (!drawableDecision(view, "alpha", "d1")) {
+    throw new Error("not a drawable decision");
+  }
+  const host = freshRoot();
+  host.append(renderDecision(decisionModel(view), { answer }));
+  assertNoInjectedMarkup();
+  return host;
+}
+
 describe("renderDecision", () => {
   it("shows the breadcrumb, door, question, facts and footer", () => {
     const host = draw(decisionResponse());
@@ -464,6 +493,36 @@ describe("renderDecision", () => {
     for (const tag of ["BUTTON", "INPUT", "SELECT", "TEXTAREA", "FORM"]) {
       expect(host.querySelectorAll(tag)).toHaveLength(0);
     }
+  });
+
+  it("draws the answer node between the commitments and the act-elsewhere line and the evidence, with its own footer", () => {
+    const node = document.createElement("section");
+    node.setAttribute("class", "answer");
+    const host = drawWithAnswer({ node, footer: "the answer footer" });
+    expect(host.querySelector(".answer")).toBe(node);
+    const at = (selector: string): number =>
+      Array.from((host.firstElementChild as Element).children).findIndex(
+        (child) => child.matches(selector),
+      );
+    expect(at(".decision-commits")).toBeGreaterThan(-1);
+    expect(at(".card-elsewhere")).toBeGreaterThan(-1);
+    expect(at(".decision-evidence")).toBeGreaterThan(-1);
+    expect(at(".decision-commits")).toBeLessThan(at(".answer"));
+    expect(at(".answer")).toBeLessThan(at(".card-elsewhere"));
+    expect(at(".card-elsewhere")).toBeLessThan(at(".decision-evidence"));
+    expect(at(".answer")).toBeLessThan(at(".decision-history"));
+    expect(textOf(host.querySelector(".decision-footer"))).toBe(
+      "the answer footer",
+    );
+  });
+
+  it("keeps the page's own footer when the answer carries none", () => {
+    const host = drawWithAnswer({
+      node: document.createElement("p"),
+    });
+    expect(textOf(host.querySelector(".decision-footer"))).toBe(
+      "This page shows a decision; it does not take an answer. Answer in the terminal, in the session that asked.",
+    );
   });
 
   it("refuses to draw a response that fails the shape check", () => {
