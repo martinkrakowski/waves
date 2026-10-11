@@ -17,16 +17,16 @@
 }
 
 .enrol-field,
-.enrol-flag,
 .enrol-check {
   font-family: var(--mono);
   font-size: 0.9rem;
   margin: 0.25rem 0;
+  /* A base64 key is longer than a phone is wide, so it wraps rather than
+     pushing the fields beside it off the screen. */
   overflow-wrap: anywhere;
 }
 
-.enrol-field code,
-.enrol-flag code {
+.enrol-field code {
   background-color: var(--bg-raise);
   padding: 0.1rem 0.35rem;
   border-radius: var(--radius);

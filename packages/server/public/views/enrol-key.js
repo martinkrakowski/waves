@@ -61,9 +61,9 @@ function checkRow(check) {
 
 function heading(state) {
   const title =
-    state.kind === "intro" || state.kind === "creating"
+    state.kind === "intro"
       ? PAGE_TITLE
-      : state.kind === "ready" || state.kind === "testing"
+      : state.kind === "ready"
         ? "Passkey created"
         : state.kind === "verified"
           ? "Signature checked"
@@ -112,8 +112,8 @@ function ready(state, handlers) {
 }
 
 function verified(state, handlers) {
-  const children = state.checks.map(checkRow);
-  children.push(
+  return [
+    ...state.checks.map(checkRow),
     flagRow("User verified", state.userVerified),
     flagRow(
       "Can be synced to other devices (backup eligible)",
@@ -122,8 +122,7 @@ function verified(state, handlers) {
     flagRow("Is synced now (backed up)", state.backedUp),
     el("p", { attrs: { class: "enrol-footer" }, text: FOOTER }),
     createButton(handlers),
-  );
-  return children;
+  ];
 }
 
 /**
@@ -133,16 +132,10 @@ function verified(state, handlers) {
  */
 export function renderEnrolKey(state, handlers) {
   const children = [heading(state)];
-  if (state.kind === "intro" || state.kind === "creating") {
-    children.push(
-      ...(state.kind === "creating"
-        ? [el("p", { text: "Creating a passkey…" })]
-        : intro(state, handlers)),
-    );
+  if (state.kind === "intro") {
+    children.push(...intro(state, handlers));
   } else if (state.kind === "ready") {
     children.push(...ready(state, handlers));
-  } else if (state.kind === "testing") {
-    children.push(el("p", { text: "Waiting for the signature…" }));
   } else if (state.kind === "verified") {
     children.push(...verified(state, handlers));
   } else if (state.kind === "refused") {

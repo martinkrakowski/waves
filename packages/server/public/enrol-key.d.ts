@@ -59,11 +59,7 @@ export interface EnrolVerified {
 }
 
 export type EnrolState =
-  | EnrolIntro
-  | EnrolReady
-  | EnrolRefused
-  | EnrolCreateError
-  | EnrolVerified;
+  EnrolIntro | EnrolReady | EnrolRefused | EnrolCreateError | EnrolVerified;
 
 /**
  * The browser objects the logic reads from, faked in tests. The results are
