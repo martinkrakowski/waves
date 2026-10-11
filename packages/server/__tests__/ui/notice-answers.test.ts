@@ -10,7 +10,7 @@ import {
 } from "../../src/application/notice-read-model.js";
 import { MemoryStore } from "../../src/infrastructure/memory-store.js";
 
-import { event, storedRevision } from "../notice-contract.js";
+import { event, signedEntry, storedRevision } from "../notice-contract.js";
 import type { StoredEvent } from "../../src/application/ports/notice-store.js";
 
 const PROJECT = "alpha";
@@ -92,5 +92,25 @@ describe("the three notice shapes the HTTP routes serve", () => {
     await store.appendEvent(PROJECT, stored, MAX_NOTICE_EVENTS);
     const body = { events: await model.events(PROJECT, MAX_NOTICE_EVENTS) };
     expect(drawableProjectEvents(body, PROJECT)).toBe(true);
+  });
+
+  it("the inbox and project inbox accept a signed answer the store holds", async () => {
+    const { store, model } = await seeded();
+    const outcome = await store.appendEntry(PROJECT, ID, signedEntry(0), 0, 1);
+    expect(outcome).toBe("stored");
+
+    const head = (await model.inbox())[0]!.decisions[0]!;
+    expect(head.group).toBe("reported");
+    expect(head.state).toBe("approved");
+    expect(head.source).toBe("signed");
+
+    expect(drawableInbox({ projects: await model.inbox() })).toBe(true);
+    const view = await model.decisionsView(PROJECT);
+    expect(
+      drawableProjectInbox(
+        { project: PROJECT, counts: view.counts, decisions: view.decisions },
+        PROJECT,
+      ),
+    ).toBe(true);
   });
 });

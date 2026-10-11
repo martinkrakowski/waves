@@ -44,6 +44,30 @@ const INVALID: readonly (readonly [string, unknown])[] = [
     },
   ],
   [
+    "a covered answer that a session claims to report",
+    {
+      ...inboxView(),
+      projects: [
+        {
+          ...inboxProject(),
+          decisions: [
+            {
+              ...inboxHead(),
+              group: "closed",
+              state: "withdrawn",
+              coveredAnswer: {
+                state: "approved",
+                source: "session",
+                at: NOW_ISO,
+                by: "alpha session",
+              },
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  [
     "an earlier answer that a session did not report",
     {
       ...inboxView(),
@@ -407,13 +431,49 @@ const INVALID: readonly (readonly [string, unknown])[] = [
     },
   ],
   [
-    "a head with a source outside the two",
+    "a head with a source outside the three",
     {
       ...inboxView(),
       projects: [
         {
           ...inboxProject(),
           decisions: [{ ...inboxHead(), source: "maybe" }],
+        },
+      ],
+    },
+  ],
+  [
+    "a head with the unknown source owner",
+    {
+      ...inboxView(),
+      projects: [
+        {
+          ...inboxProject(),
+          decisions: [{ ...inboxHead(), source: "owner" }],
+        },
+      ],
+    },
+  ],
+  [
+    "a head with the empty source",
+    {
+      ...inboxView(),
+      projects: [
+        {
+          ...inboxProject(),
+          decisions: [{ ...inboxHead(), source: "" }],
+        },
+      ],
+    },
+  ],
+  [
+    "a head with a source that is not a string",
+    {
+      ...inboxView(),
+      projects: [
+        {
+          ...inboxProject(),
+          decisions: [{ ...inboxHead(), source: 1 }],
         },
       ],
     },
@@ -683,6 +743,61 @@ describe("drawableInbox", () => {
                     by: "owner",
                     words: "yes",
                     option: "a",
+                  },
+                }),
+              ],
+            }),
+          ],
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("takes a head with a signed answer, in the reported group", () => {
+    expect(
+      drawableInbox(
+        inboxView({
+          projects: [
+            inboxProject({
+              counts: { waiting: 0, oneWay: 0, reported: 1, closed: 0 },
+              decisions: [
+                inboxHead({
+                  group: "reported",
+                  state: "approved",
+                  source: "signed",
+                  entries: 1,
+                }),
+              ],
+            }),
+          ],
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("takes an earlier and a covered answer signed with the passkey", () => {
+    expect(
+      drawableInbox(
+        inboxView({
+          projects: [
+            inboxProject({
+              decisions: [
+                inboxHead({
+                  group: "closed",
+                  state: "withdrawn",
+                  entries: 2,
+                  earlierAnswer: {
+                    state: "approved",
+                    source: "signed",
+                    at: NOW_ISO,
+                    by: "owner",
+                    words: "yes",
+                  },
+                  coveredAnswer: {
+                    state: "declined",
+                    source: "signed",
+                    at: NOW_ISO,
+                    by: "owner",
                   },
                 }),
               ],
