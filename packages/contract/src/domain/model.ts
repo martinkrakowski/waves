@@ -167,7 +167,11 @@ export type DecisionState =
   | "withdrawn"
   | "superseded";
 
-export type StateSource = "session" | "reported";
+export type StateSource = "session" | "reported" | "signed";
+
+/** What the owner said when he signed: he approved the recommendation, declined,
+ * or answered with another option or in his own words. */
+export type AnswerVerdict = "approved" | "declined" | "answered";
 
 export interface DecisionOption {
   readonly key: string;

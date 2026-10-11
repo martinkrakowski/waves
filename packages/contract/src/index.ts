@@ -18,6 +18,7 @@ export {
   OPTION_KEY_PATTERN,
 } from "./domain/model.js";
 export type {
+  AnswerVerdict,
   Backlog,
   BacklogGit,
   BacklogScope,
@@ -56,6 +57,11 @@ export {
   validateDecision,
   decisionBindingText,
 } from "./domain/notice-decision.js";
+export {
+  ANSWER_CHALLENGE_SCHEMA,
+  answerChallengeText,
+} from "./domain/notice-answer.js";
+export type { AnswerChallengeValues } from "./domain/notice-answer.js";
 export { validateEvent } from "./domain/notice-event.js";
 export { validateProject } from "./domain/project.js";
 export { isRetained, isStale, staleAfterMs } from "./domain/staleness.js";
