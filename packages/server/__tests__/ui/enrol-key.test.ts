@@ -305,6 +305,23 @@ describe("enrolKey.create results", () => {
     expect(state.kind).not.toBe("ready");
   });
 
+  it("shows the thrown error when inspecting the credential throws", async () => {
+    const response = makeCreation();
+    Object.defineProperty(response, "rawId", {
+      get() {
+        throw new TypeError("no raw id");
+      },
+      enumerable: true,
+    });
+    const creds = fakeCredentials(response);
+    const controller = enrolKey(creds, makeCrypto(0x41), LOCATION);
+    expect(await controller.create("platform")).toEqual({
+      kind: "createError",
+      name: "TypeError",
+      message: "no raw id",
+    });
+  });
+
   it.each<[string, Record<string, unknown>]>([
     ["without getPublicKeyAlgorithm", { getPublicKeyAlgorithm: undefined }],
     ["without getAuthenticatorData", { getAuthenticatorData: undefined }],
@@ -514,16 +531,19 @@ describe("enrolKey.test verification", () => {
   it.each<[string, unknown]>([
     ["null", null],
     ["an empty object", {}],
-  ])("reports a get that resolves to %s as one failed check", async (_name, assertion) => {
-    const { creds, controller } = await ready();
-    creds.get.mockResolvedValue(assertion);
-    const verified = await controller.test();
-    expect(verified.checks).toHaveLength(1);
-    expect(verified.checks[0]?.label).toBe("sign");
-    expect(verified.checks[0]?.ok).toBe(false);
-    expect(typeof verified.checks[0]?.detail).toBe("string");
-    expect(verified.checks[0]?.detail.length).toBeGreaterThan(0);
-  });
+  ])(
+    "reports a get that resolves to %s as one failed check",
+    async (_name, assertion) => {
+      const { creds, controller } = await ready();
+      creds.get.mockResolvedValue(assertion);
+      const verified = await controller.test();
+      expect(verified.checks).toHaveLength(1);
+      expect(verified.checks[0]?.label).toBe("sign");
+      expect(verified.checks[0]?.ok).toBe(false);
+      expect(typeof verified.checks[0]?.detail).toBe("string");
+      expect(verified.checks[0]?.detail?.length).toBeGreaterThan(0);
+    },
+  );
 
   it("throws if asked to sign before a key was created", async () => {
     const controller = enrolKey(fakeCredentials(), makeCrypto(0x41), LOCATION);
@@ -716,7 +736,9 @@ describe("derToRawP256", () => {
     ],
     [
       "a SEQUENCE length has a zero first length byte",
-      Uint8Array.from([0x30, 0x82, 0x00, 0x06, 0x02, 0x01, 0x05, 0x02, 0x01, 0x07]),
+      Uint8Array.from([
+        0x30, 0x82, 0x00, 0x06, 0x02, 0x01, 0x05, 0x02, 0x01, 0x07,
+      ]),
     ],
     [
       "a SEQUENCE length above 0x80 is written with a zero first length byte",
