@@ -600,6 +600,31 @@ three, and a length of 4n+1 is refused. The bits at the end of the last characte
 that no byte uses must be zero here as well, so one run of bytes has one spelling
 in this document too.
 
+**Startup and the checks.** `WAVES_OWNER_KEYS_FILE` names the file the owner's
+keys are mounted as. When the variable is absent, signed answers are off; when
+it is present but the file is missing, unreadable, invalid, or holds a key that
+is not an EC P-256 public key, the server refuses to start, with a message that
+names the path and never the file's content
+(`readOwnerKeys`, `packages/server/src/infrastructure/owner-keys-file.ts`).
+With the keys loaded, the server checks an assertion in one order, one reason
+code per check (`verifyAssertion`,
+`packages/server/src/infrastructure/assertion-verifier.ts`):
+
+| check                                                      | refusal reason             |
+| ---------------------------------------------------------- | -------------------------- |
+| the credential is one of the loaded keys                   | `unknown-credential`       |
+| that key is not retired                                    | `retired-key`              |
+| `clientDataJSON` is UTF-8 JSON and a plain object          | `client-data-malformed`    |
+| `type` is `webauthn.get`                                   | `wrong-type`               |
+| `origin` is `https://waves.midnight.lan`                   | `wrong-origin`             |
+| `challenge` is the base64url SHA-256 of the challenge text | `wrong-challenge`          |
+| `crossOrigin` is not `true`                                | `cross-origin`             |
+| the authenticator data is at least 37 bytes                | `authenticator-data-short` |
+| its first 32 bytes are the SHA-256 of `waves.midnight.lan` | `wrong-rp-id-hash`         |
+| the user-present flag is set                               | `user-not-present`         |
+| the user-verified flag is set                              | `user-not-verified`        |
+| the ES256 signature covers it all                          | `bad-signature`            |
+
 ### The event
 
 `validateEvent` is the gate (`packages/contract/src/domain/notice-event.ts`). An
