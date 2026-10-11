@@ -3,6 +3,7 @@ import { decisionPath } from "../domain/endpoint.js";
 import { readDecisionRecord, reasonPhrase } from "../domain/reply.js";
 import { EXIT_OK, Failure } from "./errors.js";
 import type { UseCaseDeps } from "./ports.js";
+import { readSigned } from "./read-signed.js";
 import { openSession, readProject, transportFor } from "./session.js";
 
 type ReadCommand = Extract<
@@ -43,6 +44,16 @@ export async function readDecision(
     const record = readDecisionRecord(body, command.id);
     if (record === undefined) {
       throw new Failure("the server sent an unusable body");
+    }
+    // `readDecisionRecord` has checked and re-encoded the body, so the parse
+    // here is of a JSON string this module has just written itself.
+    if (command.signed) {
+      return await readSigned(
+        command,
+        deps,
+        JSON.parse(record) as Record<string, unknown>,
+        project,
+      );
     }
     deps.out(record);
     return EXIT_OK;

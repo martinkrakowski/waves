@@ -564,7 +564,23 @@ describe("decision", () => {
       kind: "decision",
       action: "read",
       id: "d1",
+      signed: false,
     });
+  });
+
+  it("reads --signed as the one flag read takes", () => {
+    expect(commandOf(["decision", "read", "d1", "--signed"])).toEqual({
+      kind: "decision",
+      action: "read",
+      id: "d1",
+      signed: true,
+    });
+    expect(errorOf(["decision", "read", "d1", "--signed", "--signed"])).toBe(
+      "--signed was given twice",
+    );
+    expect(errorOf(["decision", "report", "d1", "--signed"])).toBe(
+      "--signed is not a decision option",
+    );
   });
 
   it("reads a report with its required flags", () => {

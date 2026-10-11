@@ -19,7 +19,7 @@ export const USAGE = [
   "  waves delete --wave <wave>",
   "  waves sync [--check]",
   "  waves decision raise --file <path|->",
-  "  waves decision read <id>",
+  "  waves decision read <id> [--signed]",
   "  waves decision report <id> --state ... --words <text> --revision <n> --text-sha256 <hex> --entries <k> [--option <key>] [--by <text>]",
   "  waves decision state <id> --state ... --revision <n> --text-sha256 <hex> --entries <k> [--reason <text>] [--superseded-by <id>] [--option <key>] [--words <text>] [--by <text>]",
   "  waves event --topic <topic> --text <text> [--detail <text>]",
@@ -94,7 +94,13 @@ export type Command =
       readonly action: "raise";
       readonly source: InputSource;
     }
-  | { readonly kind: "decision"; readonly action: "read"; readonly id: string }
+  | {
+      readonly kind: "decision";
+      readonly action: "read";
+      readonly id: string;
+      /** Verify the current signed answer against the pinned owner keys. */
+      readonly signed: boolean;
+    }
   | {
       readonly kind: "decision";
       readonly action: "report";
@@ -181,6 +187,9 @@ const ROTATE = "--rotate";
  */
 const CHECK = "--check";
 
+/** The one flag `decision read` takes: verify, not just fetch. */
+const SIGNED = "--signed";
+
 /**
  * `--rotate` asks the server for a token it will only ever send once, so it is
  * refused here rather than sent: an enrollment token cannot replace a token, and
@@ -222,6 +231,7 @@ const SWITCH_FLAGS = [
   "--verbose",
   "--stdin",
   "--include-tails",
+  SIGNED,
   CHECK,
 ] as const;
 
@@ -249,7 +259,7 @@ const STATUS_FLAGS: readonly string[] = ["--file", "--stdin", "--interval"];
 const SYNC_FLAGS: readonly string[] = [CHECK];
 
 const DECISION_RAISE_FLAGS: readonly string[] = ["--file", "--stdin"];
-const DECISION_READ_FLAGS: readonly string[] = [];
+const DECISION_READ_FLAGS: readonly string[] = [SIGNED];
 const DECISION_REPORT_FLAGS: readonly string[] = [
   "--state",
   "--words",
@@ -696,7 +706,12 @@ function readDecisionRead(tokens: Tokens): ParseResult {
   }
   return {
     ok: true,
-    command: { kind: "decision", action: "read", id },
+    command: {
+      kind: "decision",
+      action: "read",
+      id,
+      signed: tokens.switches.has(SIGNED),
+    },
   };
 }
 

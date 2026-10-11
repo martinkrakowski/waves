@@ -32,6 +32,20 @@ export class FileRefusal extends Error {
   }
 }
 
+/**
+ * A pin file the reader could not even ask about: the kernel or the runtime
+ * refused to open it, describe it or read it, and named the code. The message
+ * is already the one sentence the user sees. The `read --signed` use case
+ * answers it with exit 3 — a pin file that cannot be read is one that cannot
+ * be trusted, and never a usage error of the owner's own making.
+ */
+export class PinRefusal extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PinRefusal";
+  }
+}
+
 export interface FileRead {
   readonly text: string;
   /** The permission bits `fstat` reported on the open descriptor. */
@@ -63,6 +77,58 @@ export interface Files {
   exists(path: string): Promise<boolean>;
   /** Writes a secret so that no window exists in which it is loose on disk. */
   writeSecret(path: string, secret: string): Promise<void>;
+}
+
+/**
+ * What the reader found at the pin path. A file that is not there is `missing`,
+ * and everything else is `present` with what the descriptor said about it: the
+ * kind of thing it is, the uid that owns it and the permission bits, plus its
+ * text when it is a regular file that could be read. A link is never followed,
+ * so its `text` is `undefined` and its `type` says what it is.
+ */
+export type PinRead =
+  | { readonly kind: "missing" }
+  | {
+      readonly kind: "present";
+      readonly type: "file" | "symlink" | "other";
+      readonly uid: number;
+      readonly mode: number;
+      readonly text: string | undefined;
+    };
+
+/**
+ * The owner's pinned public keys, read from a path this port's adapter owns: a
+ * session can point nothing at the file it would like the reader to trust. The
+ * checks on what was found — root-owned, not group- or world-writable, a valid
+ * owner-keys document — belong to the use case, so a fake port can exercise
+ * every one of them.
+ */
+export interface OwnerPins {
+  read(): Promise<PinRead>;
+}
+
+/**
+ * The two cryptographic answers the signed-answer checks need, as a port so the
+ * use cases stay pure and an adapter can hand over `node:crypto`'s. A private
+ * key never reaches this interface: only a digest and the verdict on somebody
+ * else's signature.
+ */
+export interface Crypto {
+  /** The SHA-256 digest of the bytes: the hashes the checks recompute. */
+  sha256(data: Uint8Array): Uint8Array;
+  /**
+   * ES256 — ECDSA over P-256 with a SHA-256 digest — of the message against a
+   * public key in SPKI DER form. `ok` says the signature is the key's own;
+   * `bad-signature` says it is not, or that nothing could be read of the key
+   * or the signature at all; `not-p256` says the key is a different curve's or
+   * a different family's, which is a fact about the pin rather than about the
+   * signature, and gets its own answer so it can get its own sentence.
+   */
+  verifyEs256(
+    spki: Uint8Array,
+    message: Uint8Array,
+    derSignature: Uint8Array,
+  ): "ok" | "bad-signature" | "not-p256";
 }
 
 export interface InputStream {
@@ -183,6 +249,8 @@ export interface CliDeps {
   readonly sleeper: Sleeper;
   readonly transport: TransportFactory;
   readonly runner: Runner;
+  readonly ownerPins: OwnerPins;
+  readonly crypto: Crypto;
 }
 
 /** The ports plus the two streams the use cases report on. */

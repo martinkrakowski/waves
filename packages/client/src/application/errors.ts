@@ -6,6 +6,17 @@ export const EXIT_USAGE = 2;
  * on, and the writer must read the decision again before writing again.
  */
 export const EXIT_STALE = 5;
+/**
+ * A `read --signed` found a signed answer on the current text, and one of its
+ * checks — or one on the pin file itself — refused it. Nothing about the
+ * answer may be acted on.
+ */
+export const EXIT_UNVERIFIED = 3;
+/**
+ * A `read --signed` that found no signed answer on the current text: there is
+ * nothing to verify, and nothing on this text for a session to act on.
+ */
+export const EXIT_UNSIGNED = 4;
 
 /**
  * The command line or the configuration is wrong: nothing was sent, and
