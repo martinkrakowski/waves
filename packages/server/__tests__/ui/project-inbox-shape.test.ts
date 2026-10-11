@@ -198,6 +198,20 @@ const INVALID: readonly (readonly [string, unknown])[] = [
     },
   ],
   [
+    "a reported head that a session did not report",
+    {
+      ...projectInboxView(),
+      decisions: [
+        {
+          ...inboxHead(),
+          group: "reported",
+          state: "approved",
+          source: "session",
+        },
+      ],
+    },
+  ],
+  [
     "a reported head with no source",
     {
       ...projectInboxView(),

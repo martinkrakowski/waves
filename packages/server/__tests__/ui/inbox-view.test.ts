@@ -592,6 +592,36 @@ describe("the inbox page rules", () => {
     );
   });
 
+  it("shows a project with nothing as one line, not a block of zeros", () => {
+    const host = draw(
+      inboxView({
+        projects: [
+          inboxProject({ id: "alpha", name: "Alpha" }),
+          inboxProject({
+            id: "beta",
+            name: "Beta",
+            counts: { waiting: 0, oneWay: 0, reported: 1, closed: 0 },
+            decisions: [
+              inboxHead({
+                id: "s",
+                question: "Mine?",
+                group: "reported",
+                state: "approved",
+                source: "signed",
+                at: "2026-10-08T13:00:00Z",
+                entries: 1,
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+    expect(textsOf(host, ".inbox-empty")).toStrictEqual([
+      "Alpha · nothing waiting",
+    ]);
+    expect(textsOf(host, ".inbox-group h3")).toStrictEqual(["Answered by you"]);
+  });
+
   it("shows an empty inbox with zero totals and the footer", () => {
     const host = draw(inboxView({ projects: [] }));
     expect(textsOf(host, ".inbox-totals")).toStrictEqual([
