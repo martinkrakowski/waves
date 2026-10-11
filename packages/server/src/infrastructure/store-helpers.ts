@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { constants, type Stats } from "node:fs";
-import { type FileHandle, open, rename, rm, writeFile } from "node:fs/promises";
+import { type FileHandle, lstat, open, rename, rm, writeFile } from "node:fs/promises";
 
 import type { StoredEvent } from "../application/ports/notice-store.js";
 
@@ -96,16 +96,37 @@ export async function readTextNoFollow(
  * directory, then a rename — the atomic swap — with the temporary removed on
  * failure. Shared by both file stores so the cleanup path is written once and
  * covered by either store's hostile-filesystem tests.
+ *
+ * `rename` replaces a directory entry and never writes through a link. The
+ * `lstat` of the target first is what makes an existing link a refusal
+ * (`<target> is a symbolic link, not a file`) instead of a silent
+ * replacement: nothing is written and no temporary file is created. A link
+ * created between the `lstat` and the `rename` is replaced, not followed —
+ * the remaining window, and it needs write access to the 0700 data directory.
+ * The temporary file is created with `wx` (`O_CREAT | O_EXCL`): it fails if
+ * the name exists and never follows a link at that name.
  */
 export async function writeAtomic(
   target: string,
   payload: string,
 ): Promise<void> {
+  let info: Stats | undefined;
+  try {
+    info = await lstat(target);
+  } catch (error) {
+    if (errorCode(error) !== "ENOENT") {
+      throw error;
+    }
+  }
+  if (info?.isSymbolicLink()) {
+    throw new Error(`${target} is a symbolic link, not a file`);
+  }
   const temporary = `${target}.tmp-${process.pid}-${randomUUID()}`;
   try {
     await writeFile(temporary, payload, {
       encoding: "utf8",
       mode: FILE_MODE,
+      flag: "wx",
     });
     await rename(temporary, target);
   } catch (error) {

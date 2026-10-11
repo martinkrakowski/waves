@@ -1,11 +1,24 @@
-import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { readTextNoFollow } from "../src/infrastructure/store-helpers.js";
+import {
+  readTextNoFollow,
+  writeAtomic,
+} from "../src/infrastructure/store-helpers.js";
 
 function tempDir(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix));
@@ -90,6 +103,77 @@ describe("readTextNoFollow", () => {
 
       await expect(
         readTextNoFollow(join(dir, "file", "x")),
+      ).rejects.toThrow();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("writeAtomic", () => {
+  it("refuses a symlinked target, writes nothing and removes no link", async () => {
+    const dir = tempDir("waves-nofollow-");
+    const outside = tempDir("waves-outside-");
+    try {
+      writeFileSync(join(outside, "secret.json"), "secret");
+      const target = join(dir, "doc.json");
+      symlinkSync(join(outside, "secret.json"), target);
+
+      await expect(writeAtomic(target, "payload")).rejects.toThrow(
+        /is a symbolic link, not a file/,
+      );
+      expect(readFileSync(join(outside, "secret.json"), "utf8")).toBe(
+        "secret",
+      );
+      expect(lstatSync(target).isSymbolicLink()).toBe(true);
+      expect(
+        readdirSync(dir).some((name) => name.includes(".tmp-")),
+      ).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a dangling symlinked target and creates nothing at the pointed name", async () => {
+    const dir = tempDir("waves-nofollow-");
+    try {
+      const target = join(dir, "doc.json");
+      const pointed = join(dir, "victim.json");
+      symlinkSync(pointed, target);
+
+      await expect(writeAtomic(target, "payload")).rejects.toThrow(
+        /is a symbolic link, not a file/,
+      );
+      expect(lstatSync(target).isSymbolicLink()).toBe(true);
+      expect(existsSync(pointed)).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("writes a target and replaces it, with mode 0600", async () => {
+    const dir = tempDir("waves-nofollow-");
+    try {
+      const target = join(dir, "doc.json");
+
+      await writeAtomic(target, "first");
+      await writeAtomic(target, "second");
+
+      expect(readFileSync(target, "utf8")).toBe("second");
+      expect(statSync(target).mode & 0o777).toBe(0o600);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("passes through an lstat error that is not ENOENT", async () => {
+    const dir = tempDir("waves-nofollow-");
+    try {
+      writeFileSync(join(dir, "file"), "");
+
+      await expect(
+        writeAtomic(join(dir, "file", "x"), "payload"),
       ).rejects.toThrow();
     } finally {
       await rm(dir, { recursive: true, force: true });

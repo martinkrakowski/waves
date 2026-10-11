@@ -60,6 +60,29 @@ function writeEventsFile(
   writeFileSync(join(dir, `${project}.json`), contents, { mode: 0o600 });
 }
 
+// Plants a symlink over `storedPath` pointing at a copy of its bytes in a
+// directory outside the data directory, and asserts that `run` refuses it
+// with the symlink message while the outside copy keeps its bytes and the
+// link stays a link.
+async function refuseLink(
+  storedPath: string,
+  run: () => Promise<unknown>,
+): Promise<void> {
+  const outsideDir = mkdtempSync(join(tmpdir(), "waves-outside-"));
+  const bytes = readFileSync(storedPath, "utf8");
+  const outsideFile = join(outsideDir, "copy.json");
+  writeFileSync(outsideFile, bytes);
+  rmSync(storedPath);
+  symlinkSync(outsideFile, storedPath);
+  try {
+    await expect(run()).rejects.toThrow(/is a symbolic link, not a file/);
+    expect(readFileSync(outsideFile, "utf8")).toBe(bytes);
+    expect(lstatSync(storedPath).isSymbolicLink()).toBe(true);
+  } finally {
+    await rm(outsideDir, { recursive: true, force: true });
+  }
+}
+
 describe("FileNoticeStore", () => {
   afterEach(() => {
     // No per-test harness here; each test owns its own dispose.
@@ -622,28 +645,6 @@ describe("FileNoticeStore edge cases", () => {
 });
 
 describe("FileNoticeStore refuses a symlinked document file on read", () => {
-  // Plants a symlink over `storedPath` pointing at a copy of its bytes in a
-  // directory outside the data directory, and asserts that `run` refuses it
-  // with the symlink message while the outside copy keeps its bytes.
-  async function refuseLink(
-    storedPath: string,
-    run: () => Promise<unknown>,
-  ): Promise<void> {
-    const outsideDir = mkdtempSync(join(tmpdir(), "waves-outside-"));
-    const bytes = readFileSync(storedPath, "utf8");
-    const outsideFile = join(outsideDir, "copy.json");
-    writeFileSync(outsideFile, bytes);
-    rmSync(storedPath);
-    symlinkSync(outsideFile, storedPath);
-    try {
-      await expect(run()).rejects.toThrow(/is a symbolic link, not a file/);
-      expect(readFileSync(outsideFile, "utf8")).toBe(bytes);
-      expect(lstatSync(storedPath).isSymbolicLink()).toBe(true);
-    } finally {
-      await rm(outsideDir, { recursive: true, force: true });
-    }
-  }
-
   it("refuses a symlinked decision file on every read", async () => {
     const { store, dataDir, dispose } = harness();
     try {
@@ -666,6 +667,50 @@ describe("FileNoticeStore refuses a symlinked document file on read", () => {
       const stored = join(dataDir, "events", "alpha.json");
 
       await refuseLink(stored, () => store.listEvents("alpha", 10));
+    } finally {
+      await dispose();
+    }
+  });
+});
+
+describe("FileNoticeStore refuses a symlinked document file on write", () => {
+  it("refuses a revision appended to a symlinked decision file", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.appendRevision("alpha", "d1", storedRevision(1), 0, 3);
+
+      await refuseLink(
+        join(dataDir, "decisions", "alpha", "d1.json"),
+        () => store.appendRevision("alpha", "d1", storedRevision(2), 1, 3),
+      );
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("refuses an entry appended to a symlinked decision file", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.appendRevision("alpha", "d1", storedRevision(1), 0, 3);
+
+      await refuseLink(
+        join(dataDir, "decisions", "alpha", "d1.json"),
+        () => store.appendEntry("alpha", "d1", storedEntry(0), 0, 1),
+      );
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("refuses an event appended beside a symlinked events file", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.appendEvent("alpha", event(), 10);
+
+      await refuseLink(
+        join(dataDir, "events", "alpha.json"),
+        () => store.appendEvent("alpha", event(), 10),
+      );
     } finally {
       await dispose();
     }

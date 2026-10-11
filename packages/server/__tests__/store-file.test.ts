@@ -50,6 +50,29 @@ function everyEntry(dir: string): string[] {
   return readdirSync(dir, { recursive: true }).map(String).sort();
 }
 
+// Plants a symlink over `storedPath` pointing at a copy of its bytes in a
+// directory outside the data directory, and asserts that `run` refuses it
+// with the symlink message while the outside copy keeps its bytes and the
+// link stays a link.
+async function refuseLink(
+  storedPath: string,
+  run: () => Promise<unknown>,
+): Promise<void> {
+  const outsideDir = mkdtempSync(join(tmpdir(), "waves-outside-"));
+  const bytes = readFileSync(storedPath, "utf8");
+  const outsideFile = join(outsideDir, "copy.json");
+  writeFileSync(outsideFile, bytes);
+  rmSync(storedPath);
+  symlinkSync(outsideFile, storedPath);
+  try {
+    await expect(run()).rejects.toThrow(/is a symbolic link, not a file/);
+    expect(readFileSync(outsideFile, "utf8")).toBe(bytes);
+    expect(lstatSync(storedPath).isSymbolicLink()).toBe(true);
+  } finally {
+    await rm(outsideDir, { recursive: true, force: true });
+  }
+}
+
 describe("FileStore durability", () => {
   it("reads what an earlier instance wrote", async () => {
     const { store, dataDir, dispose } = harness();
@@ -263,28 +286,6 @@ describe("FileStore durability", () => {
 });
 
 describe("FileStore refuses a symlinked document file on read", () => {
-  // Plants a symlink over `storedPath` pointing at a copy of its bytes in a
-  // directory outside the data directory, and asserts that `run` refuses it
-  // with the symlink message while the outside copy keeps its bytes.
-  async function refuseLink(
-    storedPath: string,
-    run: () => Promise<unknown>,
-  ): Promise<void> {
-    const outsideDir = mkdtempSync(join(tmpdir(), "waves-outside-"));
-    const bytes = readFileSync(storedPath, "utf8");
-    const outsideFile = join(outsideDir, "copy.json");
-    writeFileSync(outsideFile, bytes);
-    rmSync(storedPath);
-    symlinkSync(outsideFile, storedPath);
-    try {
-      await expect(run()).rejects.toThrow(/is a symbolic link, not a file/);
-      expect(readFileSync(outsideFile, "utf8")).toBe(bytes);
-      expect(lstatSync(storedPath).isSymbolicLink()).toBe(true);
-    } finally {
-      await rm(outsideDir, { recursive: true, force: true });
-    }
-  }
-
   it("refuses a symlinked projects file on every read", async () => {
     const { store, dataDir, dispose } = harness();
     try {
@@ -339,6 +340,88 @@ describe("FileStore refuses a symlinked document file on read", () => {
       await refuseLink(
         join(dataDir, "status", "alpha.json"),
         () => store.getStatus("alpha"),
+      );
+    } finally {
+      await dispose();
+    }
+  });
+});
+
+describe("FileStore refuses a symlinked document file on write", () => {
+  it("refuses a write to a symlinked projects file", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.putProject(project("alpha"));
+
+      await refuseLink(
+        join(dataDir, "projects.json"),
+        () => store.putProject(project("alpha", "Second")),
+      );
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("refuses a create that would write a symlinked projects file", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.putProject(project("alpha"));
+
+      await refuseLink(
+        join(dataDir, "projects.json"),
+        () => store.createProject(project("beta"), 64),
+      );
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("refuses a write to a symlinked snapshot file", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.putSnapshot(snapshot("wv1"));
+
+      await refuseLink(
+        join(dataDir, "snapshots", "alpha", "wv1.json"),
+        () => store.putSnapshot(snapshot("wv1", "2026-10-01T13:00:00Z")),
+      );
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("lets the snapshot land and refuses the symlinked head beside it", async () => {
+    const { store, dataDir, dispose } = harness();
+    const waveDir = join(dataDir, "snapshots", "alpha");
+    try {
+      await store.putSnapshot(snapshot("wv1"));
+
+      await refuseLink(
+        join(waveDir, "wv1.head.json"),
+        () => store.putSnapshot(snapshot("wv1", "2026-10-01T13:00:00Z")),
+      );
+      // The snapshot write landed before the head write refused.
+      expect(statSync(join(waveDir, "wv1.json")).isFile()).toBe(true);
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("refuses a write to a symlinked status file", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.putStatus({
+        status: status("alpha"),
+        receivedAt: "2026-10-01T12:00:01Z",
+      });
+
+      await refuseLink(
+        join(dataDir, "status", "alpha.json"),
+        () =>
+          store.putStatus({
+            status: status("alpha", { generatedAt: "2026-10-01T13:00:00Z" }),
+            receivedAt: "2026-10-01T13:00:01Z",
+          }),
       );
     } finally {
       await dispose();
