@@ -275,6 +275,25 @@ describe("the nonce route with keys loaded", () => {
     expect(await response.json()).toEqual({ error: "not found" });
   });
 
+  it("answers a fifth ask for one decision", async () => {
+    // Five asks cross the per-decision cap of four, and the route still
+    // answers each one with a different nonce: a cap drops the oldest nonce
+    // rather than refusing (that the oldest is the one dropped is pinned in
+    // nonce-store.test.ts, not here).
+    const { started, pass } = await wired();
+
+    const nonces: string[] = [];
+    for (let askNumber = 1; askNumber <= 5; askNumber += 1) {
+      if (askNumber > 1) {
+        pass();
+      }
+      const response = await ask(started, noncePath());
+      expect(response.status).toBe(200);
+      nonces.push(((await response.json()) as { nonce: string }).nonce);
+    }
+    expect(new Set(nonces).size).toBe(5);
+  });
+
   it("keeps answering past both caps, a second apart", async () => {
     // Seventeen decisions of four asks each cross the per-decision cap on the
     // way to the total one, and the 65th ask is past both: every ask still
