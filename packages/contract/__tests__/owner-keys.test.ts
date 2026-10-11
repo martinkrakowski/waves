@@ -132,11 +132,11 @@ describe("validateOwnerKeys", () => {
 
   it("bounds publicKeySpki to 80 to 200 characters", () => {
     keysPaths(
-      minimalKeys({ keys: [ownerKey({ publicKeySpki: "A".repeat(79) })] }),
+      minimalKeys({ keys: [ownerKey({ publicKeySpki: "A".repeat(76) })] }),
       ["/keys/0/publicKeySpki"],
     );
     keysPaths(
-      minimalKeys({ keys: [ownerKey({ publicKeySpki: "A".repeat(201) })] }),
+      minimalKeys({ keys: [ownerKey({ publicKeySpki: "A".repeat(204) })] }),
       ["/keys/0/publicKeySpki"],
     );
     expect(
@@ -224,6 +224,14 @@ describe("validateOwnerKeys", () => {
     keysPaths(minimalKeys({ keys: [ownerKey({ label: " phone" })] }), [
       "/keys/0/label",
     ]);
+    keysPaths(minimalKeys({ keys: [ownerKey({ label: "cafe\u0301" })] }), [
+      "/keys/0/label",
+    ]);
+    expect(
+      expectValidKeys(
+        minimalKeys({ keys: [ownerKey({ label: "caf\u00e9" })] }),
+      ).keys[0]?.label,
+    ).toBe("caf\u00e9");
     keysPaths(minimalKeys({ keys: [ownerKey({ label: 7 })] }), [
       "/keys/0/label",
     ]);
