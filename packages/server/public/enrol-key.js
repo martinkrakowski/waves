@@ -602,9 +602,13 @@ export function derToRawP256(der) {
     }
     let total = 0;
     for (let i = 0; i < count; i++) {
-      total = (total << 8) | read();
+      const byte = read();
+      if (i === 0 && byte === 0) {
+        throw new Error("length is not minimal");
+      }
+      total = (total << 8) | byte;
     }
-    if (total < 0 || (count === 1 && total < 0x80)) {
+    if (total < 0x80) {
       throw new Error("length is not minimal");
     }
     return total;

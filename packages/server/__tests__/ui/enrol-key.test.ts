@@ -629,11 +629,13 @@ describe("derToRawP256", () => {
     expect(verify(null, MESSAGE_DER, KEY.publicKey, rebuilt)).toBe(true);
   });
 
-  it("reads a two-byte long-form length when the SEQUENCE declares one", () => {
-    const der = Buffer.from([
-      0x30, 0x82, 0x00, 0x06, 0x02, 0x01, 0x05, 0x02, 0x01, 0x07,
+  it("refuses a valid signature whose SEQUENCE length is re-encoded as 82 00 xx", () => {
+    const der = derSignature();
+    const reencoded = Buffer.concat([
+      Buffer.from([0x30, 0x82, 0x00, der.length - 2]),
+      der.subarray(2),
     ]);
-    expect(derToRawP256(der).length).toBe(64);
+    expect(() => derToRawP256(reencoded)).toThrow(Error);
   });
 
   it("accepts an ArrayBuffer as well as a Uint8Array", () => {
@@ -711,6 +713,18 @@ describe("derToRawP256", () => {
         0x20,
         ...Array(32).fill(0x01),
       ]),
+    ],
+    [
+      "a SEQUENCE length has a zero first length byte",
+      Uint8Array.from([0x30, 0x82, 0x00, 0x06, 0x02, 0x01, 0x05, 0x02, 0x01, 0x07]),
+    ],
+    [
+      "a SEQUENCE length above 0x80 is written with a zero first length byte",
+      Uint8Array.from([0x30, 0x82, 0x00, 0x90, 0x02, 0x01, 0x05]),
+    ],
+    [
+      "an INTEGER length has a zero first length byte",
+      Uint8Array.from([0x02, 0x82, 0x00, 0x01, 0x05, 0x02, 0x01, 0x07]),
     ],
     [
       "a one-byte long-form length of 129 bytes overruns the signature",
