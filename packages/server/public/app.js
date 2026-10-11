@@ -3,6 +3,7 @@ import { drawableDecision } from "./decision.js";
 import { drawableInbox } from "./inbox.js";
 import { drawableProjectEvents } from "./project-events.js";
 import { drawableProjectInbox } from "./project-inbox.js";
+import { enrolKey } from "./enrol-key.js";
 import { createApi } from "./api.js";
 import { digestOf } from "./digest.js";
 import { el } from "./dom.js";
@@ -14,6 +15,7 @@ import { shell } from "./shell.js";
 import { drawableStatus } from "./status.js";
 import { renderDrawer } from "./views/drawer.js";
 import { renderFleet } from "./views/fleet.js";
+import { renderEnrolKey } from "./views/enrol-key.js";
 import { inboxModel } from "./views/inbox-model.js";
 import { renderInbox } from "./views/inbox.js";
 import { renderProjectInbox } from "./views/project-inbox.js";
@@ -53,6 +55,9 @@ export function routeOf(pathname) {
   }
   if (pathname === "/inbox") {
     return { kind: "inbox" };
+  }
+  if (pathname === "/enrol-key") {
+    return { kind: "enrol-key" };
   }
   if (!pathname.startsWith(PROJECT_PREFIX)) {
     return { kind: "unknown" };
@@ -138,6 +143,13 @@ export function createApp(deps) {
      * than a page that pretends.
      */
     clipboard,
+    /**
+     * `navigator.credentials` and the WebCrypto global, handed to the
+     * `/enrol-key` page as the parameters it reads them from. Absent wherever
+     * the browser has no passkeys, and the page says so rather than guessing.
+     */
+    credentials,
+    crypto,
     refreshMs = REFRESH_MS,
   } = deps;
   const api = createApi(fetchImpl);
@@ -207,6 +219,17 @@ export function createApp(deps) {
    * no style recalc in between and the entrance would never play at all.
    */
   let entered = false;
+  /**
+   * The controller behind `/enrol-key`, and the state it last answered with. The
+   * controller is built once and kept, because it holds the credential the owner
+   * made: a test signature has to be asked for against THAT credential, and a
+   * controller rebuilt by every draw would have forgotten it. Both are cleared
+   * by a navigation away, because a passkey made on one visit is not a passkey
+   * the next one is still talking about.
+   */
+  let enrolLogic = undefined;
+  /** The state the enrol-key page last answered with, replayed on each draw. */
+  let enrolCurrent = undefined;
   /**
    * The dialog the drawer is drawn in, beside `#root` rather than inside it: the
    * page's own chrome is the root's, and a modal over it is not. There is no
@@ -400,6 +423,18 @@ export function createApp(deps) {
       }
       return { kind: "inbox", projects, attention, inbox };
     }
+    if (at.kind === "enrol-key") {
+      // The page itself makes no request; only the shell's rail reads on, as it
+      // does on every route, so enrolment is not blocked by a 404 project.
+      const [projects, attention] = await Promise.all([
+        loadProjects(),
+        loadAttention(),
+      ]);
+      if (mine !== generation) {
+        return undefined;
+      }
+      return { kind: "enrol-key", projects, attention };
+    }
     if (at.kind === "decision") {
       const [projects, attention, decision] = await Promise.all([
         loadProjects(),
@@ -533,6 +568,9 @@ export function createApp(deps) {
     }
     if (data.kind === "inbox") {
       return renderInbox(inboxModel(data.inbox), clock());
+    }
+    if (data.kind === "enrol-key") {
+      return renderEnrolKey(currentEnrolState(), enrolHandlers());
     }
     if (data.kind === "project-inbox") {
       return renderProjectInbox(
@@ -1004,6 +1042,56 @@ export function createApp(deps) {
     }
   }
 
+  /**
+   * The `/enrol-key` controller, built on first use from the browser objects it
+   * reads as parameters. Nothing else on the app asks for them, and this route
+   * asks the API for nothing: the key is made, read and checked in the browser.
+   */
+  function enrolController() {
+    if (enrolLogic === undefined) {
+      enrolLogic = enrolKey(credentials, crypto, {
+        origin: location.origin,
+        hostname: new URL(location.origin).hostname,
+      });
+    }
+    return enrolLogic;
+  }
+
+  /** What the page draws now: the last answer, or the intro before any press. */
+  function currentEnrolState() {
+    if (enrolCurrent === undefined) {
+      enrolCurrent = enrolController().intro();
+    }
+    return enrolCurrent;
+  }
+
+  /**
+   * The three presses. Each runs one step of the controller and draws what came
+   * back, so a state on screen is always one the device answered with.
+   */
+  function enrolHandlers() {
+    const step = async (run) => {
+      const mine = enrolController();
+      const answer = await run();
+      if (enrolLogic !== mine) {
+        return;
+      }
+      enrolCurrent = answer;
+      draw();
+    };
+    return {
+      onCreate: () => {
+        void step(() => enrolController().create("platform"));
+      },
+      onCreateRoaming: () => {
+        void step(() => enrolController().create("cross-platform"));
+      },
+      onVerify: () => {
+        void step(() => enrolController().test());
+      },
+    };
+  }
+
   function draw() {
     doc.title =
       route.kind === "project"
@@ -1210,6 +1298,14 @@ export function createApp(deps) {
     // about a view that is no longer on screen.
     copied = "";
     copyCount += 1;
+    // A passkey made on the address the reader has now left is not one this
+    // address is talking about: the controller and the state it drew are cleared
+    // together, so the page comes back to its intro rather than to a key from a
+    // visit that is over.
+    if (was.kind === "enrol-key" || route.kind === "enrol-key") {
+      enrolLogic = undefined;
+      enrolCurrent = undefined;
+    }
     if (
       data !== undefined &&
       ((sameProject(was, route) && wasAll === query.all) ||

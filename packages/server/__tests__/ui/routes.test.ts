@@ -13,6 +13,13 @@ describe("routeOf", () => {
     expect(routeOf("/inbox")).toStrictEqual({ kind: "inbox" });
   });
 
+  it("routes /enrol-key at the enrolment page and nothing under it", () => {
+    expect(routeOf("/enrol-key")).toStrictEqual({ kind: "enrol-key" });
+    expect(routeOf("/enrol-key/")).toStrictEqual({ kind: "unknown" });
+    expect(routeOf("/enrol-key/x")).toStrictEqual({ kind: "unknown" });
+    expect(routeOf("/Enrol-key")).toStrictEqual({ kind: "unknown" });
+  });
+
   it("routes /p/<id> at one project", () => {
     expect(routeOf("/p/alpha")).toStrictEqual({ kind: "project", id: "alpha" });
     expect(routeOf("/p/a-b9")).toStrictEqual({ kind: "project", id: "a-b9" });

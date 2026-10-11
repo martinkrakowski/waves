@@ -93,11 +93,13 @@ export default tseslint.config(
     files: ["packages/*/public/**/*.js"],
     languageOptions: {
       globals: {
+        crypto: "readonly",
         document: "readonly",
         fetch: "readonly",
         history: "readonly",
         location: "readonly",
         navigator: "readonly",
+        PublicKeyCredential: "readonly",
         setTimeout: "readonly",
         clearTimeout: "readonly",
         URL: "readonly",

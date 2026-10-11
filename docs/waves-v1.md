@@ -1301,6 +1301,61 @@ present, joined by " · ". A project with nothing in any of the three groups get
 one line saying so. The page takes no query string and answers nothing: a decision
 here is answered in the session that owns it.
 
+#### 5.1.8 Enrolling an owner key (`/enrol-key`)
+
+`GET /enrol-key` is the page that makes the owner's passkey and reads its PUBLIC
+key off it. It is served from the same `index.html` as the other pages, it has
+no link from the top bar — the owner types the address — and **it makes no
+request to the API**: no `fetch`, no form, no storage of any kind. Everything it
+shows is computed in the browser from what the device returns, and the logic
+(`packages/server/public/enrol-key.js`) takes `credentials`, `crypto` and
+`location` as parameters so a test can pass fakes for all three.
+
+Before anything is pressed the page shows the origin and the relying party id it
+will use (`location.hostname`), a line saying it sends nothing, and whether
+`PublicKeyCredential` exists in this browser; where it does not, the page says so
+and offers no button. "Create a passkey on this device" calls `credentials.create`
+with `rp: { id: location.hostname, name: "waves" }`, a random 32-byte challenge,
+a random 16-byte user id, `user.name` and `displayName` both `"owner"`,
+`pubKeyCredParams` of `[{ type: "public-key", alg: -7 }]` only, an
+`authenticatorAttachment` of `"platform"`, a required resident key and required
+user verification, `attestation: "none"` and `timeout: 120000`. A second button,
+"Create on a hardware security key", makes the same call with
+`authenticatorAttachment: "cross-platform"`, and after a successful create the
+page also shows a "made on:" line read from `credential.authenticatorAttachment`:
+"this device", "a separate security key or another device", or "not reported".
+It then prints, each on its own
+labelled line and as selectable text: the credential id (base64url, unpadded),
+the public key as standard base64 of `response.getPublicKey()` (SPKI), the
+algorithm from `response.getPublicKeyAlgorithm()`, the transports from
+`response.getTransports()` joined by ", " (or "not reported"), and the three
+flags of byte 32 of `response.getAuthenticatorData()` — user verified (`0x04`),
+backup eligible (`0x08`) and backed up (`0x10`). Beneath them is one ready-to-copy
+line: `{"credentialId":…,"publicKeySpki":…,"label":"","addedAt":…}`.
+
+It refuses with one plain sentence and **no key shown** when the response has no
+`getPublicKey` or it answers `null` ("this browser does not return the public key;
+enrolment cannot be done here"), when the algorithm is not -7, and when the
+user-verified bit is clear. A `create` the browser rejects is shown by its `name`
+and `message`, and the button is offered again.
+
+Only after a successful create is "Test: sign once with this passkey" shown. It
+calls `credentials.get` with a fresh 32-byte challenge, `rpId: location.hostname`,
+`allowCredentials` of the credential just made, `userVerification: "required"` and
+`timeout: 120000`, then checks in the page, one line each: the returned credential
+id is the created one; `clientDataJSON` parses, its `type` is `webauthn.get`, its
+`origin` is `location.origin` exactly and its `challenge` is the base64url of the
+challenge it sent; the first 32 bytes of `authenticatorData` are SHA-256 of
+`location.hostname`; the user-verified bit is set; and the signature verifies
+against the SPKI printed above, after `derToRawP256` converts the DER signature
+to the raw `r‖s` form WebCrypto takes. The assertion's own three flags are shown
+beside the checks, because they may differ from the creation's after a sync.
+
+**The answer routes do not exist yet.** This page enrols a key and proves it can
+sign; it stores nothing, so the key still has to be pinned by hand in the
+server's Secret, in `/etc/waves/owner-keys.json` on the laptop and in the fleet
+registry, and no decision can be answered with it until those routes are written.
+
 ### 5.2 The optional viewer token
 
 `WAVES_READ_TOKEN_FILE` points at a file whose trimmed content is the password
