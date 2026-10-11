@@ -100,7 +100,11 @@ describe("validateStateEntry — refusals", () => {
   });
 
   it("a session cannot write a signed entry", () => {
-    expectStatePaths({ ...minimalState(), source: "signed" }, ["/source"]);
+    expect(
+      errorsOf(validateStateEntry({ ...minimalState(), source: "signed" })),
+    ).toEqual([
+      { path: "/source", message: "expected one of session, reported" },
+    ]);
     expectStatePaths(
       {
         ...minimalState(),
