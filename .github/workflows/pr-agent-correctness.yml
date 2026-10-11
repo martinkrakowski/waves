@@ -51,18 +51,32 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENROUTER__KEY: ${{ secrets.OPENROUTER_KEY }}
           config.restricted_mode: "true"
-          # GPT-6.1 Sol on every pull request (the owner's choice, 2026-10-09, after a two-arm
-          # trial in which the other model's answers could not be parsed here). Never a Gemini,
-          # a Grok or a Claude model through OpenRouter, as the main model or as a fallback
-          # (the owner's rule, 2026-10-10).
-          config.model: "openrouter/openai/gpt-6.1-sol"
-          config.fallback_models: '["openrouter/openai/gpt-6-luna"]'
-          # The ceiling: one call with at most 70,000 prompt tokens and 8,000 completion tokens,
-          # and 10 minutes for it inside the job's 20.
+          # A TRIAL of a free main model, for five pull requests from 2026-10-11 (this one is the
+          # first). The owner's rule, 2026-10-10: prefer a free model for every seat, and never
+          # a Gemini, a Grok or a Claude model through OpenRouter, as the main model or as a
+          # fallback. Nemotron answers first; GPT-6.1 Sol (the owner's choice of 2026-10-09,
+          # the main model until this trial) and then GPT-6 Luna answer only when the call
+          # before them fails. The review comment's "Agent run details" names the model that
+          # answered: read it, a review by Sol is not a result for Nemotron.
+          # What ends the trial: the fifth pull request reviewed under it, or earlier two in a
+          # row where Nemotron did not answer (a fallback did, or nothing was posted). Then the
+          # owner chooses between this model and Sol from the recorded rows (model, seconds,
+          # findings, valid or not). Reverting this commit restores Sol.
+          config.model: "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free"
+          config.fallback_models: '["openrouter/openai/gpt-6.1-sol", "openrouter/openai/gpt-6-luna"]'
+          # The ceiling: one call with at most 70,000 prompt tokens and 8,000 completion tokens.
+          # PR-Agent 0.47.0 has none of these three models in its own table, so
+          # custom_model_max_tokens is the context size it assumes for each of them (OpenRouter
+          # lists 1,000,000 or more for all three), and max_model_tokens then caps the prompt.
           config.custom_model_max_tokens: "128000"
           config.max_model_tokens: "70000"
           openrouter.max_tokens: "8000"
-          config.ai_timeout: "600"
+          # 5 minutes a call: Nemotron took 100 seconds at the median and up to 181 in the trial
+          # that led here. A call that times out is not repeated on the same model (PR-Agent
+          # would otherwise try it twice), so three models that all time out take 15 minutes
+          # of the job's 20 and the last fallback is still reached.
+          config.ai_timeout: "300"
+          config.retry_same_model_on_timeout: "false"
           config.repo_context_files: '["AGENTS.md"]'
           config.repo_context_max_lines: "400"
           # The review comment ends with the model, the tokens, the time and the estimated cost
