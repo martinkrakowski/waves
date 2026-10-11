@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
+import type { EnrolAttachment } from "../../public/enrol-key.js";
 import {
   base64,
   base64url,
@@ -87,11 +88,18 @@ describe("enrolKey.intro", () => {
 });
 
 describe("enrolKey.create options", () => {
+  const PLATFORM_OPTIONS = createOptions(
+    HOSTNAME,
+    fillBytes(32, 0x41),
+    fillBytes(16, 0x41),
+    "platform",
+  );
+
   it("hands credentials.create the exact P-256 platform passkey options under publicKey", async () => {
     const creds = fakeCredentials(makeCreation());
     const controller = enrolKey(creds, makeCrypto(0x41), LOCATION);
 
-    await controller.create();
+    await controller.create("platform");
 
     // The browser takes the WebAuthn options under `publicKey`, and the
     // argument carries that key and nothing else beside it.
@@ -99,9 +107,7 @@ describe("enrolKey.create options", () => {
     expect(Object.keys(argument ?? {})).toStrictEqual(["publicKey"]);
     // Every field of the options, down to the only-alg `-7` list, the platform
     // selection and the 16-byte owner id, is checked by the equality below.
-    expect(argument?.publicKey).toEqual(
-      createOptions(HOSTNAME, fillBytes(32, 0x41), fillBytes(16, 0x41)),
-    );
+    expect(argument?.publicKey).toEqual(PLATFORM_OPTIONS);
     // Pinned against literals rather than against `createOptions` again: the
     // assertion above compares the call with the builder, so a builder that grew
     // an algorithm would satisfy both and say nothing. These do not.
@@ -123,13 +129,48 @@ describe("enrolKey.create options", () => {
       displayName: "owner",
     });
   });
+
+  it("hands credentials.create the cross-platform options for the security key button, everything else equal", async () => {
+    const creds = fakeCredentials(makeCreation());
+    const controller = enrolKey(creds, makeCrypto(0x41), LOCATION);
+
+    await controller.create("cross-platform");
+
+    const argument = creds.create.mock.calls[0]?.[0];
+    expect(Object.keys(argument ?? {})).toStrictEqual(["publicKey"]);
+    // The two buttons differ in nothing but the attachment.
+    expect(argument?.publicKey).toEqual({
+      ...PLATFORM_OPTIONS,
+      authenticatorSelection: {
+        authenticatorAttachment: "cross-platform",
+        residentKey: "required",
+        userVerification: "required",
+      },
+    });
+  });
+});
+
+describe("createOptions", () => {
+  it.each(["internal", "", "Platform", null, undefined, 0])(
+    "refuses an attachment that is neither platform nor cross-platform (%s)",
+    (attachment) => {
+      expect(() =>
+        createOptions(
+          HOSTNAME,
+          fillBytes(32, 0x41),
+          fillBytes(16, 0x41),
+          attachment as unknown as EnrolAttachment,
+        ),
+      ).toThrow(Error);
+    },
+  );
 });
 
 describe("enrolKey.get options", () => {
   it("hands credentials.get the created id with the platform rpId and uv required", async () => {
     const creds = fakeCredentials(makeCreation(), await makeAssertion());
     const controller = enrolKey(creds, makeCrypto(0x41), LOCATION);
-    await controller.create();
+    await controller.create("platform");
 
     await controller.test();
 
@@ -167,7 +208,7 @@ describe("enrolKey.create results", () => {
         makeCreation({ flagsByte: flags, transports }),
       );
       const controller = enrolKey(creds, makeCrypto(0x41), LOCATION);
-      const state = await controller.create();
+      const state = await controller.create("platform");
 
       expect(state).toMatchObject({
         kind: "ready",
@@ -194,10 +235,29 @@ describe("enrolKey.create results", () => {
     },
   );
 
+  it.each<["platform" | "cross-platform" | undefined, string]>([
+    ["platform", "this device"],
+    ["cross-platform", "a separate security key or another device"],
+    [undefined, "not reported"],
+  ])(
+    "says where the key was made from authenticatorAttachment (%s)",
+    async (attachment, madeOn) => {
+      const creation =
+        attachment === undefined
+          ? makeCreation()
+          : makeCreation({ authenticatorAttachment: attachment });
+      const creds = fakeCredentials(creation);
+      const controller = enrolKey(creds, makeCrypto(0x41), LOCATION);
+      const state = await controller.create("platform");
+
+      expect(state).toMatchObject({ kind: "ready", madeOn });
+    },
+  );
+
   it("refuses a create whose response has no public key method", async () => {
     const creds = fakeCredentials(makeCreation({ getPublicKey: "missing" }));
     const controller = enrolKey(creds, makeCrypto(0x41), LOCATION);
-    expect(await controller.create()).toEqual({
+    expect(await controller.create("platform")).toEqual({
       kind: "refused",
       reason:
         "this browser does not return the public key; enrolment cannot be done here",
@@ -207,7 +267,7 @@ describe("enrolKey.create results", () => {
   it("refuses a create whose getPublicKey throws", async () => {
     const creds = fakeCredentials(makeCreation({ getPublicKey: "throw" }));
     const controller = enrolKey(creds, makeCrypto(0x41), LOCATION);
-    expect(await controller.create()).toEqual({
+    expect(await controller.create("platform")).toEqual({
       kind: "refused",
       reason:
         "this browser does not return the public key; enrolment cannot be done here",
@@ -217,7 +277,7 @@ describe("enrolKey.create results", () => {
   it("refuses a create whose getPublicKey returns null", async () => {
     const creds = fakeCredentials(makeCreation({ getPublicKey: "null" }));
     const controller = enrolKey(creds, makeCrypto(0x41), LOCATION);
-    expect(await controller.create()).toEqual({
+    expect(await controller.create("platform")).toEqual({
       kind: "refused",
       reason:
         "this browser does not return the public key; enrolment cannot be done here",
@@ -227,7 +287,7 @@ describe("enrolKey.create results", () => {
   it("refuses a passkey whose algorithm is not -7", async () => {
     const creds = fakeCredentials(makeCreation({ algorithm: -257 }));
     const controller = enrolKey(creds, makeCrypto(0x41), LOCATION);
-    expect(await controller.create()).toEqual({
+    expect(await controller.create("platform")).toEqual({
       kind: "refused",
       reason: "the passkey uses a key type this page does not support",
     });
@@ -236,7 +296,7 @@ describe("enrolKey.create results", () => {
   it("refuses a passkey that was not user-verified", async () => {
     const creds = fakeCredentials(makeCreation({ flagsByte: 0x40 }));
     const controller = enrolKey(creds, makeCrypto(0x41), LOCATION);
-    expect(await controller.create()).toEqual({
+    expect(await controller.create("platform")).toEqual({
       kind: "refused",
       reason: "this passkey was not user-verified",
     });
@@ -248,7 +308,7 @@ describe("enrolKey.create results", () => {
       get: vi.fn<GetFn>(),
     };
     const controller = enrolKey(creds, makeCrypto(0x41), LOCATION);
-    expect(await controller.create()).toEqual({
+    expect(await controller.create("platform")).toEqual({
       kind: "createError",
       name: "Error",
       message: "boom",
@@ -261,7 +321,7 @@ describe("enrolKey.create results", () => {
       get: vi.fn<GetFn>(),
     };
     const controller = enrolKey(creds, makeCrypto(0x41), LOCATION);
-    expect(await controller.create()).toEqual({
+    expect(await controller.create("platform")).toEqual({
       kind: "createError",
       name: "Error",
       message: "[object Object]",
@@ -273,7 +333,7 @@ describe("enrolKey.test verification", () => {
   async function ready() {
     const creds = fakeCredentials(makeCreation(), await makeAssertion());
     const controller = enrolKey(creds, makeCrypto(0x41), LOCATION);
-    await controller.create();
+    await controller.create("platform");
     return { creds, controller };
   }
 

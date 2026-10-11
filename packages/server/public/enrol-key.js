@@ -151,15 +151,22 @@ function nowIsoSeconds() {
   return `${iso.slice(0, 19)}Z`;
 }
 
-/** The options this page hands to `credentials.create`. */
-export function createOptions(rpId, challenge, userId) {
+/**
+ * The options this page hands to `credentials.create`. `attachment` says
+ * where the key may be made — exactly `"platform"` (this device) or
+ * `"cross-platform"` (a hardware security key); anything else is refused.
+ */
+export function createOptions(rpId, challenge, userId, attachment) {
+  if (attachment !== "platform" && attachment !== "cross-platform") {
+    throw new Error("the attachment must be 'platform' or 'cross-platform'");
+  }
   return {
     rp: { id: rpId, name: RP_NAME },
     user: { id: userId, name: "owner", displayName: "owner" },
     challenge,
     pubKeyCredParams: [{ type: "public-key", alg: ES256 }],
     authenticatorSelection: {
-      authenticatorAttachment: "platform",
+      authenticatorAttachment: attachment,
       residentKey: "required",
       userVerification: "required",
     },
@@ -228,6 +235,12 @@ function inspectCreation(response, location) {
       transports = reported.join(", ");
     }
   }
+  let madeOn = "not reported";
+  if (response.authenticatorAttachment === "platform") {
+    madeOn = "this device";
+  } else if (response.authenticatorAttachment === "cross-platform") {
+    madeOn = "a separate security key or another device";
+  }
   const credentialId = base64url(rawId);
   const publicKeySpki = base64(spki);
   const addedAt = nowIsoSeconds();
@@ -244,6 +257,7 @@ function inspectCreation(response, location) {
       publicKeySpki,
       algorithm,
       transports,
+      madeOn,
       userVerified: flags.userVerified,
       backupEligible: flags.backupEligible,
       backedUp: flags.backedUp,
@@ -396,11 +410,19 @@ export function enrolKey(credentials, crypto, location) {
         publicKeyCredential: typeof PublicKeyCredential !== "undefined",
       };
     },
-    /** Make a passkey on this device, returning the state to draw. */
-    async create() {
+    /**
+     * Make a passkey — on this device for `"platform"`, on a hardware security
+     * key for `"cross-platform"` — returning the state to draw.
+     */
+    async create(attachment) {
       const challenge = randomBytes(crypto, CHALLENGE_LENGTH);
       const userId = randomBytes(crypto, USER_ID_LENGTH);
-      const options = createOptions(location.hostname, challenge, userId);
+      const options = createOptions(
+        location.hostname,
+        challenge,
+        userId,
+        attachment,
+      );
       let attestation;
       try {
         attestation = await credentials.create({ publicKey: options });

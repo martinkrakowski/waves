@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { AppGlobals } from "../../public/app.js";
 import { createApp, routeOf } from "../../public/app.js";
 import type { EnrolCredentials, EnrolState } from "../../public/enrol-key.js";
 import { enrolKey } from "../../public/enrol-key.js";
@@ -31,6 +32,7 @@ import {
 } from "./helpers.js";
 
 const CREATE = "Create a passkey on this device";
+const CREATE_ROAMING = "Create on a hardware security key";
 const TEST = "Test: sign once with this passkey";
 const SENDS = "This page sends nothing to the server";
 const NO_PK = "PublicKeyCredential is not available in this browser";
@@ -61,7 +63,7 @@ function credentials(
 
 interface Page {
   readonly host: HTMLElement;
-  press(kind: "onCreate" | "onVerify"): Promise<void>;
+  press(kind: "onCreate" | "onCreateRoaming" | "onVerify"): Promise<void>;
   readonly state: EnrolState;
 }
 
@@ -89,7 +91,10 @@ function openPage(creds: {
   }
   const handlers = {
     onCreate: () => {
-      pending = draw(() => controller.create());
+      pending = draw(() => controller.create("platform"));
+    },
+    onCreateRoaming: () => {
+      pending = draw(() => controller.create("cross-platform"));
     },
     onVerify: () => {
       pending = draw(() => controller.test());
@@ -138,14 +143,51 @@ describe("renderEnrolKey", () => {
     expect(textsOf(host, "h1")).toStrictEqual(["Enrol an owner key"]);
     expect(textsOf(host, "code")).toStrictEqual([ORIGIN, HOSTNAME]);
     expect(textOf(host)).toContain(SENDS);
-    expect(textsOf(host, "button")).toStrictEqual([CREATE]);
+    expect(textsOf(host, "button")).toStrictEqual([CREATE, CREATE_ROAMING]);
   });
 
   it("offers the test button only after a good create", async () => {
     const page = openPage(credentials(makeCreation(), await makeAssertion()));
-    expect(textsOf(page.host, "button")).toStrictEqual([CREATE]);
+    expect(textsOf(page.host, "button")).toStrictEqual([
+      CREATE,
+      CREATE_ROAMING,
+    ]);
     await page.press("onCreate");
     expect(textsOf(page.host, "button")).toStrictEqual([TEST]);
+  });
+
+  it("draws both create buttons, and each calls only its own handler", () => {
+    const host = freshRoot();
+    const handlers = {
+      onCreate: vi.fn(),
+      onCreateRoaming: vi.fn(),
+      onVerify: vi.fn(),
+    };
+    host.append(
+      renderEnrolKey(
+        {
+          kind: "intro",
+          origin: ORIGIN,
+          rpId: HOSTNAME,
+          publicKeyCredential: true,
+        },
+        handlers,
+      ),
+    );
+    const buttons = [...host.querySelectorAll("button")];
+    expect(buttons.map((b) => b.textContent)).toStrictEqual([
+      CREATE,
+      CREATE_ROAMING,
+    ]);
+
+    buttons[0]?.click();
+    expect(handlers.onCreate).toHaveBeenCalledTimes(1);
+    expect(handlers.onCreateRoaming).not.toHaveBeenCalled();
+
+    buttons[1]?.click();
+    expect(handlers.onCreateRoaming).toHaveBeenCalledTimes(1);
+    expect(handlers.onCreate).toHaveBeenCalledTimes(1);
+    expect(handlers.onVerify).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -170,6 +212,7 @@ describe("renderEnrolKey", () => {
         base64Of(SPKI),
         "-7",
         flags === 0x5d ? "internal, hybrid" : "not reported",
+        "not reported",
         ...flagWords,
         JSON.stringify({
           credentialId: base64urlOf(CREDENTIAL_ID),
@@ -198,8 +241,23 @@ describe("renderEnrolKey", () => {
 
       expect(textsOf(host, "code")).toStrictEqual([]);
       expect(textsOf(host, ".enrol-refused")).toHaveLength(1);
-      expect(textsOf(host, "button")).toStrictEqual([CREATE]);
+      expect(textsOf(host, "button")).toStrictEqual([CREATE, CREATE_ROAMING]);
     }
+  });
+
+  it.each<["platform" | "cross-platform" | undefined, string]>([
+    ["platform", "this device"],
+    ["cross-platform", "a separate security key or another device"],
+    [undefined, "not reported"],
+  ])("shows the made-on line for attachment %s", async (attachment, madeOn) => {
+    const creation =
+      attachment === undefined
+        ? makeCreation()
+        : makeCreation({ authenticatorAttachment: attachment });
+    const page = openPage(credentials(creation));
+    await page.press("onCreate");
+
+    expect(textOf(page.host)).toContain(`made on: ${madeOn}`);
   });
 
   it("says why a create whose response has no public key was refused", async () => {
@@ -225,7 +283,7 @@ describe("renderEnrolKey", () => {
     expect(textOf(host.querySelector(".enrol-refused"))).toBe(
       "NotAllowedError: the operation was cancelled",
     );
-    expect(textsOf(host, "button")).toStrictEqual([CREATE]);
+    expect(textsOf(host, "button")).toStrictEqual([CREATE, CREATE_ROAMING]);
   });
 
   it("shows every check of a good test signature as ok", async () => {
@@ -272,7 +330,7 @@ describe("renderEnrolKey", () => {
           backupEligible: false,
           backedUp: false,
         },
-        { onCreate() {}, onVerify() {} },
+        { onCreate() {}, onCreateRoaming() {}, onVerify() {} },
       ),
     );
     const drawn = settled(host);
@@ -333,7 +391,7 @@ describe("/enrol-key through the app", () => {
       history: browser.history,
       win: browser.win,
       fetch: stub,
-      credentials: creds as unknown as EnrolCredentials,
+      credentials: creds as unknown as NonNullable<AppGlobals["credentials"]>,
       crypto: makeCrypto(0x41),
       setTimer: () => 0,
       clearTimer: () => {},

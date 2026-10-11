@@ -26,6 +26,8 @@ export interface EnrolReady {
   readonly publicKeySpki: string;
   readonly algorithm: number;
   readonly transports: string;
+  /** Where the key was made, read from `credential.authenticatorAttachment`. */
+  readonly madeOn: string;
   readonly userVerified: boolean;
   readonly backupEligible: boolean;
   readonly backedUp: boolean;
@@ -80,7 +82,9 @@ export interface EnrolLocation {
 
 export interface EnrolController {
   intro(): EnrolIntro;
-  create(): Promise<EnrolReady | EnrolRefused | EnrolCreateError>;
+  create(
+    attachment: EnrolAttachment,
+  ): Promise<EnrolReady | EnrolRefused | EnrolCreateError>;
   test(): Promise<EnrolVerified>;
 }
 
@@ -103,11 +107,15 @@ export declare function base64(bytes: ArrayBuffer | Uint8Array): string;
 /** Standard base64url, without padding, of a buffer of bytes. */
 export declare function base64url(bytes: ArrayBuffer | Uint8Array): string;
 
+/** Where the key may be made: on this device, or on a hardware security key. */
+export type EnrolAttachment = "platform" | "cross-platform";
+
 /** The options this page hands to `credentials.create`. */
 export declare function createOptions(
   rpId: string,
   challenge: ArrayBufferView,
   userId: ArrayBufferView,
+  attachment: EnrolAttachment,
 ): PublicKeyCredentialCreationOptions;
 
 /** The options this page hands to `credentials.get` for the test signature. */

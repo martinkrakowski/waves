@@ -103,6 +103,8 @@ export function makeCreation(
     rawId?: Uint8Array;
     algorithm?: number;
     transports?: readonly string[] | undefined;
+    /** What `credential.authenticatorAttachment` reports, when it reports it. */
+    authenticatorAttachment?: "platform" | "cross-platform";
     getPublicKey?: "missing" | "null" | "throw";
   } = {},
 ) {
@@ -130,7 +132,11 @@ export function makeCreation(
   if (opts.transports !== undefined) {
     response.getTransports = () => opts.transports;
   }
-  return { rawId, id: "id", response };
+  const credential: Record<string, unknown> = { rawId, id: "id", response };
+  if (opts.authenticatorAttachment !== undefined) {
+    credential.authenticatorAttachment = opts.authenticatorAttachment;
+  }
+  return credential;
 }
 
 /**

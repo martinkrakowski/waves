@@ -1066,7 +1066,7 @@ export function createApp(deps) {
   }
 
   /**
-   * The two presses. Each runs one step of the controller and draws what came
+   * The three presses. Each runs one step of the controller and draws what came
    * back, so a state on screen is always one the device answered with.
    */
   function enrolHandlers() {
@@ -1076,7 +1076,10 @@ export function createApp(deps) {
     };
     return {
       onCreate: () => {
-        void step(() => enrolController().create());
+        void step(() => enrolController().create("platform"));
+      },
+      onCreateRoaming: () => {
+        void step(() => enrolController().create("cross-platform"));
       },
       onVerify: () => {
         void step(() => enrolController().test());

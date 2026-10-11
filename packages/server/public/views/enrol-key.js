@@ -73,8 +73,19 @@ function heading(state) {
   return el("h1", { text: title });
 }
 
-function createButton(handlers) {
-  return button("Create a passkey on this device", "create", handlers.onCreate);
+/**
+ * The two create buttons the page offers wherever it offers one: on this
+ * device, or on a hardware security key. Each calls its own handler.
+ */
+function createButtons(handlers) {
+  return [
+    button("Create a passkey on this device", "create", handlers.onCreate),
+    button(
+      "Create on a hardware security key",
+      "create-roaming",
+      handlers.onCreateRoaming,
+    ),
+  ];
 }
 
 function intro(state, handlers) {
@@ -84,7 +95,7 @@ function intro(state, handlers) {
     el("p", { attrs: { class: "enrol-sends" }, text: SENDS_NOTHING }),
   ];
   if (state.publicKeyCredential) {
-    children.push(createButton(handlers));
+    children.push(...createButtons(handlers));
   } else {
     children.push(
       el("p", { attrs: { class: "enrol-refused" }, text: NO_PUBLIC_KEY }),
@@ -99,6 +110,7 @@ function ready(state, handlers) {
     field("Public key (SPKI)", state.publicKeySpki),
     field("Algorithm", state.algorithm),
     field("Transports", state.transports),
+    field("made on", state.madeOn),
     flagRow("User verified", state.userVerified),
     flagRow(
       "Can be synced to other devices (backup eligible)",
@@ -121,14 +133,15 @@ function verified(state, handlers) {
     ),
     flagRow("Is synced now (backed up)", state.backedUp),
     el("p", { attrs: { class: "enrol-footer" }, text: FOOTER }),
-    createButton(handlers),
+    ...createButtons(handlers),
   ];
 }
 
 /**
  * Draw the `/enrol-key` page from its state. `handlers.onCreate` makes a
- * passkey, `handlers.onVerify` tests the one that was made; both resolve to a
- * state the app hands back here to redraw.
+ * passkey on this device and `handlers.onCreateRoaming` one on a hardware
+ * security key; `handlers.onVerify` tests the key that was made; all resolve
+ * to a state the app hands back here to redraw.
  */
 export function renderEnrolKey(state, handlers) {
   const children = [heading(state)];
@@ -141,7 +154,7 @@ export function renderEnrolKey(state, handlers) {
   } else if (state.kind === "refused") {
     children.push(
       el("p", { attrs: { class: "enrol-refused" }, text: state.reason }),
-      createButton(handlers),
+      ...createButtons(handlers),
     );
   } else {
     children.push(
@@ -149,7 +162,7 @@ export function renderEnrolKey(state, handlers) {
         attrs: { class: "enrol-refused" },
         text: `${state.name}: ${state.message}`,
       }),
-      createButton(handlers),
+      ...createButtons(handlers),
     );
   }
   return el("section", { attrs: { class: "view enrol-key" }, children });

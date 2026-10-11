@@ -1203,9 +1203,14 @@ will use (`location.hostname`), a line saying it sends nothing, and whether
 and offers no button. "Create a passkey on this device" calls `credentials.create`
 with `rp: { id: location.hostname, name: "waves" }`, a random 32-byte challenge,
 a random 16-byte user id, `user.name` and `displayName` both `"owner"`,
-`pubKeyCredParams` of `[{ type: "public-key", alg: -7 }]` only, a platform
-authenticator with a required resident key and required user verification,
-`attestation: "none"` and `timeout: 120000`. It then prints, each on its own
+`pubKeyCredParams` of `[{ type: "public-key", alg: -7 }]` only, an
+`authenticatorAttachment` of `"platform"`, a required resident key and required
+user verification, `attestation: "none"` and `timeout: 120000`. A second button,
+"Create on a hardware security key", makes the same call with
+`authenticatorAttachment: "cross-platform"`, and after a successful create the
+page also shows a "made on:" line read from `credential.authenticatorAttachment`:
+"this device", "a separate security key or another device", or "not reported".
+It then prints, each on its own
 labelled line and as selectable text: the credential id (base64url, unpadded),
 the public key as standard base64 of `response.getPublicKey()` (SPKI), the
 algorithm from `response.getPublicKeyAlgorithm()`, the transports from
