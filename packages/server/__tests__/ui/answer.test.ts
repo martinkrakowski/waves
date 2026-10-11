@@ -469,6 +469,42 @@ describe("prepareWords", () => {
       reason: "too-long",
     });
   });
+
+  it("refuses a control character inside the words before he signs", () => {
+    // The server refuses `words` holding any character the contract's
+    // isControlCode refuses — below 0x20 or 0x7f itself — so the page must
+    // refuse them before the passkey is ever asked, not after.
+    expect(prepareWords("a\nb")).toStrictEqual({
+      ok: false,
+      reason: "not-printable",
+    });
+    expect(prepareWords("a\tb")).toStrictEqual({
+      ok: false,
+      reason: "not-printable",
+    });
+    expect(prepareWords("a\u007fb")).toStrictEqual({
+      ok: false,
+      reason: "not-printable",
+    });
+    expect(prepareWords("a\u0000b")).toStrictEqual({
+      ok: false,
+      reason: "not-printable",
+    });
+    // U+0085 is above the refused range and stays allowed inside.
+    expect(prepareWords("a\u0085b")).toStrictEqual({
+      ok: true,
+      words: "a\u0085b",
+    });
+    // The edges are stripped first, so newlines around the words are fine.
+    expect(prepareWords(" \n yes \n ")).toStrictEqual({
+      ok: true,
+      words: "yes",
+    });
+    expect(choiceOf("words", "a\nb")).toStrictEqual({
+      ok: false,
+      reason: "not-printable",
+    });
+  });
 });
 
 describe("choiceOf", () => {

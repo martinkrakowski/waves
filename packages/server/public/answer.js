@@ -108,6 +108,15 @@ export function prepareWords(raw) {
   if (words === "") {
     return { ok: false, reason: "empty" };
   }
+  // The server refuses `words` holding any control character, and this must
+  // happen before he signs: a two-line answer would otherwise be confirmed,
+  // signed with the passkey and then refused.
+  for (let at = 0; at < words.length; at += 1) {
+    const code = words.charCodeAt(at);
+    if (code < 0x20 || code === 0x7f) {
+      return { ok: false, reason: "not-printable" };
+    }
+  }
   if (words.length > MAX_WORDS_CHARS) {
     return { ok: false, reason: "too-long" };
   }

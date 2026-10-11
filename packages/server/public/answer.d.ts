@@ -16,7 +16,10 @@ export type Answerability =
 /** What `prepareWords` says about the owner's own words before he signs them. */
 export type PreparedWords =
   | { readonly ok: true; readonly words: string }
-  | { readonly ok: false; readonly reason: "empty" | "too-long" };
+  | {
+      readonly ok: false;
+      readonly reason: "empty" | "too-long" | "not-printable";
+    };
 
 /**
  * The choice a button stands for, as the challenge and the body spell it:
@@ -30,7 +33,10 @@ export type Choice =
 
 export type ChoiceResult =
   | { readonly ok: true; readonly choice: Choice }
-  | { readonly ok: false; readonly reason: "empty" | "too-long" };
+  | {
+      readonly ok: false;
+      readonly reason: "empty" | "too-long" | "not-printable";
+    };
 
 /** The four reasons the server refuses a signed answer for. */
 export type RefusalReason =
