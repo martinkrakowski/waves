@@ -589,6 +589,7 @@ const INVALID: readonly (readonly [string, unknown])[] = [
     "a signed entry whose signature index is off by one",
     {
       ...decisionResponse(),
+      head: inboxHead({ entries: 1 }),
       entries: [
         {
           ...signedDecisionEntry(),
@@ -601,6 +602,7 @@ const INVALID: readonly (readonly [string, unknown])[] = [
     "a signed entry whose signature index is not a count",
     {
       ...decisionResponse(),
+      head: inboxHead({ entries: 1 }),
       entries: [
         {
           ...signedDecisionEntry(),
@@ -613,6 +615,7 @@ const INVALID: readonly (readonly [string, unknown])[] = [
     "a signed entry with no signature",
     {
       ...decisionResponse(),
+      head: inboxHead({ entries: 1 }),
       entries: [{ ...signedDecisionEntry(), signature: undefined }],
     },
   ],
@@ -620,6 +623,7 @@ const INVALID: readonly (readonly [string, unknown])[] = [
     "a signed entry whose signature is not an object",
     {
       ...decisionResponse(),
+      head: inboxHead({ entries: 1 }),
       entries: [{ ...signedDecisionEntry(), signature: "no" }],
     },
   ],
@@ -627,6 +631,7 @@ const INVALID: readonly (readonly [string, unknown])[] = [
     "a signed entry whose signature misses a field",
     {
       ...decisionResponse(),
+      head: inboxHead({ entries: 1 }),
       entries: [
         {
           ...signedDecisionEntry(),
@@ -645,6 +650,7 @@ const INVALID: readonly (readonly [string, unknown])[] = [
     "a signed entry whose signature has an empty field",
     {
       ...decisionResponse(),
+      head: inboxHead({ entries: 1 }),
       entries: [
         {
           ...signedDecisionEntry(),
@@ -657,6 +663,7 @@ const INVALID: readonly (readonly [string, unknown])[] = [
     "a signed entry in a withdrawn state",
     {
       ...decisionResponse(),
+      head: inboxHead({ entries: 1 }),
       entries: [
         {
           ...signedDecisionEntry(),
@@ -671,6 +678,7 @@ const INVALID: readonly (readonly [string, unknown])[] = [
     "a signed declined entry with an option",
     {
       ...decisionResponse(),
+      head: inboxHead({ entries: 1 }),
       entries: [{ ...signedDecisionEntry(), state: "declined", option: "a" }],
     },
   ],
@@ -678,6 +686,7 @@ const INVALID: readonly (readonly [string, unknown])[] = [
     "a signed answered entry with neither words nor an option",
     {
       ...decisionResponse(),
+      head: inboxHead({ entries: 1 }),
       entries: [
         { ...signedDecisionEntry(), state: "answered", words: undefined },
       ],
@@ -687,6 +696,7 @@ const INVALID: readonly (readonly [string, unknown])[] = [
     "a reported entry with a signature",
     {
       ...decisionResponse(),
+      head: inboxHead({ entries: 1 }),
       entries: [{ ...decisionEntry(), signature: answerSignature(0) }],
     },
   ],
@@ -694,6 +704,7 @@ const INVALID: readonly (readonly [string, unknown])[] = [
     "a session entry with a signature",
     {
       ...decisionResponse(),
+      head: inboxHead({ entries: 1 }),
       entries: [
         {
           ...decisionEntry(),
@@ -710,6 +721,7 @@ const INVALID: readonly (readonly [string, unknown])[] = [
     "a reported entry that is not an answer state",
     {
       ...decisionResponse(),
+      head: inboxHead({ entries: 1 }),
       entries: [
         {
           ...decisionEntry(),
