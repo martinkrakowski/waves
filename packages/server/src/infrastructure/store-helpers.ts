@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { constants, type Stats } from "node:fs";
-import { type FileHandle, lstat, open, rename, rm, writeFile } from "node:fs/promises";
+import {
+  type FileHandle,
+  lstat,
+  open,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 
 import type { StoredEvent } from "../application/ports/notice-store.js";
 

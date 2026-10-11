@@ -61,9 +61,7 @@ describe("readTextNoFollow", () => {
       await expect(readTextNoFollow(link)).rejects.toThrow(
         /is a symbolic link, not a file/,
       );
-      expect(readFileSync(join(outside, "secret.json"), "utf8")).toBe(
-        "secret",
-      );
+      expect(readFileSync(join(outside, "secret.json"), "utf8")).toBe("secret");
     } finally {
       await rm(dir, { recursive: true, force: true });
       await rm(outside, { recursive: true, force: true });
@@ -102,9 +100,7 @@ describe("readTextNoFollow", () => {
     try {
       writeFileSync(join(dir, "file"), "");
 
-      await expect(
-        readTextNoFollow(join(dir, "file", "x")),
-      ).rejects.toThrow();
+      await expect(readTextNoFollow(join(dir, "file", "x"))).rejects.toThrow();
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -123,13 +119,11 @@ describe("writeAtomic", () => {
       await expect(writeAtomic(target, "payload")).rejects.toThrow(
         /is a symbolic link, not a file/,
       );
-      expect(readFileSync(join(outside, "secret.json"), "utf8")).toBe(
-        "secret",
-      );
+      expect(readFileSync(join(outside, "secret.json"), "utf8")).toBe("secret");
       expect(lstatSync(target).isSymbolicLink()).toBe(true);
-      expect(
-        readdirSync(dir).some((name) => name.includes(".tmp-")),
-      ).toBe(false);
+      expect(readdirSync(dir).some((name) => name.includes(".tmp-"))).toBe(
+        false,
+      );
     } finally {
       await rm(dir, { recursive: true, force: true });
       await rm(outside, { recursive: true, force: true });
@@ -188,9 +182,7 @@ describe("removeDocument", () => {
     try {
       writeFileSync(join(dir, "file"), "");
 
-      await expect(
-        removeDocument(join(dir, "file", "x")),
-      ).rejects.toThrow();
+      await expect(removeDocument(join(dir, "file", "x"))).rejects.toThrow();
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

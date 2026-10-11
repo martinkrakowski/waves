@@ -306,9 +306,8 @@ describe("FileStore refuses a symlinked document file on read", () => {
     try {
       await store.putSnapshot(snapshot("wv1"));
 
-      await refuseLink(
-        join(dataDir, "snapshots", "alpha", "wv1.json"),
-        () => store.getSnapshot("alpha", "wv1"),
+      await refuseLink(join(dataDir, "snapshots", "alpha", "wv1.json"), () =>
+        store.getSnapshot("alpha", "wv1"),
       );
     } finally {
       await dispose();
@@ -337,9 +336,8 @@ describe("FileStore refuses a symlinked document file on read", () => {
         receivedAt: "2026-10-01T12:00:01Z",
       });
 
-      await refuseLink(
-        join(dataDir, "status", "alpha.json"),
-        () => store.getStatus("alpha"),
+      await refuseLink(join(dataDir, "status", "alpha.json"), () =>
+        store.getStatus("alpha"),
       );
     } finally {
       await dispose();
@@ -353,9 +351,8 @@ describe("FileStore refuses a symlinked document file on write", () => {
     try {
       await store.putProject(project("alpha"));
 
-      await refuseLink(
-        join(dataDir, "projects.json"),
-        () => store.putProject(project("alpha", "Second")),
+      await refuseLink(join(dataDir, "projects.json"), () =>
+        store.putProject(project("alpha", "Second")),
       );
     } finally {
       await dispose();
@@ -367,9 +364,8 @@ describe("FileStore refuses a symlinked document file on write", () => {
     try {
       await store.putProject(project("alpha"));
 
-      await refuseLink(
-        join(dataDir, "projects.json"),
-        () => store.createProject(project("beta"), 64),
+      await refuseLink(join(dataDir, "projects.json"), () =>
+        store.createProject(project("beta"), 64),
       );
     } finally {
       await dispose();
@@ -381,9 +377,8 @@ describe("FileStore refuses a symlinked document file on write", () => {
     try {
       await store.putSnapshot(snapshot("wv1"));
 
-      await refuseLink(
-        join(dataDir, "snapshots", "alpha", "wv1.json"),
-        () => store.putSnapshot(snapshot("wv1", "2026-10-01T13:00:00Z")),
+      await refuseLink(join(dataDir, "snapshots", "alpha", "wv1.json"), () =>
+        store.putSnapshot(snapshot("wv1", "2026-10-01T13:00:00Z")),
       );
     } finally {
       await dispose();
@@ -396,9 +391,8 @@ describe("FileStore refuses a symlinked document file on write", () => {
     try {
       await store.putSnapshot(snapshot("wv1"));
 
-      await refuseLink(
-        join(waveDir, "wv1.head.json"),
-        () => store.putSnapshot(snapshot("wv1", "2026-10-01T13:00:00Z")),
+      await refuseLink(join(waveDir, "wv1.head.json"), () =>
+        store.putSnapshot(snapshot("wv1", "2026-10-01T13:00:00Z")),
       );
       // The snapshot write landed before the head write refused.
       expect(statSync(join(waveDir, "wv1.json")).isFile()).toBe(true);
@@ -415,13 +409,11 @@ describe("FileStore refuses a symlinked document file on write", () => {
         receivedAt: "2026-10-01T12:00:01Z",
       });
 
-      await refuseLink(
-        join(dataDir, "status", "alpha.json"),
-        () =>
-          store.putStatus({
-            status: status("alpha", { generatedAt: "2026-10-01T13:00:00Z" }),
-            receivedAt: "2026-10-01T13:00:01Z",
-          }),
+      await refuseLink(join(dataDir, "status", "alpha.json"), () =>
+        store.putStatus({
+          status: status("alpha", { generatedAt: "2026-10-01T13:00:00Z" }),
+          receivedAt: "2026-10-01T13:00:01Z",
+        }),
       );
     } finally {
       await dispose();
@@ -435,9 +427,8 @@ describe("FileStore refuses a symlinked document file on a single delete", () =>
     try {
       await store.putSnapshot(snapshot("wv1"));
 
-      await refuseLink(
-        join(dataDir, "snapshots", "alpha", "wv1.json"),
-        () => store.deleteSnapshot("alpha", "wv1"),
+      await refuseLink(join(dataDir, "snapshots", "alpha", "wv1.json"), () =>
+        store.deleteSnapshot("alpha", "wv1"),
       );
     } finally {
       await dispose();

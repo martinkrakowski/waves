@@ -664,7 +664,11 @@ describe("FileNoticeStore refuses a symlinked document file on read", () => {
   it("refuses a symlinked events file when listing events", async () => {
     const { store, dataDir, dispose } = harness();
     try {
-      await store.appendEvent("alpha", event(), 10);
+      await store.appendEvent(
+        "alpha",
+        { id: "e0", receivedAt: "2026-10-08T13:00:00Z", event: event() },
+        10,
+      );
       const stored = join(dataDir, "events", "alpha.json");
 
       await refuseLink(stored, () => store.listEvents("alpha", 10));
@@ -680,9 +684,8 @@ describe("FileNoticeStore refuses a symlinked document file on write", () => {
     try {
       await store.appendRevision("alpha", "d1", storedRevision(1), 0, 3);
 
-      await refuseLink(
-        join(dataDir, "decisions", "alpha", "d1.json"),
-        () => store.appendRevision("alpha", "d1", storedRevision(2), 1, 3),
+      await refuseLink(join(dataDir, "decisions", "alpha", "d1.json"), () =>
+        store.appendRevision("alpha", "d1", storedRevision(2), 1, 3),
       );
     } finally {
       await dispose();
@@ -694,9 +697,8 @@ describe("FileNoticeStore refuses a symlinked document file on write", () => {
     try {
       await store.appendRevision("alpha", "d1", storedRevision(1), 0, 3);
 
-      await refuseLink(
-        join(dataDir, "decisions", "alpha", "d1.json"),
-        () => store.appendEntry("alpha", "d1", storedEntry(0), 0, 1),
+      await refuseLink(join(dataDir, "decisions", "alpha", "d1.json"), () =>
+        store.appendEntry("alpha", "d1", storedEntry(0), 0, 1),
       );
     } finally {
       await dispose();
@@ -706,11 +708,18 @@ describe("FileNoticeStore refuses a symlinked document file on write", () => {
   it("refuses an event appended beside a symlinked events file", async () => {
     const { store, dataDir, dispose } = harness();
     try {
-      await store.appendEvent("alpha", event(), 10);
+      await store.appendEvent(
+        "alpha",
+        { id: "e0", receivedAt: "2026-10-08T13:00:00Z", event: event() },
+        10,
+      );
 
-      await refuseLink(
-        join(dataDir, "events", "alpha.json"),
-        () => store.appendEvent("alpha", event(), 10),
+      await refuseLink(join(dataDir, "events", "alpha.json"), () =>
+        store.appendEvent(
+          "alpha",
+          { id: "e0", receivedAt: "2026-10-08T13:00:00Z", event: event() },
+          10,
+        ),
       );
     } finally {
       await dispose();
@@ -723,7 +732,11 @@ describe("FileNoticeStore removes a symlinked events file with the notices", () 
     const { store, dataDir, dispose } = harness();
     const outsideDir = mkdtempSync(join(tmpdir(), "waves-outside-"));
     try {
-      await store.appendEvent("alpha", event(), 10);
+      await store.appendEvent(
+        "alpha",
+        { id: "e0", receivedAt: "2026-10-08T13:00:00Z", event: event() },
+        10,
+      );
       const stored = join(dataDir, "events", "alpha.json");
       const bytes = readFileSync(stored, "utf8");
       const outsideFile = join(outsideDir, "events.json");
