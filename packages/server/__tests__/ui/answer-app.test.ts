@@ -872,7 +872,9 @@ describe("the answer flow's signing", () => {
     await flush();
 
     const area = textarea("answer-words");
-    area.value = WORDS;
+    // Padded with white space on both sides, which the page must trim away
+    // before it builds the challenge and the body.
+    area.value = `  ${WORDS} \n`;
     area.dispatchEvent(new Event("input", { bubbles: true }));
     await flush();
 
