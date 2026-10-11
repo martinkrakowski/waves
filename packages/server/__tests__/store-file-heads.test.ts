@@ -14,9 +14,9 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
   return {
     ...actual,
-    readFile: (path: never, options: never) => {
+    open: (path: never, flags?: never) => {
       reads.paths.push(String(path));
-      return actual.readFile(path, options);
+      return actual.open(path, flags);
     },
   };
 });
@@ -78,7 +78,7 @@ describe("FileStore heads", () => {
     );
   });
 
-  it("ignores a head that cannot be read", async () => {
+  it("refuses a head that is a symlink", async () => {
     const { store, dataDir } = harness();
     await store.putSnapshot(snapshot("wv1"));
     symlinkSync(
@@ -86,13 +86,8 @@ describe("FileStore heads", () => {
       join(dataDir, "snapshots", "alpha", "wv2.head.json"),
     );
 
-    await expect(store.listSnapshotHeads("alpha")).resolves.toEqual([
-      {
-        wave: "wv1",
-        receivedAt: "2026-10-01T12:00:01Z",
-        intervalSeconds: 10,
-        lanes: 0,
-      },
-    ]);
+    await expect(store.listSnapshotHeads("alpha")).rejects.toThrow(
+      /is a symbolic link, not a file/,
+    );
   });
 });
