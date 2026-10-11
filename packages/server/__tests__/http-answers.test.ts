@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { connect } from "node:net";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -13,6 +14,7 @@ import {
 
 import { MemoryStore } from "../src/index.js";
 import { FAILURE_LIMIT } from "../src/application/limiters.js";
+import { POST_BODY_CAP } from "../src/infrastructure/http-write.js";
 import { EXPECTED_ORIGIN } from "../src/infrastructure/assertion-verifier.js";
 import type { LoadedKey } from "../src/infrastructure/owner-keys-file.js";
 import {
@@ -299,6 +301,65 @@ function warnLines(h: Wired): Record<string, unknown>[] {
     .logLines()
     .map((line) => JSON.parse(line) as Record<string, unknown>)
     .filter((line) => line.level === "warn");
+}
+
+/**
+ * A client that streams a chunked body without ever sending the terminating
+ * chunk, so the request stays open until the server cuts it. It reports the
+ * answer and how much got out before that.
+ */
+function streamChunkedOpen(
+  started: Started,
+  path: string,
+  total: number,
+  chunkBytes: number,
+): Promise<{ status: number; sent: number }> {
+  return new Promise((settled) => {
+    const socket = connect(started.port, "127.0.0.1");
+    socket.setEncoding("utf8");
+    const chunk = "x".repeat(chunkBytes);
+    let sent = 0;
+    let raw = "";
+    let done = false;
+    const stop = setInterval(() => {
+      if (sent >= total) {
+        clearInterval(stop);
+        return;
+      }
+      if (socket.write(`${chunkBytes.toString(16)}\r\n${chunk}\r\n`)) {
+        sent += chunkBytes;
+      }
+    }, 2);
+    const giveUp = setTimeout(() => {
+      finish();
+    }, 10_000);
+    function finish(): void {
+      if (done) {
+        return;
+      }
+      done = true;
+      clearInterval(stop);
+      clearTimeout(giveUp);
+      socket.destroy();
+      settled({ status: Number(raw.split(" ")[1] ?? 0), sent });
+    }
+    socket.on("data", (text: string) => {
+      raw += text;
+    });
+    socket.on("error", () => undefined);
+    socket.on("close", finish);
+    socket.write(
+      [
+        `POST ${path} HTTP/1.1`,
+        "Host: localhost",
+        "Content-Type: application/json",
+        "Transfer-Encoding: chunked",
+        "Connection: close",
+        "",
+        "",
+      ].join("\r\n"),
+    );
+  });
 }
 
 afterEach(() => cleanupHarnesses().then(() => expect(logLeaks()).toEqual([])));
@@ -803,6 +864,21 @@ describe("the answers route with keys loaded", () => {
       );
       expect(finalStatus(raw)).toBe("HTTP/1.1 413");
       expect(raw).toContain('{"error":"body too large"}');
+    });
+
+    it("answers 413 while a chunked body over the cap is still open", async () => {
+      const h = await wired();
+      // More than the cap, and no terminating chunk: the request is open
+      // until the server itself cuts it, so a 413 here is the server's own
+      // decision on the read, not an answer to a finished body.
+      const result = await streamChunkedOpen(
+        h.started,
+        answersPath(),
+        POST_BODY_CAP + 1_048_576,
+        4_096,
+      );
+      expect(result.status).toBe(413);
+      expect(result.sent).toBeLessThan(POST_BODY_CAP + 1_048_576);
     });
 
     it("400s a body that is not utf-8, and one that is not json", async () => {
