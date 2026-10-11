@@ -6,7 +6,7 @@ import {
   isLaneId,
   validateDecision,
   validateEvent,
-  validateStateEntry,
+  validateStoredStateEntry,
 } from "@hexagen-monaco/waves-contract";
 
 import type {
@@ -56,10 +56,11 @@ function isDecisionName(name: string): boolean {
  * match what was asked for, every revision must carry a positive integer
  * `revision`, a 64-hex `textSha256`, a string `receivedAt` and a `decision`
  * valid under the contract's `validateDecision` with that `project` and `id`,
- * and every entry must pass the contract's `validateStateEntry` as the writer's
- * request it was built from (with `expectedEntries` restored to its `index`),
- * its `index` must equal its position in the list, and its `revision` and
- * `textSha256` must pin to one of the decision's revisions. A bad file is never
+ * and every entry must pass the contract's `validateStoredStateEntry` — the
+ * stored half of W61, the only gate that accepts `source: "signed"` — with its
+ * `index` equal to its position in the list, a signed entry's
+ * `signature.index` equal to that same position (W63), and its `revision` and
+ * `textSha256` pinning to one of the decision's revisions. A bad file is never
  * thrown on: it is treated as absent so the inbox keeps listing the good
  * decisions alongside it, reads report no decision, and a write against it is a
  * conflict.
@@ -129,16 +130,22 @@ function readDecision(
     ) {
       return undefined;
     }
-    // Rebuild the writer's request: drop the store-added index/receivedAt and
-    // restore the entry count it pinned on, then validate with the contract.
-    const { index: _idx, receivedAt: _receivedAt, ...request } = ent;
+    // Validate the entry as the store holds it: no `expectedEntries`, and the
+    // contract's stored-entry rules — the only place `source: "signed"` (and
+    // the signature that must come with it) is accepted.
+    const { index: _idx, receivedAt: _receivedAt, ...stored } = ent;
     void _idx;
     void _receivedAt;
-    const validated = validateStateEntry({
-      ...request,
-      expectedEntries: index,
-    });
+    const validated = validateStoredStateEntry(stored);
     if (!validated.ok) {
+      return undefined;
+    }
+    // W63: a signed entry is bound to the position it stands at; a signature
+    // naming another index makes the file read as bad, as any bad entry does.
+    if (
+      validated.value.source === "signed" &&
+      validated.value.signature!.index !== i
+    ) {
       return undefined;
     }
     // The entry pins the revision and text hash it answered; both must match one
