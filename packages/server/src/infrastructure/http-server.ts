@@ -255,6 +255,8 @@ export function createHttpServer(deps: HttpServerDeps): Server {
     failures,
     rate,
     trustProxy: deps.trustProxy === true,
+    ownerKeys: deps.ownerKeys ?? [],
+    log,
   });
 
   const respond = async (
@@ -286,12 +288,13 @@ export function createHttpServer(deps: HttpServerDeps): Server {
     ) {
       // Only reachable with keys loaded: without them the match above was
       // replaced, and no other method reaches the answer handler at all.
-      if (matched.kind === "decisionNonce" && expected !== undefined) {
-        // With a read token configured, a nonce ask tells anyone whether a
-        // project and decision exist and how many entries the decision has,
-        // so it owes the same credential the read routes owe, checked by the
-        // same function and answered before the project is looked up or a
-        // nonce is issued.
+      if (expected !== undefined) {
+        // With a read token configured, an ask on either answer path tells
+        // anyone whether a project and decision exist and where the decision
+        // stands, so both owe the same credential the read routes owe,
+        // checked by the same function and answered before the project is
+        // looked up or a nonce is issued. A 404 against a 403 would say
+        // which decisions exist; the read token never accepts an answer.
         if (!authorised(req, expected)) {
           return send(res, jsonReply(401, { error: "unauthorized" }), {
             method,
@@ -329,6 +332,22 @@ export function createHttpServer(deps: HttpServerDeps): Server {
       return send(res, jsonReply(401, { error: "unauthorized" }), {
         method,
         extra: { ...extra, "WWW-Authenticate": CHALLENGE },
+      });
+    }
+    if (
+      READ_METHODS.has(method) &&
+      (matched.kind === "decisionNonce" || matched.kind === "decisionAnswers")
+    ) {
+      // With owner keys loaded, a GET or HEAD on an answer path is answered
+      // 405 before any project or decision is looked up, so it is the same
+      // for a known and an unknown decision and cannot be an existence
+      // oracle. It issues no nonce and has no side effect, which is what the
+      // page asks once to learn whether answering is switched on. Without
+      // keys the match above was replaced, so nothing changes here: the path
+      // answers like an unknown one.
+      return send(res, jsonReply(405, { error: "method not allowed" }), {
+        method,
+        extra: { ...extra, Allow: allowOf(matched) },
       });
     }
     if (!READ_METHODS.has(method) || matched.kind === "project") {

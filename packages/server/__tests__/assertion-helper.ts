@@ -51,6 +51,8 @@ export interface Changes {
   readonly signingKey?: KeyObject;
   /** Distinct text the credential id is built from, so two built keys differ. */
   readonly credentialSeed?: string;
+  /** The challenge text to sign; the fixed challenge when absent. */
+  readonly challengeText?: string;
 }
 
 export interface Built {
@@ -60,6 +62,9 @@ export interface Built {
   readonly input: AssertionInput;
   /** The challenge text the input's challenge was built from. */
   readonly text: string;
+  /** The private half of the built key, so a later assertion can be signed by
+   * the same key the keys list holds. */
+  readonly privateKey: KeyObject;
 }
 
 function sha256(bytes: Buffer): Buffer {
@@ -103,9 +108,9 @@ export function buildAssertion(changes: Changes = {}): Built {
   const clientData: Record<string, unknown> = {
     type: "webauthn.get",
     origin: EXPECTED_ORIGIN,
-    challenge: sha256(Buffer.from(CHALLENGE_TEXT, "utf8")).toString(
-      "base64url",
-    ),
+    challenge: sha256(
+      Buffer.from(changes.challengeText ?? CHALLENGE_TEXT, "utf8"),
+    ).toString("base64url"),
     crossOrigin: false,
   };
   changes.editClientData?.(clientData);
@@ -121,7 +126,8 @@ export function buildAssertion(changes: Changes = {}): Built {
 
   return {
     keys,
-    text: CHALLENGE_TEXT,
+    privateKey: pair.privateKey,
+    text: changes.challengeText ?? CHALLENGE_TEXT,
     input: {
       credentialId,
       authenticatorData: authenticatorData.toString("base64url"),

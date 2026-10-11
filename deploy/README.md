@@ -235,6 +235,69 @@ kubectl -n waves delete secret waves-enroll
 kubectl -n waves rollout restart deploy/waves
 ```
 
+### Owner keys (signed answers)
+
+The owner-keys file holds the owner's PUBLIC passkey keys, and it is what lets
+the status page accept a signed answer to a decision. No session ever makes or
+reads a private key: the owner signs on their own machine, the server only
+checks the signature against the public keys it was given. Without the file
+both answer routes are disabled and answer 404, exactly as an unknown path
+does.
+
+The rule is the opposite of the two token Secrets: the variable unset means the
+feature is off, but a variable that names a missing or invalid file stops the
+server from starting. So the Secret comes first, the overlay second — the
+overlay that sets `WAVES_OWNER_KEYS_FILE` is never applied before the Secret
+exists. It is `deploy/k8s/overlays/midnight-owner-keys`, which nothing applies
+by default.
+
+The owner's steps, one per step:
+
+1. Write the keys file at home, mode 0600 by the `umask`, with the shape
+   `{"schema":"waves-owner-keys/v1","keys":[ … ]}`. The key object itself is
+   specified in [the waves-v1 document](../docs/waves-v1.md), under
+   "Owner keys and signed answers".
+
+   ```sh
+   umask 077
+   mkdir -p ~/waves-owner-keys && nano ~/waves-owner-keys/owner-keys.json
+   ```
+
+2. Create the Secret from that file over stdin, so the file is never copied to
+   midnight:
+
+   ```sh
+   ssh m 'KUBECONFIG=$HOME/.kube/config kubectl -n waves create secret generic waves-owner-keys --from-file=owner-keys.json=/dev/stdin' < ~/waves-owner-keys/owner-keys.json
+   ```
+
+3. Deploy with the overlay:
+
+   ```sh
+   WAVES_OVERLAY=deploy/k8s/overlays/midnight-owner-keys sh deploy/deploy.sh
+   ```
+
+4. Check it: the pod is Running, and a `GET` of the nonce path of any decision
+   answers `405` (answering is on) where it answered `404` before:
+
+   ```sh
+   curl -s --cacert "$HOME/.config/waves/ca.crt" -o /dev/null -w '%{http_code}\n' https://waves.midnight.lan/api/v1/projects/<project>/decisions/<decision>/nonce
+   ```
+
+To turn it off, deploy again without the overlay: the mount is removed, the
+routes answer 404, and nothing is deleted. To change a key, replace the Secret
+and restart the deployment — the file is read once at startup, so a new Secret
+alone changes nothing until the pod restarts:
+
+```sh
+ssh m 'KUBECONFIG=$HOME/.kube/config kubectl -n waves create secret generic waves-owner-keys --from-file=owner-keys.json=/dev/stdin --dry-run=client -o yaml | KUBECONFIG=$HOME/.kube/config kubectl apply -f -' < ~/waves-owner-keys/owner-keys.json
+ssh m 'KUBECONFIG=$HOME/.kube/config kubectl -n waves rollout restart deployment/waves'
+```
+
+The Secret is writable by anything with cluster access, so it decides only what
+the PAGE accepts. A reader of a signed answer, such as
+`waves decision read --signed`, trusts only the root-owned
+`/etc/waves/owner-keys.json` on the laptop, never the Secret.
+
 ### Automatic registration
 
 `waves register-all` reads the list you keep at `~/.config/waves/projects.json`

@@ -17,6 +17,7 @@ import { describe, expect, it } from "vitest";
 
 const DEPLOY = fileURLToPath(new URL("../../../deploy/", import.meta.url));
 const MIDNIGHT = `${DEPLOY}k8s/overlays/midnight/`;
+const MIDNIGHT_OWNER_KEYS = `${DEPLOY}k8s/overlays/midnight-owner-keys/`;
 const BASE_DEPLOYMENT = `${DEPLOY}k8s/base/deployment.yaml`;
 
 interface Manifest {
@@ -140,6 +141,78 @@ describe("the midnight overlay", () => {
       .filter((operation) => operation.op === "add")
       .map((operation) => operation.value ?? {});
     expect(added).toContainEqual({ name: "WAVES_TRUST_PROXY", value: "1" });
+  });
+});
+
+describe("the midnight-owner-keys overlay", () => {
+  const path = `${MIDNIGHT_OWNER_KEYS}kustomization.yaml`;
+  const body = readFileSync(path, "utf8");
+
+  it("exists and its only resource is the midnight overlay", () => {
+    const resources = body.match(/resources:\n((?: {2}- .*\n)+)/);
+    expect(resources, "the overlay lists resources").not.toBeNull();
+    const listed = (resources?.[1] ?? "")
+      .split("\n")
+      .filter((line) => line.trim() !== "")
+      .map((line) => line.replace(/^ {2}- /, "").trim());
+    expect(listed).toEqual(["../midnight"]);
+  });
+
+  it("mounts the owner-keys Secret read only and names its file", () => {
+    const patches = patchesOf({ body });
+    const deployment = patches.find((patch) =>
+      JSON.stringify(patch).includes("WAVES_OWNER_KEYS_FILE"),
+    );
+    expect(deployment).toBeDefined();
+
+    const adds = (
+      deployment as { op: string; path: string; value?: unknown }[]
+    ).filter((operation) => operation.op === "add");
+    expect(adds).toHaveLength(3);
+
+    const values = adds.map((operation) => operation.value ?? {});
+    expect(values).toContainEqual({
+      name: "owner-keys",
+      secret: { secretName: "waves-owner-keys", defaultMode: 288 },
+    });
+    expect(values).toContainEqual({
+      name: "owner-keys",
+      mountPath: "/run/secrets/waves-owner-keys",
+      readOnly: true,
+    });
+    expect(values).toContainEqual({
+      name: "WAVES_OWNER_KEYS_FILE",
+      value: "/run/secrets/waves-owner-keys/owner-keys.json",
+    });
+    const paths = adds.map((operation) => operation.path);
+    expect(paths).toContain("/spec/template/spec/volumes/-");
+    expect(paths).toContain("/spec/template/spec/containers/0/volumeMounts/-");
+    expect(paths).toContain("/spec/template/spec/containers/0/env/-");
+  });
+
+  it("does not make the Secret optional, so a missing one is named in the event", () => {
+    expect(body).not.toContain("optional");
+  });
+
+  // The overlay that nothing applies by default must be the only place the
+  // variable is set: an owner-keys mount in the base or the default overlay
+  // would start pods that refuse to start before the owner has created the
+  // Secret, which is the exact mistake this overlay exists to avoid.
+  it.each([
+    ["the base deployment", BASE_DEPLOYMENT],
+    ["the base kustomization", `${DEPLOY}k8s/base/kustomization.yaml`],
+    ["the midnight overlay", `${MIDNIGHT}kustomization.yaml`],
+  ])("keeps %s dark", (_name, file) => {
+    const text = readFileSync(file, "utf8");
+    expect(text).not.toContain("WAVES_OWNER_KEYS_FILE");
+    expect(text).not.toContain("waves-owner-keys");
+    expect(text).not.toContain("midnight-owner-keys");
+  });
+
+  it("leaves the deploy script's default overlay unchanged", () => {
+    expect(readFileSync(`${DEPLOY}deploy.sh`, "utf8")).not.toContain(
+      "midnight-owner-keys",
+    );
   });
 });
 

@@ -514,10 +514,59 @@ the revision via `decisionBindingText`.
 
 ### Owner keys and signed answers
 
-Stage 2 (design W61, W62). **The routes do not exist yet**: there is no nonce route,
-no answers route, and no way to register, replace or remove a key, with any token.
-What follows is the contract the server, the page and the client will be held to;
-assertion checking (`node:crypto`) belongs to an adapter.
+Stage 2 (design W61, W62) is wired. **The two routes.**
+`POST /api/v1/projects/<project>/decisions/<decision>/nonce` and
+`POST /api/v1/projects/<project>/decisions/<decision>/answers` are the owner's
+own way in, and both answer `404 not found` — byte for byte like a path that was
+never a route, for every method — while no owner-keys file is configured: a
+server with no keys shows no answer buttons, and a probe cannot tell a disabled
+route from an unknown one. There is still no way to register, replace or remove
+a key with any token: the keys are the file the operator mounts. With the keys
+loaded, a GET or HEAD on either path answers `405 method not allowed` with
+`Allow: POST`, before any project or decision is looked up and with no side
+effect — the page's one way to learn whether answering is switched on — and
+after the read token a deployment may configure has been answered. What follows
+is the contract the server, the page and the client are held to; assertion
+checking (`node:crypto`) belongs to an adapter.
+
+**The nonce route.** No body, no bearer, no cookie: an `Authorization` header
+changes nothing. It answers `200 { "nonce": …, "index": … }` — the nonce 43
+base64url characters, the index the position the next state entry will take. A
+nonce is single use — the request that answers the decision spends it, whatever
+the attempt ends in — lives two minutes, and the store holds at most 4 alive
+per decision and 64 in all, dropping the oldest rather than refusing an ask.
+
+**The answers route.** The body is the answer request below, and no token is an
+answer: the owner's assertion is the only credential, and a bearer — a project
+token, the admin token, anything — changes nothing. The read token a
+deployment may configure is owed by this route like every read, answered `401`
+before anything is looked up, because a 404 against a 403 would tell anyone
+which decisions exist; it is a READ credential, never what makes an answer
+accepted. An `Origin` other than `https://waves.midnight.lan` on either route
+is `403 cross-origin writes refused`, before anything is read or spent. The
+checks run in one order: the query string (`400 bad query`), the origin, the
+address's lockout (`429 too many failures`), its allowance (`429 too many
+writes`, `Retry-After: 1`), the content type (`415`), the body cap (`413`),
+UTF-8 and JSON (`400`), and the contract's validation (`400`, naming the paths
+it refuses). Then the model, which spends the nonce before the stale check, so
+every refusal after it has burned the nonce: a replayed answer never learns
+whether the first one was refused for being stale, one-way or unsigned. Its
+answers: `201 { "index": …, "state": … }`; `404 not found` for a project or
+decision this service does not hold; `403
+{"error":"not verified","reason":"not-verified"}` for a bad signature or a
+spent, expired, invented or misfiled nonce, with the precise reason
+(`bad-signature`, `wrong-challenge`, …) in the server log and nowhere else;
+`409 {"error":"the decision changed","reason":"stale",…}` with the current
+revision, `textSha256` and entry count when the pin moved; `409` with reason
+`one-way-door`, `act-elsewhere`, `signed-cap` or `entry-ceiling` for the doors
+of W68 and the caps; and `500 internal` for the one failure no request can
+cause. Every reply carries `no-store`, and nothing anywhere in it is repaired
+or defaulted. The failure lockout the route answers `429 too many failures`
+with is per client address, and it is the same lockout the token-bearing
+writes use: ten failures in sixty seconds lock that address out of the nonce
+route, the answers route and every write, until the window passes. Behind a
+proxy this is per client only when `WAVES_TRUST_PROXY` is set exactly as the
+deployment sets it.
 
 **The challenge text.** `answerChallengeText`
 (`packages/contract/src/domain/notice-answer.ts`) returns one JSON text, no white
