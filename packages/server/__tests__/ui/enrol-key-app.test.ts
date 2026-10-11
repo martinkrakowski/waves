@@ -203,7 +203,9 @@ describe("the /enrol-key route through the app", () => {
     press(CREATE);
     await settle();
     press(TEST);
-    await settle();
+    await vi.waitFor(() => {
+      expect(textsOf(enrolView(), ".enrol-check")).toHaveLength(5);
+    });
     expect(enrol.fetchImpl.calls).toStrictEqual(introCalls);
     enrol.app.stop();
 

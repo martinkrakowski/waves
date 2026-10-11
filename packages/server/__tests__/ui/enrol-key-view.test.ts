@@ -356,6 +356,9 @@ describe("renderEnrolKey", () => {
     expect(text).toContain("/etc/waves/owner-keys.json");
     expect(text).toContain("fleet registry");
     expect(text).toContain("before pinning it");
+    expect(text).toContain(
+      "passkey that can be synced to other devices may also be usable from them",
+    );
   });
 
   it("reports a browser without PublicKeyCredential and offers no button", () => {
