@@ -688,6 +688,35 @@ describe("readSigned", () => {
       );
     });
 
+    it("refuses a correctly signed assertion made cross-origin", async () => {
+      const key = answerKey();
+      const built = signedEntry({ key, clientData: { crossOrigin: true } });
+      const ran = await verify({
+        pin: pinReadOf([{ key, label: "l" }]),
+        entries: [built.entry],
+      });
+      expectRefused(ran, "the assertion was made cross-origin");
+    });
+
+    it("refuses client data with an invalid UTF-8 byte, however it is signed", async () => {
+      const key = answerKey();
+      const built = signedEntry({
+        key,
+        rawClientData: (serialized) =>
+          Buffer.concat([
+            Buffer.from(serialized.slice(0, -1), "utf8"),
+            Buffer.from(',"extra":"', "utf8"),
+            Buffer.from([0xff]),
+            Buffer.from('"}', "utf8"),
+          ]),
+      });
+      const ran = await verify({
+        pin: pinReadOf([{ key, label: "l" }]),
+        entries: [built.entry],
+      });
+      expectRefused(ran, "the assertion's clientDataJSON is not a JSON object");
+    });
+
     it("names a pinned key that is not P-256", async () => {
       const key = answerKey();
       const { publicKey } = generateKeyPairSync("ec", {

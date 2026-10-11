@@ -25,7 +25,9 @@ const USER_PRESENT = 0x01;
 const USER_VERIFIED = 0x04;
 
 const encoder = new TextEncoder();
-const decoder = new TextDecoder();
+/** Strict UTF-8: an invalid sequence in client data is a refusal, never a
+ * replacement character that quietly changes what was signed. */
+const decoder = new TextDecoder("utf-8", { fatal: true });
 
 /**
  * The two cryptographic answers the checks need, as plain functions so this
@@ -73,6 +75,14 @@ export function decodeBase64Url(text: string): Uint8Array | undefined {
   return decode(text.replace(/-/g, "+").replace(/_/g, "/"));
 }
 
+/**
+ * `atob` is lenient — it accepts strings the two alphabets above do not name,
+ * and says nothing about the padding a canonical spelling carries. Decoding
+ * through it is safe only because every text that reaches here has already
+ * passed the contract's canonical base64 pattern (the pin file's SPKIs) or the
+ * base64url check right above (everything in an assertion): nothing this
+ * leniency lets through has escaped those gates.
+ */
 function decode(text: string): Uint8Array | undefined {
   try {
     const binary = atob(text);
@@ -211,8 +221,9 @@ export type AssertionResult =
  * Everything a reader checks on the assertion itself (W63): the challenge is
  * rebuilt from what is being answered — the project, the decision, the
  * recomputed hash, the position, the verdict, the owner's words, the nonce —
- * and the assertion must say the same thing. `clientDataJSON` must name
- * `webauthn.get`, the origin and the challenge exactly; `authenticatorData`
+ * and the assertion must say the same thing. `clientDataJSON` must be strict
+ * UTF-8 and name `webauthn.get`, the origin and the challenge exactly, and must
+ * not say the assertion was made cross-origin; `authenticatorData`
  * must be long enough to have flags, must hash the relying party and must say
  * the user was present and verified; and the ES256 signature must verify
  * against the pinned key's SPKI. Each refusal is its own sentence.
@@ -241,7 +252,16 @@ export function checkAssertion(
       reason: "the assertion's clientDataJSON is not valid base64url",
     };
   }
-  const clientData = parseJson(decoder.decode(clientDataBytes));
+  let clientDataText: string;
+  try {
+    clientDataText = decoder.decode(clientDataBytes);
+  } catch {
+    return {
+      ok: false,
+      reason: "the assertion's clientDataJSON is not a JSON object",
+    };
+  }
+  const clientData = parseJson(clientDataText);
   if (clientData === undefined) {
     return {
       ok: false,
@@ -265,6 +285,12 @@ export function checkAssertion(
       ok: false,
       reason:
         "the assertion's challenge does not match the challenge of this answer",
+    };
+  }
+  if (own(clientData, "crossOrigin") === true) {
+    return {
+      ok: false,
+      reason: "the assertion was made cross-origin",
     };
   }
 

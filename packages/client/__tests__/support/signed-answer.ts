@@ -88,6 +88,12 @@ export interface SignedEntryInput {
   readonly challenge?: Partial<AnswerChallengeValues>;
   /** What the assertion really says, when the test is of a lie in it. */
   readonly clientData?: Record<string, unknown>;
+  /**
+   * The client data's real bytes, made from the JSON the ceremony would post,
+   * when the test is of bytes `JSON.stringify` cannot write — an invalid UTF-8
+   * sequence, say. The signature is made over whatever this answers.
+   */
+  readonly rawClientData?: (serialized: string) => Buffer;
   /** The flags byte the authenticator really set. */
   readonly flags?: number;
   /** The relying party the authenticator really hashed. */
@@ -131,7 +137,9 @@ export function signedEntry(input: SignedEntryInput): BuiltEntry {
     challenge: challengeHash.toString("base64url"),
     ...input.clientData,
   };
-  const clientDataBytes = Buffer.from(JSON.stringify(clientData), "utf8");
+  const clientDataBytes =
+    input.rawClientData?.(JSON.stringify(clientData)) ??
+    Buffer.from(JSON.stringify(clientData), "utf8");
   const rpIdHash = createHash("sha256")
     .update(input.rpId ?? RP_ID, "utf8")
     .digest();
