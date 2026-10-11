@@ -17,6 +17,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   readTextNoFollow,
+  removeDocument,
   writeAtomic,
 } from "../src/infrastructure/store-helpers.js";
 
@@ -174,6 +175,21 @@ describe("writeAtomic", () => {
 
       await expect(
         writeAtomic(join(dir, "file", "x"), "payload"),
+      ).rejects.toThrow();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("removeDocument", () => {
+  it("refuses a path under a parent that is a file", async () => {
+    const dir = tempDir("waves-nofollow-");
+    try {
+      writeFileSync(join(dir, "file"), "");
+
+      await expect(
+        removeDocument(join(dir, "file", "x")),
       ).rejects.toThrow();
     } finally {
       await rm(dir, { recursive: true, force: true });

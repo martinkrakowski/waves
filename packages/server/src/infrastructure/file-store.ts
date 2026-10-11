@@ -16,6 +16,7 @@ import {
   assertRealDirectory,
   errorCode,
   readTextNoFollow,
+  removeDocument,
   writeAtomic,
 } from "./store-helpers.js";
 
@@ -144,6 +145,9 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
       const projects = await this.#readProjects();
       projects.delete(id);
       await writeAtomic(this.#projectsPath(), serialiseProjects(projects));
+      // rm removes whatever is at the name without following it — rm unlinks
+      // a link and a recursive rm does not descend through one — so a planted
+      // link does not wedge a project delete: it goes with the project.
       await rm(this.#projectDir(id), { recursive: true, force: true });
       if (statusDir) {
         await rm(this.#statusPath(id), { force: true });
@@ -221,8 +225,8 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
     await this.#serialised(async () => {
       await this.#checkedDataDir(false);
       await this.#assertSnapshotsPath(this.#projectDir(project));
-      await rm(this.#snapshotPath(project, wave), { force: true });
-      await rm(this.#headPath(project, wave), { force: true });
+      await removeDocument(this.#snapshotPath(project, wave));
+      await removeDocument(this.#headPath(project, wave));
     });
   }
 

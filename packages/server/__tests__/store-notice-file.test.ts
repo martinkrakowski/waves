@@ -1,5 +1,6 @@
 import {
   chmodSync,
+  existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -712,6 +713,30 @@ describe("FileNoticeStore refuses a symlinked document file on write", () => {
         () => store.appendEvent("alpha", event(), 10),
       );
     } finally {
+      await dispose();
+    }
+  });
+});
+
+describe("FileNoticeStore removes a symlinked events file with the notices", () => {
+  it("deletes a symlinked events file without following it", async () => {
+    const { store, dataDir, dispose } = harness();
+    const outsideDir = mkdtempSync(join(tmpdir(), "waves-outside-"));
+    try {
+      await store.appendEvent("alpha", event(), 10);
+      const stored = join(dataDir, "events", "alpha.json");
+      const bytes = readFileSync(stored, "utf8");
+      const outsideFile = join(outsideDir, "events.json");
+      writeFileSync(outsideFile, bytes);
+      rmSync(stored);
+      symlinkSync(outsideFile, stored);
+
+      await expect(store.deleteNotices("alpha")).resolves.toBeUndefined();
+
+      expect(existsSync(stored)).toBe(false);
+      expect(readFileSync(outsideFile, "utf8")).toBe(bytes);
+    } finally {
+      await rm(outsideDir, { recursive: true, force: true });
       await dispose();
     }
   });

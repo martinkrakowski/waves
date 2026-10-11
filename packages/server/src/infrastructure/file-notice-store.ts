@@ -382,6 +382,9 @@ export class FileNoticeStore implements NoticeStorePort {
       await this.#checkedDataDir(false);
       await this.#assertRealDirectoryOrAbsent(this.#decisionsDir());
       await this.#assertRealDirectoryOrAbsent(this.#eventsDir());
+      // rm removes whatever is at the name without following it — rm unlinks
+      // a link and a recursive rm does not descend through one — so a planted
+      // link does not wedge a delete of the notices: it goes with them.
       await rm(this.#projectDecisionsDir(project), {
         recursive: true,
         force: true,

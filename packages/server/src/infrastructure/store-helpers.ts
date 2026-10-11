@@ -139,6 +139,26 @@ export async function writeAtomic(
   }
 }
 
+/**
+ * Removes one document file; a missing one is not an error; a symbolic link
+ * is refused and left in place — removing it is the operator's.
+ */
+export async function removeDocument(path: string): Promise<void> {
+  let info: Stats;
+  try {
+    info = await lstat(path);
+  } catch (error) {
+    if (errorCode(error) === "ENOENT") {
+      return;
+    }
+    throw error;
+  }
+  if (info.isSymbolicLink()) {
+    throw new Error(`${path} is a symbolic link, not a file`);
+  }
+  await rm(path, { force: true });
+}
+
 function ignore(): undefined {
   return undefined;
 }

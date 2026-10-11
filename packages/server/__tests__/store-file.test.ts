@@ -429,6 +429,73 @@ describe("FileStore refuses a symlinked document file on write", () => {
   });
 });
 
+describe("FileStore refuses a symlinked document file on a single delete", () => {
+  it("refuses to delete a single snapshot that is a symlink", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.putSnapshot(snapshot("wv1"));
+
+      await refuseLink(
+        join(dataDir, "snapshots", "alpha", "wv1.json"),
+        () => store.deleteSnapshot("alpha", "wv1"),
+      );
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("resolves the deletion of a wave that is not there", async () => {
+    const { store, dispose } = harness();
+    try {
+      await store.putSnapshot(snapshot("wv1"));
+
+      await expect(
+        store.deleteSnapshot("alpha", "wv2"),
+      ).resolves.toBeUndefined();
+      await expect(store.listSnapshots("alpha")).resolves.toEqual([
+        snapshot("wv1"),
+      ]);
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("removes symlinked documents with the project, without following them", async () => {
+    const { store, dataDir, dispose } = harness();
+    const outsideDir = mkdtempSync(join(tmpdir(), "waves-outside-"));
+    try {
+      await store.putProject(project("alpha"));
+      await store.putSnapshot(snapshot("wv1"));
+      await store.putStatus({
+        status: status("alpha"),
+        receivedAt: "2026-10-01T12:00:01Z",
+      });
+      const snapshotPath = join(dataDir, "snapshots", "alpha", "wv1.json");
+      const statusPath = join(dataDir, "status", "alpha.json");
+      const snapshotBytes = readFileSync(snapshotPath, "utf8");
+      const statusBytes = readFileSync(statusPath, "utf8");
+      const outsideSnapshot = join(outsideDir, "snapshot.json");
+      const outsideStatus = join(outsideDir, "status.json");
+      writeFileSync(outsideSnapshot, snapshotBytes);
+      writeFileSync(outsideStatus, statusBytes);
+      rmSync(snapshotPath);
+      rmSync(statusPath);
+      symlinkSync(outsideSnapshot, snapshotPath);
+      symlinkSync(outsideStatus, statusPath);
+
+      await expect(store.deleteProject("alpha")).resolves.toBeUndefined();
+
+      expect(existsSync(snapshotPath)).toBe(false);
+      expect(existsSync(statusPath)).toBe(false);
+      expect(readFileSync(outsideSnapshot, "utf8")).toBe(snapshotBytes);
+      expect(readFileSync(outsideStatus, "utf8")).toBe(statusBytes);
+    } finally {
+      await rm(outsideDir, { recursive: true, force: true });
+      await dispose();
+    }
+  });
+});
+
 describe("FileStore concurrent creates", () => {
   it("lets exactly one of two creates of the same id win", async () => {
     const { store, dispose } = harness();
