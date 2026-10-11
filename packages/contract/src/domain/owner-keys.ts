@@ -35,12 +35,17 @@ const OWNER_KEY_KEYS = [
 
 /** Standard base64, padding included: an SPKI DER blob as a browser's
  * `getPublicKey()` hands it over. `+` and `/` are in the alphabet here and `=`
- * ends it, which is the opposite of every byte string in an answer. A P-256
- * SPKI is 124 characters. */
+ * ends it, which is the opposite of every byte string in an answer. A length
+ * that needs padding must carry it — two `=` for one byte left over, one for two
+ * — a length of 4n+1 decodes to no whole number of bytes and is refused, and the
+ * bits at the end of the last character that no byte uses must be zero — so one
+ * run of bytes has one spelling here too. A P-256 SPKI is 124 characters, a
+ * whole number of four-character groups. */
 export const PUBLIC_KEY_SPKI_RULE: StringRule = {
   minChars: 80,
   maxChars: 200,
-  pattern: /^[A-Za-z0-9+/]+={0,2}$/,
+  pattern:
+    /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/][AQgw]==|[A-Za-z0-9+/]{2}[AEIMQUYcgkosw048]=)?$/,
 };
 
 function readOwnerKey(

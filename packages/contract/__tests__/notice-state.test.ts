@@ -111,7 +111,7 @@ describe("validateStateEntry — refusals", () => {
         source: "reported",
         signature: {
           credentialId: "A".repeat(16),
-          authenticatorData: "B".repeat(50),
+          authenticatorData: "B".repeat(49) + "A",
           clientDataJSON: "C".repeat(20),
           signature: "D".repeat(8),
           nonce: "A".repeat(43),

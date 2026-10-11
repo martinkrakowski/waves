@@ -152,12 +152,16 @@ describe("validateOwnerKeys", () => {
   });
 
   it("accepts the standard base64 alphabet and its padding in publicKeySpki", () => {
-    const spki = `${"A".repeat(118)}+/==`;
-    expect(
-      expectValidKeys(
-        minimalKeys({ keys: [ownerKey({ publicKeySpki: spki })] }),
-      ).keys[0]?.publicKeySpki,
-    ).toBe(spki);
+    for (const spki of [
+      `${"A".repeat(50)}+/${"A".repeat(66)}==`,
+      `${"A".repeat(119)}=`,
+    ]) {
+      expect(
+        expectValidKeys(
+          minimalKeys({ keys: [ownerKey({ publicKeySpki: spki })] }),
+        ).keys[0]?.publicKeySpki,
+      ).toBe(spki);
+    }
   });
 
   it("refuses a publicKeySpki outside the standard base64 alphabet", () => {
@@ -173,6 +177,41 @@ describe("validateOwnerKeys", () => {
       }),
       ["/keys/0/publicKeySpki"],
     );
+  });
+
+  it("refuses a publicKeySpki missing the padding its length needs", () => {
+    for (const spki of [
+      "A".repeat(118),
+      "A".repeat(119),
+      `${"A".repeat(118)}=`,
+      `${"A".repeat(119)}==`,
+    ]) {
+      keysPaths(minimalKeys({ keys: [ownerKey({ publicKeySpki: spki })] }), [
+        "/keys/0/publicKeySpki",
+      ]);
+    }
+  });
+
+  it("refuses a length of 4n+1 and bits no byte uses", () => {
+    for (const spki of [
+      "A".repeat(121),
+      `${"A".repeat(116)}AB==`,
+      `${"A".repeat(117)}AB=`,
+    ]) {
+      keysPaths(minimalKeys({ keys: [ownerKey({ publicKeySpki: spki })] }), [
+        "/keys/0/publicKeySpki",
+      ]);
+    }
+  });
+
+  it("accepts the canonical neighbour of every refused spelling", () => {
+    for (const spki of [`${"A".repeat(116)}AA==`, `${"A".repeat(117)}AE=`]) {
+      expect(
+        expectValidKeys(
+          minimalKeys({ keys: [ownerKey({ publicKeySpki: spki })] }),
+        ).keys[0]?.publicKeySpki,
+      ).toBe(spki);
+    }
   });
 
   it("bounds label to 1 to 80 characters of NFC notice text", () => {

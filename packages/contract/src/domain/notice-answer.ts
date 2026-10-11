@@ -45,8 +45,15 @@ export const ANSWER_SIGNATURE_KEYS = [
 const ANSWER_VERDICTS = ["approved", "declined", "answered"] as const;
 
 /** Base64url with no padding: the alphabet of the bytes a browser hands over.
- * `+`, `/` and `=` are refused, so a value is one spelling of its bytes. */
-const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
+ * `+`, `/` and `=` are refused, a length of 4n+1 decodes to no whole number of
+ * bytes and is refused, and the bits at the end of the last character that no
+ * byte uses must be zero — so one run of bytes has one spelling. The two
+ * trailing forms are the two lengths that are not a multiple of four: two
+ * characters whose last is in `AQgw`, three whose last is in
+ * `AEIMQUYcgkosw048`. The empty string matches; the `minChars` of each rule is
+ * what refuses it. */
+const BASE64URL_PATTERN =
+  /^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$/;
 
 /** 43 base64url characters is 32 bytes, the size of a nonce. */
 export const NONCE_RULE: StringRule = {

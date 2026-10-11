@@ -12,7 +12,7 @@ const NONCE = "A".repeat(43);
 function minimalSignature(): Record<string, unknown> {
   return {
     credentialId: "A".repeat(16),
-    authenticatorData: "B".repeat(50),
+    authenticatorData: "B".repeat(49) + "A",
     clientDataJSON: "C".repeat(20),
     signature: "D".repeat(8),
     nonce: NONCE,

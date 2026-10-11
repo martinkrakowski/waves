@@ -553,10 +553,14 @@ posts to the answers route. A closed object with keys exactly `revision`,
 | `clientDataJSON`    | string  | yes      | 20 to 2048 base64url characters                      |
 | `signature`         | string  | yes      | 8 to 200 base64url characters                        |
 
-Base64url is `A-Z a-z 0-9 _ -`; `=`, `+` and `/` are refused, so one run of bytes has
-one spelling. `answered` needs an `option` or `words`; `declined` refuses an
-`option`; nothing else is inferred from the verdict. Nothing here is repaired or
-defaulted: a field that fails is refused, naming its path.
+Base64url is `A-Z a-z 0-9 _ -` with no padding: `=`, `+` and `/` are refused, a
+length of 4n+1 decodes to no whole number of bytes and is refused, and the bits at
+the end of the last character that no byte uses must be zero — so of a value of
+4n+3 characters `…AB` and `…AE` are the same run of bytes and only the second is
+accepted, and of a value of 4n+2 only a last character in `AQgw` is. One run of
+bytes therefore has one spelling. `answered` needs an `option` or `words`;
+`declined` refuses an `option`; nothing else is inferred from the verdict. Nothing
+here is repaired or defaulted: a field that fails is refused, naming its path.
 
 **The stored signed entry.** `StateSource` is `session` | `reported` | `signed`, and
 `validateStateEntry` — the body a project token posts — still refuses `signed` and
@@ -572,16 +576,22 @@ is not `signed` is refused.
 the server. A closed object `{ "schema": "waves-owner-keys/v1", "keys": [ … ] }` with
 1 to 8 keys, each a closed object:
 
-| field           | type    | required | bounds                                                                 |
-| --------------- | ------- | -------- | ---------------------------------------------------------------------- |
-| `credentialId`  | string  | yes      | 16 to 1366 base64url characters                                        |
-| `publicKeySpki` | string  | yes      | 80 to 200 standard-base64 characters, `=` allowed; a P-256 SPKI is 124 |
-| `label`         | string  | yes      | 1 to 80 characters, NFC, no leading/trailing space                     |
-| `addedAt`       | string  | yes      | strict ISO-8601 UTC                                                    |
-| `retired`       | boolean | no       | —                                                                      |
+| field           | type    | required | bounds                                                    |
+| --------------- | ------- | -------- | --------------------------------------------------------- |
+| `credentialId`  | string  | yes      | 16 to 1366 base64url characters                           |
+| `publicKeySpki` | string  | yes      | 80 to 200 standard-base64 characters; a P-256 SPKI is 124 |
+| `label`         | string  | yes      | 1 to 80 characters, NFC, no leading/trailing space        |
+| `addedAt`       | string  | yes      | strict ISO-8601 UTC                                       |
+| `retired`       | boolean | no       | —                                                         |
 
 An empty `keys` array is refused, and two keys with the same `credentialId` are
 refused, naming the second one's path.
+
+Standard base64 is `A-Z a-z 0-9 + /` followed by the padding the length needs: two `=`
+when the bytes left over are one, one `=` when they are two, none when they are
+three, and a length of 4n+1 is refused. The bits at the end of the last character
+that no byte uses must be zero here as well, so one run of bytes has one spelling
+in this document too.
 
 ### The event
 

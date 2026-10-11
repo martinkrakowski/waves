@@ -107,7 +107,7 @@ describe("answerChallengeText", () => {
 });
 
 const CREDENTIAL_ID = "A".repeat(16);
-const AUTHENTICATOR_DATA = "B".repeat(50);
+const AUTHENTICATOR_DATA = "B".repeat(49) + "A";
 const CLIENT_DATA = "C".repeat(20);
 const SIGNATURE = "D".repeat(8);
 
@@ -274,7 +274,7 @@ describe("validateAnswerRequest", () => {
     expect(
       expectValidAnswer({
         ...minimalAnswer(),
-        authenticatorData: "B".repeat(50),
+        authenticatorData: AUTHENTICATOR_DATA,
       }).authenticatorData,
     ).toBe(AUTHENTICATOR_DATA);
     expect(
@@ -339,6 +339,54 @@ describe("validateAnswerRequest", () => {
       "/signature",
     ]);
     expect(expectValidAnswer(minimalAnswer()).credentialId).toBe(CREDENTIAL_ID);
+  });
+
+  it("refuses a length of 4n+1, which decodes to no whole byte", () => {
+    answerPaths({ ...minimalAnswer(), credentialId: "A".repeat(17) }, [
+      "/credentialId",
+    ]);
+    answerPaths({ ...minimalAnswer(), clientDataJSON: "A".repeat(21) }, [
+      "/clientDataJSON",
+    ]);
+    answerPaths({ ...minimalAnswer(), authenticatorData: "A".repeat(53) }, [
+      "/authenticatorData",
+    ]);
+    answerPaths({ ...minimalAnswer(), signature: "A".repeat(9) }, [
+      "/signature",
+    ]);
+  });
+
+  it("refuses a value whose last character leaves bits no byte uses", () => {
+    answerPaths({ ...minimalAnswer(), credentialId: `${"A".repeat(16)}AB` }, [
+      "/credentialId",
+    ]);
+    answerPaths({ ...minimalAnswer(), clientDataJSON: `${"A".repeat(20)}AB` }, [
+      "/clientDataJSON",
+    ]);
+    answerPaths(
+      { ...minimalAnswer(), authenticatorData: `${"A".repeat(50)}B` },
+      ["/authenticatorData"],
+    );
+    answerPaths({ ...minimalAnswer(), signature: `${"D".repeat(9)}B` }, [
+      "/signature",
+    ]);
+    answerPaths({ ...minimalAnswer(), nonce: `${"A".repeat(42)}B` }, [
+      "/nonce",
+    ]);
+  });
+
+  it("accepts the canonical neighbour of every refused spelling", () => {
+    for (const [field, canonical] of [
+      ["credentialId", "A".repeat(17) + "A"],
+      ["clientDataJSON", "A".repeat(21) + "A"],
+      ["authenticatorData", "A".repeat(50) + "E"],
+      ["signature", "D".repeat(9) + "A"],
+      ["nonce", "A".repeat(42) + "E"],
+    ] as const) {
+      expect(
+        expectValidAnswer({ ...minimalAnswer(), [field]: canonical })[field],
+      ).toBe(canonical);
+    }
   });
 
   it("names every path it refuses", () => {
