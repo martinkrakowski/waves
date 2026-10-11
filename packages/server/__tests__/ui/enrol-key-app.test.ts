@@ -177,7 +177,11 @@ describe("the /enrol-key route through the app", () => {
     expect(textsOf(enrolView(), "code")).toContain(base64Of(SPKI));
 
     press(TEST);
-    await settle();
+    // The page verifies with real WebCrypto, which answers on its own thread
+    // and not within a fixed number of turns: wait for the checks themselves.
+    await vi.waitFor(() => {
+      expect(textsOf(enrolView(), ".enrol-check")).toHaveLength(5);
+    });
     expect(creds.get).toHaveBeenCalledTimes(1);
     expect(textsOf(enrolView(), ".enrol-check")).toStrictEqual([
       "credential id: ok",
