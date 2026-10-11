@@ -913,9 +913,27 @@ describe("the answers route with keys loaded", () => {
       const h = await wired();
       const response = await postAnswer(h, ID, { schema: "x" }, {});
       expect(response.status).toBe(400);
-      const document = (await response.json()) as { errors: unknown[] };
-      expect(Array.isArray(document.errors)).toBe(true);
-      expect(document.errors.length).toBeGreaterThan(0);
+      const document = (await response.json()) as {
+        errors: { path: string; message: string }[];
+      };
+      expect(document.errors).toEqual(
+        expect.arrayContaining([
+          { path: "/schema", message: "unknown key" },
+          { path: "/revision", message: "expected an integer" },
+          { path: "/textSha256", message: "expected a string" },
+          { path: "/index", message: "expected an integer" },
+          {
+            path: "/verdict",
+            message: "expected one of approved, declined, answered",
+          },
+          { path: "/nonce", message: "expected a string" },
+          { path: "/credentialId", message: "expected a string" },
+          { path: "/authenticatorData", message: "expected a string" },
+          { path: "/clientDataJSON", message: "expected a string" },
+          { path: "/signature", message: "expected a string" },
+        ]),
+      );
+      expect(document.errors).toHaveLength(10);
     });
 
     it("400s a non-canonical base64url spelling of the signature", async () => {
