@@ -248,6 +248,7 @@ function signingHarness(
   pathname: string,
   fetchImpl: ReturnType<typeof signingFetch>,
   getCreds: GetFn,
+  cryptoless = false,
 ) {
   freshRoot();
   const timers = timerStub();
@@ -262,7 +263,7 @@ function signingHarness(
     setTimer: timers.setTimer,
     clearTimer: timers.clearTimer,
     clock: () => Date.parse("2026-04-01T12:00:00.000Z"),
-    crypto: webcrypto as unknown as Crypto,
+    ...(cryptoless ? {} : { crypto: webcrypto as unknown as Crypto }),
     credentials: {
       create: () => {
         throw new Error("create not expected");
@@ -752,6 +753,95 @@ describe("the answer flow's signing", () => {
     expect(
       root().querySelector(".decision-history")?.textContent ?? "",
     ).toContain("signed with your passkey");
+
+    h.app.stop();
+  });
+
+  it("signs a second answer on the same visit through the answerer it already has", async () => {
+    let signs = 0;
+    const fetchImpl = signingFetch({
+      nonce: () => {
+        signs += 1;
+        return { status: 200, body: { nonce: NONCE_VALUE, index: signs - 1 } };
+      },
+      answers: () => GOOD_ANSWERS,
+      decision: openDecision(),
+    });
+    const key = passkeyFor("twice-on-one-visit");
+    let held = true;
+    let releaseFirst!: () => void;
+    const h = signingHarness("/p/alpha/d/d1", fetchImpl, (options) => {
+      const made = key.handler(options) as unknown;
+      if (!held) {
+        return made;
+      }
+      return new Promise<unknown>((resolve) => {
+        releaseFirst = () => resolve(made);
+      });
+    });
+    h.app.start();
+    await settle();
+
+    press("answer-yes");
+    await flush();
+    press("answer-sign");
+    await settle();
+    fetchImpl.setDecision(openDecision([signedApprovedEntry()]));
+    held = false;
+    releaseFirst();
+    await settle();
+    expect(messageText()).toBe("Signed and recorded.");
+
+    press("answer-yes");
+    await flush();
+    press("answer-sign");
+    await settle();
+
+    expect(messageText()).toBe("Signed and recorded.");
+    expect(
+      fetchImpl.calls.filter(
+        (c) => c.method === "POST" && c.path === NONCE("d1"),
+      ),
+    ).toHaveLength(2);
+    const second = fetchImpl.calls.findLast(
+      (c) => c.method === "POST" && c.path === ANSWERS("d1"),
+    )!.body as Record<string, unknown>;
+    expect(second.index).toBe(1);
+
+    h.app.stop();
+  });
+
+  it("ends with the failed outcome when the page has no WebCrypto to hash with", async () => {
+    const fetchImpl = signingFetch({
+      nonce: () => {
+        throw new Error("nonce should not be asked");
+      },
+      answers: () => {
+        throw new Error("answers should not be asked");
+      },
+      decision: openDecision(),
+    });
+    const h = signingHarness(
+      "/p/alpha/d/d1",
+      fetchImpl,
+      () => {
+        throw new Error("get should not be asked");
+      },
+      true,
+    );
+    h.app.start();
+    await settle();
+
+    press("answer-yes");
+    await flush();
+    press("answer-sign");
+    await settle();
+
+    expect(messageText()).toBe("The answer was not recorded. Try again.");
+    expect(h.getCalls).toHaveLength(0);
+    expect(
+      fetchImpl.calls.filter((c) => c.method === "POST"),
+    ).toHaveLength(0);
 
     h.app.stop();
   });
