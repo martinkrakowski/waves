@@ -308,9 +308,15 @@ async function signOnce(model, choice, browser) {
     return { kind: "unknown" };
   }
   if (answerResponse.status === 201) {
-    const stored = await answerResponse.json();
+    // The server said 201; only the body was lost.
+    let stored;
+    try {
+      stored = await answerResponse.json();
+    } catch {
+      return { kind: "unknown" };
+    }
     if (!isStoredReply(stored)) {
-      return { kind: "failed" };
+      return { kind: "unknown" };
     }
     return { kind: "stored", index: stored.index, state: stored.state };
   }
