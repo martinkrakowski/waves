@@ -44,10 +44,6 @@ export interface EnrolCreateError {
   readonly message: string;
 }
 
-export interface EnrolBusy {
-  readonly kind: "creating" | "testing";
-}
-
 export interface EnrolCheck {
   readonly label: string;
   readonly ok: boolean;
@@ -67,7 +63,6 @@ export type EnrolState =
   | EnrolReady
   | EnrolRefused
   | EnrolCreateError
-  | EnrolBusy
   | EnrolVerified;
 
 /**

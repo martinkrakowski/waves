@@ -231,6 +231,10 @@ export function route(pathname: string, root: string): Route {
   if (
     pathname === "/" ||
     pathname === "/inbox" ||
+    // `/enrol-key`: the page that makes a passkey on the owner's own device and
+    // shows its public key. A fixed word like `/inbox`, so `/enrol-key/x` is not
+    // a page and `/enrol-key/` is not one either.
+    pathname === "/enrol-key" ||
     (parts.length === 3 && parts[1] === "p" && isProjectId(String(parts[2]))) ||
     (parts.length === 5 &&
       parts[1] === "p" &&

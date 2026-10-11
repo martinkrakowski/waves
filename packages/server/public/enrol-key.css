@@ -1,0 +1,73 @@
+/*
+ * The /enrol-key page's own rules. The frame, the colours and the measure all
+ * come from tokens.css, shell.css and app.css; what is here is only the look
+ * of the enrolment fields and the checks they draw.
+ */
+
+.view.enrol-key {
+  padding: 1.25rem 0;
+}
+
+.view.enrol-key h1 {
+  font-family: var(--display);
+  font-size: clamp(1.6rem, 1.1rem + 1.5vw, 2.4rem);
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  margin: 0.5rem 0;
+}
+
+.enrol-field,
+.enrol-flag,
+.enrol-check {
+  font-family: var(--mono);
+  font-size: 0.9rem;
+  margin: 0.25rem 0;
+  overflow-wrap: anywhere;
+}
+
+.enrol-field code,
+.enrol-flag code {
+  background-color: var(--bg-raise);
+  padding: 0.1rem 0.35rem;
+  border-radius: var(--radius);
+}
+
+.enrol-check {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.enrol-check.ok {
+  color: var(--text);
+}
+
+.enrol-check.fail {
+  color: var(--red);
+}
+
+.enrol-sends {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0.75rem 0;
+}
+
+.enrol-refused {
+  color: var(--red);
+  font-size: 1rem;
+  margin: 0.75rem 0;
+}
+
+.enrol-footer {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin: 1rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.enrol-button {
+  min-height: 44px;
+  font-size: 1rem;
+  padding: 0.5rem 1rem;
+  margin: 0.75rem 0;
+}

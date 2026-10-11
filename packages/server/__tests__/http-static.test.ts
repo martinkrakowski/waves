@@ -28,6 +28,7 @@ describe("the placeholder page", () => {
     for (const path of [
       "/",
       "/inbox",
+      "/enrol-key",
       "/p/alpha",
       "/p/alpha/w/wv1",
       "/p/alpha/d/d1",
@@ -60,6 +61,8 @@ describe("the placeholder page", () => {
     ["/p/alpha/x/d1", "a segment that is not d"],
     ["/p/ALPHA/d/d1", "a project id the contract rejects"],
     ["/p/alpha/d/-bad", "a decision id the contract rejects"],
+    ["/enrol-key/", "a slash under the enrolment page"],
+    ["/enrol-key/x", "a path under the enrolment page"],
   ])("refuses %s (%s)", async (path) => {
     const started = await startHarness();
 
