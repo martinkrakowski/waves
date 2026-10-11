@@ -299,17 +299,30 @@ async function verifyAssertion(assertion, ctx) {
       : "the credential id does not match",
   });
 
-  let clientData = null;
+  let clientData;
+  let clientDataParsed = true;
   try {
     clientData = JSON.parse(bytesToString(clientDataBytes));
   } catch {
+    clientDataParsed = false;
     checks.push({
       label: "client data",
       ok: false,
       detail: "clientDataJSON is not JSON",
     });
   }
-  if (clientData !== null) {
+  if (
+    clientDataParsed &&
+    (clientData === null ||
+      typeof clientData !== "object" ||
+      Array.isArray(clientData))
+  ) {
+    checks.push({
+      label: "client data",
+      ok: false,
+      detail: "clientDataJSON is not an object",
+    });
+  } else if (clientDataParsed) {
     let ok = true;
     let detail = "";
     if (clientData.type !== "webauthn.get") {

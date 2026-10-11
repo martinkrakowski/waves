@@ -401,9 +401,33 @@ describe("enrolKey.test verification", () => {
       ok: false,
       detail: "clientDataJSON is not JSON",
     });
+    expect(
+      verified.checks.filter((c) => c.label === "client data"),
+    ).toHaveLength(1);
     const sig = verified.checks.find((c) => c.label === "signature");
     expect(sig?.ok).toBe(true);
   });
+
+  it.each<[string, Uint8Array]>([
+    ["the text null", Buffer.from("null")],
+    ["an empty array", Buffer.from("[]")],
+    ["a bare string", Buffer.from('"x"')],
+    ["a bare number", Buffer.from("7")],
+  ])(
+    "fails the client data check when clientDataJSON parses to %s",
+    async (_label, clientDataJSON) => {
+      const { creds, controller } = await ready();
+      const assertion = await makeAssertion({ clientDataJSON });
+      creds.get.mockResolvedValue(assertion);
+      const verified = await controller.test();
+      const cd = verified.checks.find((c) => c.label === "client data");
+      expect(cd).toEqual({
+        label: "client data",
+        ok: false,
+        detail: "clientDataJSON is not an object",
+      });
+    },
+  );
 
   it("reports a signature that is not valid DER as a failed signature check", async () => {
     const { creds, controller } = await ready();
