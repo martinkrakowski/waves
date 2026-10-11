@@ -366,8 +366,24 @@ describe("the inbox page rules", () => {
       );
       expect(signedCard).not.toBeNull();
       expect(reportedCard).not.toBeNull();
-      expect(textOf(signedCard as Element)).not.toContain("reports");
-      expect(textOf(reportedCard as Element)).not.toContain("Signed");
+      expect(textOf(signedCard as Element)).toContain(
+        "You approved this on 2026-10-08 at 13:00 UTC.",
+      );
+      expect(textOf(signedCard as Element)).toContain(
+        "Signed with your passkey. The server checked the signature when it was given; this page does not check it again.",
+      );
+      expect(textOf(reportedCard as Element)).toContain(
+        "The alpha session reports you declined this on 2026-10-08 at 13:00 UTC.",
+      );
+      expect(textOf(reportedCard as Element)).toContain(
+        "Reported by a session, not signed by you.",
+      );
+      expect(textOf(signedCard as Element)).not.toContain(
+        "Reported by a session",
+      );
+      expect(textOf(reportedCard as Element)).not.toMatch(
+        /signed with your passkey/i,
+      );
     });
 
     it("draws no Reported as answered heading when the only answer is signed", () => {
