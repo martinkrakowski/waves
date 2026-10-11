@@ -8,6 +8,11 @@ export interface Config {
   readonly adminTokenFile?: string;
   readonly enrollTokenFile?: string;
   /**
+   * The file the owner's public keys are mounted as, or `undefined` when the
+   * operator mounted none and signed answers are off.
+   */
+  readonly ownerKeysFile?: string;
+  /**
    * Whether `X-Forwarded-For` and `X-Forwarded-Proto` are the address and the
    * scheme of the client, rather than of the proxy in front of this process.
    */
@@ -20,6 +25,7 @@ export const DATA_DIR_VARIABLE = "WAVES_DATA_DIR";
 export const READ_TOKEN_FILE_VARIABLE = "WAVES_READ_TOKEN_FILE";
 export const ADMIN_TOKEN_FILE_VARIABLE = "WAVES_ADMIN_TOKEN_FILE";
 export const ENROLL_TOKEN_FILE_VARIABLE = "WAVES_ENROLL_TOKEN_FILE";
+export const OWNER_KEYS_FILE_VARIABLE = "WAVES_OWNER_KEYS_FILE";
 export const TRUST_PROXY_VARIABLE = "WAVES_TRUST_PROXY";
 
 const DEFAULT_HOST = "0.0.0.0";
@@ -114,6 +120,7 @@ export function parseConfig(env: Env): Config {
     readTokenFile: optional(env, READ_TOKEN_FILE_VARIABLE),
     adminTokenFile: optional(env, ADMIN_TOKEN_FILE_VARIABLE),
     enrollTokenFile: optional(env, ENROLL_TOKEN_FILE_VARIABLE),
+    ownerKeysFile: optional(env, OWNER_KEYS_FILE_VARIABLE),
     trustProxy: readTrustProxy(env),
   };
 }
