@@ -96,7 +96,7 @@ function buttonsOf(host: Element): HTMLElement[] {
 /** The `data-key` of every keyed control, in the order a reader meets them. */
 function keysOf(host: Element): string[] {
   return Array.from(host.querySelectorAll("[data-key]"), (element) =>
-    element.getAttribute("data-key"),
+    element.getAttribute("data-key")!,
   );
 }
 
