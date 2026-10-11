@@ -1223,9 +1223,10 @@ export function createApp(deps) {
     }
     const canAnswer = answerability(model);
     if (canAnswer.kind === "answerable") {
-      const ui = answerUi.kind === "words"
-        ? { ...answerUi, draft: answerDraft }
-        : answerUi;
+      const ui =
+        answerUi.kind === "words"
+          ? { ...answerUi, draft: answerDraft }
+          : answerUi;
       return {
         answer: {
           node: answerSection(model, ui, answerHandlers(model)),

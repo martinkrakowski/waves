@@ -52,7 +52,7 @@ export interface AppGlobals {
   readonly crypto?: Crypto;
   readonly credentials?: {
     create(options: PublicKeyCredentialCreationOptions): Promise<unknown>;
-    get(options: PublicKeyCredentialRequestOptions): Promise<unknown>;
+    get(options: CredentialRequestOptions): Promise<unknown>;
   };
   readonly setTimer: (callback: () => void, delayMs: number) => unknown;
   readonly clearTimer: (handle: unknown) => void;

@@ -41,7 +41,8 @@ import {
 
 const NONCE = (id: string) => `/api/v1/projects/alpha/decisions/${id}/nonce`;
 const DECISION = (id: string) => `/api/v1/projects/alpha/decisions/${id}`;
-const ANSWERS = (id: string) => `/api/v1/projects/alpha/decisions/${id}/answers`;
+const ANSWERS = (id: string) =>
+  `/api/v1/projects/alpha/decisions/${id}/answers`;
 
 /** A fixed nonce the test controls: the page never sees a random value. */
 const NONCE_VALUE = "A".repeat(43);
@@ -78,9 +79,10 @@ const signedApprovedEntry = () =>
   });
 
 /** The answer challenge text the page should hand to the passkey. */
-function challengeTextFor(
-  overrides: { verdict: AnswerVerdict; words?: string },
-): string {
+function challengeTextFor(overrides: {
+  verdict: AnswerVerdict;
+  words?: string;
+}): string {
   return answerChallengeText({
     project: "alpha",
     decision: "d1",
@@ -171,17 +173,6 @@ function signingFetch(options: {
 /** A `credentials.get` that records its options and delegates to `handler`. */
 type GetFn = (options: CredentialRequestOptions) => unknown;
 
-function recordingCredentials(handler: GetFn) {
-  const calls: CredentialRequestOptions[] = [];
-  const credentials = {
-    async get(options: CredentialRequestOptions): Promise<unknown> {
-      calls.push(options);
-      return handler(options);
-    },
-  };
-  return { credentials, calls };
-}
-
 /** The bytes a base64url string spells, as an ArrayBuffer the browser hands over. */
 function bufferOf(base64urlText: string): ArrayBuffer {
   const bytes = Buffer.from(base64urlText, "base64url");
@@ -220,9 +211,8 @@ function assertionFor(challenge: Uint8Array, seed: string): Built {
 function passkeyFor(seed: string) {
   let made: Built | undefined;
   const handler: GetFn = (options) => {
-    const pk = (
-      options as unknown as { publicKey: { challenge: Uint8Array } }
-    ).publicKey;
+    const pk = (options as unknown as { publicKey: { challenge: Uint8Array } })
+      .publicKey;
     made = assertionFor(pk.challenge, seed);
     return browserAssertion(made.input);
   };
@@ -245,9 +235,8 @@ function challengeOf(
   if (first === undefined) {
     throw new Error("the passkey was never asked");
   }
-  return (
-    first as unknown as { publicKey: { challenge: Uint8Array } }
-  ).publicKey.challenge;
+  return (first as unknown as { publicKey: { challenge: Uint8Array } })
+    .publicKey.challenge;
 }
 
 /**
@@ -305,9 +294,7 @@ function press(key: string): void {
 
 /** The textarea the page owns by its `data-key`. */
 function textarea(key: string): HTMLTextAreaElement {
-  return root().querySelector(
-    `[data-key="${key}"]`,
-  ) as HTMLTextAreaElement;
+  return root().querySelector(`[data-key="${key}"]`) as HTMLTextAreaElement;
 }
 
 /** The page's idle answer message, if one. */
@@ -680,14 +667,12 @@ describe("the answer flow's signing", () => {
 
     // While the ceremony is open: buttons held back, working shown.
     expect(
-      (
-        root().querySelector('[data-key="answer-sign"]') as HTMLButtonElement
-      ).disabled,
+      (root().querySelector('[data-key="answer-sign"]') as HTMLButtonElement)
+        .disabled,
     ).toBe(true);
     expect(
-      (
-        root().querySelector('[data-key="answer-cancel"]') as HTMLButtonElement
-      ).disabled,
+      (root().querySelector('[data-key="answer-cancel"]') as HTMLButtonElement)
+        .disabled,
     ).toBe(true);
     expect(root().querySelector("p.answer-working")).not.toBeNull();
 
@@ -706,9 +691,7 @@ describe("the answer flow's signing", () => {
 
     // Release, then put the signed entry on the re-read decision.
     releaseGet();
-    fetchImpl.setDecision(
-      openDecision([signedApprovedEntry()]),
-    );
+    fetchImpl.setDecision(openDecision([signedApprovedEntry()]));
     await settle();
 
     // Idle with the stored message and the three buttons.
@@ -800,11 +783,9 @@ describe("the answer flow's signing", () => {
 
     // Challenge is over the own-words text.
     expect(h.getCalls).toHaveLength(1);
-    expect(
-      Buffer.from(
-        challengeOf(h.getCalls),
-      ).toString("hex"),
-    ).toBe(expectedChallenge("answered", WORDS).toString("hex"));
+    expect(Buffer.from(challengeOf(h.getCalls)).toString("hex")).toBe(
+      expectedChallenge("answered", WORDS).toString("hex"),
+    );
 
     releaseGet();
     fetchImpl.setDecision(
@@ -864,9 +845,9 @@ describe("the answer flow's signing", () => {
     press("answer-sign");
     await settle();
 
-    expect(
-      Buffer.from(challengeOf(h.getCalls)).toString("hex"),
-    ).toBe(expectedChallenge("declined").toString("hex"));
+    expect(Buffer.from(challengeOf(h.getCalls)).toString("hex")).toBe(
+      expectedChallenge("declined").toString("hex"),
+    );
 
     releaseGet();
     fetchImpl.setDecision(
@@ -944,7 +925,6 @@ describe("the answer flow's signing", () => {
   }
 
   it("moves when the nonce index disagrees, and re-reads", async () => {
-    let readCount = 0;
     const fetchImpl = signingFetch({
       nonce: () => ({
         status: 200,
@@ -1022,9 +1002,7 @@ describe("the answer flow's signing", () => {
     expect(h.getCalls).toHaveLength(1);
 
     releaseGet();
-    fetchImpl.setDecision(
-      openDecision([signedApprovedEntry()]),
-    );
+    fetchImpl.setDecision(openDecision([signedApprovedEntry()]));
     await settle();
 
     expect(messageText()).toBe(
@@ -1104,7 +1082,7 @@ describe("the answer flow's signing", () => {
     });
   }
 
-   it("refuses a text the page's hash disagrees with, with no request after the press", async () => {
+  it("refuses a text the page's hash disagrees with, with no request after the press", async () => {
     const fetchImpl = signingFetch({
       nonce: () => {
         throw new Error("nonce should not be asked");
@@ -1114,9 +1092,7 @@ describe("the answer flow's signing", () => {
       },
       decision: decisionResponse({
         head: inboxHead({ textSha256: "0".repeat(64) }),
-        revisions: [
-          storedRevision({ textSha256: "0".repeat(64) }),
-        ] as never[],
+        revisions: [storedRevision({ textSha256: "0".repeat(64) })] as never[],
       }),
     });
     const h = signingHarness("/p/alpha/d/d1", fetchImpl, () => {
@@ -1188,7 +1164,8 @@ describe("the answer flow's signing", () => {
     await settle();
     h.app.stop();
   });
-});describe("the answer flow's steps before signing", () => {
+});
+describe("the answer flow's steps before signing", () => {
   function setup() {
     const fetchImpl = signingFetch({
       nonce: () => ({
@@ -1217,7 +1194,9 @@ describe("the answer flow's signing", () => {
     expect(textOf(root().querySelector("p.answer-confirm-verdict"))).toBe(
       "Your answer: Yes (approved)",
     );
-    expect(textOf(root().querySelector("p.answer-confirm-question"))).toBe("Go?");
+    expect(textOf(root().querySelector("p.answer-confirm-question"))).toBe(
+      "Go?",
+    );
     expect(textsOf(root(), ".answer-confirm .option-head")).toEqual([
       "a: Yes",
       "b: No",
@@ -1225,7 +1204,9 @@ describe("the answer flow's signing", () => {
     expect(textOf(root().querySelector("p.answer-confirm-facts"))).toBe(
       "Revision 1 · this will be entry 1 on this decision",
     );
-    expect(h.fetchImpl.calls.filter((c) => c.method === "POST")).toHaveLength(0);
+    expect(h.fetchImpl.calls.filter((c) => c.method === "POST")).toHaveLength(
+      0,
+    );
 
     h.app.stop();
   });
@@ -1314,7 +1295,7 @@ describe("the answer flow's signing", () => {
 
     const blockquote = root().querySelector(
       "blockquote.answer-confirm-words",
-    ) as HTMLBlockquoteElement;
+    ) as HTMLQuoteElement;
     expect(blockquote.textContent).toBe("Do it, after the backup.");
     expect(blockquote.childNodes).toHaveLength(1);
     expect(blockquote.childNodes[0]!.nodeType).toBe(Node.TEXT_NODE);
@@ -1348,9 +1329,9 @@ describe("the answer flow's signing", () => {
 
     press("answer-continue");
     await flush();
-    expect(textOf(root().querySelector("blockquote.answer-confirm-words"))).toBe(
-      "hello",
-    );
+    expect(
+      textOf(root().querySelector("blockquote.answer-confirm-words")),
+    ).toBe("hello");
 
     press("answer-cancel");
     await flush();
@@ -1362,7 +1343,8 @@ describe("the answer flow's signing", () => {
 
     h.app.stop();
   });
-});describe("the answer flow keeps its draft across a redraw", () => {
+});
+describe("the answer flow keeps its draft across a redraw", () => {
   it("keeps what was typed when the page redraws", async () => {
     const fetchImpl = signingFetch({
       nonce: () => ({
