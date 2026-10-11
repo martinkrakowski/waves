@@ -156,6 +156,12 @@ jobs:
           pr_reviewer.require_estimate_effort_to_review: "false"
           pr_reviewer.require_tests_review: "false"
           pr_reviewer.require_security_review: ${{ matrix.security }}
+          # One line of overall risk (low, medium or high) in every pass's comment. It is there
+          # for a reason of PR-Agent's own: when every finding of a pass goes out as a line
+          # comment and the pass has no other section, 0.47.0 posts the summary WITHOUT its
+          # heading, so nothing says which pass it was (seen on the errors pass of #79). With
+          # this line the summary is never empty and keeps its heading.
+          pr_reviewer.require_risk_assessment: "true"
           pr_reviewer.enable_review_labels_security: "false"
           pr_reviewer.enable_review_labels_effort: "false"
           pr_reviewer.inline_key_issues: "true"
