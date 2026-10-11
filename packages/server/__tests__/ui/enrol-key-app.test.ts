@@ -310,12 +310,17 @@ describe("the /enrol-key route through the app", () => {
     await settle();
     app.navigate("/enrol-key");
     await settle();
+    expect(textsOf(enrolView(), "h1")).toContain("Enrol an owner key");
     release(undefined);
     await flush();
     await settle();
 
-    app.navigate("/enrol-key");
-    await settle();
+    // The answer arrived after the reader came back to a fresh controller;
+    // the page still shows the intro and holds neither the credential id nor
+    // the SPKI anywhere.
+    expect(textsOf(enrolView(), "h1")).toContain("Enrol an owner key");
+    expect(textOf(enrolView())).not.toContain(base64urlOf(CREDENTIAL_ID));
+    expect(textOf(enrolView())).not.toContain(base64Of(SPKI));
     expect(textsOf(enrolView(), "h1")).toContain("Enrol an owner key");
     expect(textOf(enrolView())).not.toContain(base64urlOf(CREDENTIAL_ID));
     expect(textsOf(enrolView(), "button")).toStrictEqual([
