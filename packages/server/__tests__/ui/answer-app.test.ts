@@ -34,6 +34,7 @@ import {
   flush,
   freshRoot,
   root,
+  textOf,
   textsOf,
   timerStub,
 } from "./helpers.js";
@@ -641,7 +642,181 @@ describe("the decision page offers answer controls only when the server takes an
   });
 });
 
-describe("the answer flow keeps its draft across a redraw", () => {
+describe("the answer flow's steps before signing", () => {
+  function setup() {
+    const fetchImpl = signingFetch({
+      nonce: () => ({
+        status: 200,
+        body: { nonce: NONCE_VALUE, index: 0 },
+      }),
+      answers: () => ({
+        status: 201,
+        body: { index: 0, state: "approved" },
+      }),
+      decision: openDecision(),
+    });
+    const h = signingHarness("/p/alpha/d/d1", fetchImpl, () => null);
+    h.app.start();
+    void settle();
+    return h;
+  }
+
+  it("confirms Yes before any request is made", async () => {
+    const h = setup();
+    await settle();
+
+    press("answer-yes");
+    await flush();
+
+    expect(textOf(root().querySelector("p.answer-confirm-verdict"))).toBe(
+      "Your answer: Yes (approved)",
+    );
+    expect(textOf(root().querySelector("p.answer-confirm-question"))).toBe("Go?");
+    expect(textsOf(root(), ".answer-confirm .option-head")).toEqual([
+      "a: Yes",
+      "b: No",
+    ]);
+    expect(textOf(root().querySelector("p.answer-confirm-facts"))).toBe(
+      "Revision 1 · this will be entry 1 on this decision",
+    );
+    expect(h.fetchImpl.calls.filter((c) => c.method === "POST")).toHaveLength(0);
+
+    h.app.stop();
+  });
+
+  it("confirms No with its own verdict line", async () => {
+    const fetchImpl = signingFetch({
+      nonce: () => ({
+        status: 200,
+        body: { nonce: NONCE_VALUE, index: 0 },
+      }),
+      answers: () => ({
+        status: 201,
+        body: { index: 0, state: "declined" },
+      }),
+      decision: openDecision(),
+    });
+    const h = signingHarness("/p/alpha/d/d1", fetchImpl, () => null);
+    h.app.start();
+    await settle();
+
+    press("answer-no");
+    await flush();
+
+    expect(textOf(root().querySelector("p.answer-confirm-verdict"))).toBe(
+      "Your answer: No (declined)",
+    );
+
+    h.app.stop();
+  });
+
+  it("shows a problem and keeps the draft for empty own words", async () => {
+    const h = setup();
+    await settle();
+
+    press("answer-words-open");
+    await flush();
+
+    press("answer-continue");
+    await flush();
+
+    expect(textOf(root().querySelector("p.answer-problem"))).toBe(
+      "Write your answer first.",
+    );
+    expect(textarea("answer-words").value).toBe("");
+
+    h.app.stop();
+  });
+
+  it("shows a problem and keeps the draft for too-long own words", async () => {
+    const h = setup();
+    await settle();
+
+    press("answer-words-open");
+    await flush();
+
+    const area = textarea("answer-words");
+    area.value = "x".repeat(2001);
+    area.dispatchEvent(new Event("input", { bubbles: true }));
+    await flush();
+
+    press("answer-continue");
+    await flush();
+
+    expect(textOf(root().querySelector("p.answer-problem"))).toBe(
+      "That is too long to sign.",
+    );
+    expect(textarea("answer-words").value).toBe("x".repeat(2001));
+
+    h.app.stop();
+  });
+
+  it("trims own words before confirming them", async () => {
+    const h = setup();
+    await settle();
+
+    press("answer-words-open");
+    await flush();
+
+    const area = textarea("answer-words");
+    area.value = "  Do it, after the backup.  ";
+    area.dispatchEvent(new Event("input", { bubbles: true }));
+    await flush();
+
+    press("answer-continue");
+    await flush();
+
+    const blockquote = root().querySelector(
+      "blockquote.answer-confirm-words",
+    ) as HTMLBlockquoteElement;
+    expect(blockquote.textContent).toBe("Do it, after the backup.");
+    expect(blockquote.childNodes).toHaveLength(1);
+    expect(blockquote.childNodes[0]!.nodeType).toBe(Node.TEXT_NODE);
+
+    h.app.stop();
+  });
+
+  it("cancels from words and from confirm, and keeps the draft", async () => {
+    const h = setup();
+    await settle();
+
+    press("answer-words-open");
+    await flush();
+
+    const area = textarea("answer-words");
+    area.value = "hello";
+    area.dispatchEvent(new Event("input", { bubbles: true }));
+    await flush();
+
+    press("answer-cancel");
+    await flush();
+    expect(textsOf(root(), "section.answer button")).toEqual([
+      "Yes",
+      "No",
+      "Answer in my own words",
+    ]);
+
+    press("answer-words-open");
+    await flush();
+    expect(textarea("answer-words").value).toBe("hello");
+
+    press("answer-continue");
+    await flush();
+    expect(textOf(root().querySelector("blockquote.answer-confirm-words"))).toBe(
+      "hello",
+    );
+
+    press("answer-cancel");
+    await flush();
+    expect(textsOf(root(), "section.answer button")).toEqual([
+      "Yes",
+      "No",
+      "Answer in my own words",
+    ]);
+
+    h.app.stop();
+  });
+});describe("the answer flow keeps its draft across a redraw", () => {
   it("keeps what was typed when the page redraws", async () => {
     const fetchImpl = signingFetch({
       nonce: () => ({
