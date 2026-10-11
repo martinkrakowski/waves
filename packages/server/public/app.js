@@ -1318,19 +1318,15 @@ export function createApp(deps) {
               return;
             }
             answerWorkingModel = undefined;
-            if (outcome.kind === "stored" || outcome.kind === "moved") {
-              if (outcome.kind === "stored") {
-                answerDraft = "";
-              }
-              answerUi = { kind: "idle", message: outcomeMessage(outcome) };
-              draw();
-              // At once, so the entry the answer became is on the page he
-              // is looking at and not on the next refresh's.
-              void refreshOnce().then(schedule, schedule);
-              return;
+            if (outcome.kind === "stored") {
+              answerDraft = "";
             }
             answerUi = { kind: "idle", message: outcomeMessage(outcome) };
             draw();
+            // At once, after every outcome: the entry the answer became — or
+            // the change the page missed while the reply was lost — is on the
+            // page he is looking at and not on the next refresh's.
+            void refreshOnce().then(schedule, schedule);
           });
       },
       maxWords: MAX_WORDS_CHARS,

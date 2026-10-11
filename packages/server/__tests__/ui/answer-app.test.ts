@@ -1097,6 +1097,78 @@ describe("the answer flow's signing", () => {
     });
   }
 
+  it("re-reads the decision at once when the answer's reply was a 500", async () => {
+    const fetchImpl = signingFetch({
+      nonce: () => GOOD_NONCE,
+      answers: () => ({ status: 500 }),
+      decision: openDecision(),
+    });
+    const key = passkeyFor("answers-500");
+    const h = signingHarness("/p/alpha/d/d1", fetchImpl, key.handler);
+    h.app.start();
+    await settle();
+
+    press("answer-yes");
+    await flush();
+    const getsBefore = h.fetchImpl.calls.filter(
+      (c) => c.method === "GET" && c.path === DECISION("d1"),
+    ).length;
+
+    press("answer-sign");
+    // No timer is run for this settle: the stub only fires a timer it is told
+    // to, so a `GET` that lands now can only come from the outcome itself.
+    await settle();
+
+    const postAt = h.fetchImpl.calls.findIndex(
+      (c) => c.method === "POST" && c.path === ANSWERS("d1"),
+    );
+    expect(postAt).toBeGreaterThanOrEqual(0);
+    const getAfters = h.fetchImpl.calls.filter(
+      (c) => c.method === "GET" && c.path === DECISION("d1"),
+    );
+    expect(getAfters).toHaveLength(getsBefore + 1);
+    expect(
+      h.fetchImpl.calls.indexOf(getAfters[getAfters.length - 1]!),
+    ).toBeGreaterThan(postAt);
+    expect(messageText()).toBe("The answer was not recorded. Try again.");
+
+    h.app.stop();
+  });
+
+  it("re-reads the decision at once when the ceremony was cancelled", async () => {
+    const fetchImpl = signingFetch({
+      nonce: () => GOOD_NONCE,
+      answers: () => {
+        throw new Error("answers should not be asked");
+      },
+      decision: openDecision(),
+    });
+    const h = signingHarness("/p/alpha/d/d1", fetchImpl, () => null);
+    h.app.start();
+    await settle();
+
+    press("answer-yes");
+    await flush();
+    const getsBefore = h.fetchImpl.calls.filter(
+      (c) => c.method === "GET" && c.path === DECISION("d1"),
+    ).length;
+
+    press("answer-sign");
+    // No timer is run for this settle: the stub only fires a timer it is told
+    // to, so a `GET` that lands now can only come from the outcome itself.
+    await settle();
+
+    expect(messageText()).toBe(
+      "The passkey prompt was cancelled or timed out. Nothing was signed.",
+    );
+    const getAfters = h.fetchImpl.calls.filter(
+      (c) => c.method === "GET" && c.path === DECISION("d1"),
+    );
+    expect(getAfters).toHaveLength(getsBefore + 1);
+
+    h.app.stop();
+  });
+
   it("refuses a text the page's hash disagrees with, with no request after the press", async () => {
     const fetchImpl = signingFetch({
       nonce: () => {
@@ -1122,7 +1194,13 @@ describe("the answer flow's signing", () => {
     press("answer-sign");
     await settle();
 
-    expect(h.fetchImpl.calls.length).toBe(before);
+    // No nonce, no answer and no passkey — but the outcome still re-reads
+    // the decision at once, so the page he is on is the one the server has.
+    expect(h.fetchImpl.calls.slice(before)).toEqual([
+      { method: "GET", path: "/api/v1/projects" },
+      { method: "GET", path: "/api/v1/attention" },
+      { method: "GET", path: DECISION("d1") },
+    ]);
     expect(h.getCalls).toHaveLength(0);
     expect(messageText()).toBe(
       "The text on this page does not match the server's record of it. Nothing was signed. Reload the page.",
