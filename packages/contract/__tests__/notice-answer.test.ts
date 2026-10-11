@@ -105,7 +105,9 @@ describe("answerChallengeText", () => {
   });
 
   it("no white space falls between the tokens", () => {
-    expect(answerChallengeText(values())).not.toMatch(/[\n\t] /);
+    const text = answerChallengeText(values());
+    expect(text).toBe(expectedText());
+    expect(text).toBe(JSON.stringify(JSON.parse(text)));
   });
 });
 
@@ -342,7 +344,7 @@ describe("validateAnswerRequest", () => {
     answerPaths({ ...minimalAnswer(), nonce: `${"A".repeat(42)}=` }, [
       "/nonce",
     ]);
-    answerPaths({ ...minimalAnswer(), credentialId: "A".repeat(14) + "+" }, [
+    answerPaths({ ...minimalAnswer(), credentialId: `${"A".repeat(15)}+` }, [
       "/credentialId",
     ]);
     answerPaths(
