@@ -171,6 +171,11 @@ export function createApp(deps) {
      */
     credentials,
     crypto,
+    /**
+     * The browser's own `AbortController`, handed to the answer flow's logic
+     * as the constructor it builds its give-up-on-a-prompt signal with.
+     */
+    AbortController,
     refreshMs = REFRESH_MS,
   } = deps;
   const api = createApi(fetchImpl);
@@ -1161,8 +1166,9 @@ export function createApp(deps) {
   /**
    * The answerer the buttons call, built on first use from the browser objects
    * it reads as parameters: the fetch for the nonce and the answer, the
-   * credentials for the passkey, the WebCrypto for the hashes, and this host
-   * as the relying party.
+   * credentials for the passkey, the WebCrypto for the hashes, this host
+   * as the relying party, the clock for its own deadline, and the
+   * `AbortController` for the signal it gives up on a prompt with.
    */
   function answerer() {
     if (answerLogic === undefined) {
@@ -1171,6 +1177,8 @@ export function createApp(deps) {
         credentials,
         subtle: crypto === undefined ? undefined : crypto.subtle,
         location: { hostname: new URL(location.origin).hostname },
+        now: clock,
+        AbortController,
       });
     }
     return answerLogic;
@@ -1186,6 +1194,9 @@ export function createApp(deps) {
    * on one decision is not a step of another's flow.
    */
   function resetAnswerPage() {
+    if (answerLogic !== undefined) {
+      answerLogic.abandon();
+    }
     answerLogic = undefined;
     answerUi = { kind: "idle" };
     answerDraft = "";

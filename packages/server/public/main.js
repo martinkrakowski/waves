@@ -8,6 +8,7 @@ export const app = boot({
   fetch,
   credentials: navigator.credentials,
   crypto,
+  AbortController: window.AbortController,
   // `navigator.clipboard` is undefined outside a secure context, which the page
   // says as a copy that could not be made.
   clipboard: navigator.clipboard,

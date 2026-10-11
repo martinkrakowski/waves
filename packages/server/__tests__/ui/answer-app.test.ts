@@ -263,6 +263,7 @@ function signingHarness(
     setTimer: timers.setTimer,
     clearTimer: timers.clearTimer,
     clock: () => Date.parse("2026-04-01T12:00:00.000Z"),
+    AbortController,
     ...(cryptoless ? {} : { crypto: webcrypto as unknown as Crypto }),
     credentials: {
       create: () => {
@@ -2124,6 +2125,66 @@ describe("leaving the decision resets the answer flow", () => {
 
     expect(root().querySelector("p.answer-message")).toBeNull();
     expect(root().textContent ?? "").not.toContain("Signed and recorded.");
+
+    h.app.stop();
+  });
+
+  it("abandons the prompt it leaves open, and posts nothing when it settles", async () => {
+    let releaseGet!: () => void;
+    const fetchImpl = leavingFetch({
+      nonce: () => NONCE_OK,
+      answers: () => ({ status: 201, body: { index: 0, state: "approved" } }),
+      decisions: { d1: openDecision(), d2: otherDecision() },
+    });
+    const h = signingHarness("/p/alpha/d/d1", fetchImpl, (options) => {
+      const pk = (
+        options as unknown as { publicKey: { challenge: Uint8Array } }
+      ).publicKey;
+      const made = assertionFor(pk.challenge, "prompt-abandoned-on-leaving");
+      return new Promise<unknown>((resolve) => {
+        releaseGet = () => resolve(browserAssertion(made.input));
+      });
+    });
+    h.app.start();
+    await settle();
+
+    press("answer-yes");
+    await flush();
+    press("answer-sign");
+    await settle();
+    expect(h.getCalls).toHaveLength(1);
+    const signal = h.getCalls[0]?.signal;
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(signal?.aborted).toBe(false);
+
+    h.app.navigate("/p/alpha/d/d2");
+    await settle();
+
+    expect(signal?.aborted).toBe(true);
+
+    releaseGet();
+    await settle();
+
+    expect(
+      fetchImpl.calls.filter(
+        (c) => c.method === "POST" && c.path === ANSWERS("d1"),
+      ),
+    ).toHaveLength(0);
+
+    h.app.stop();
+  });
+
+  it("leaves a decision page it never pressed Sign on without a throw", async () => {
+    const fetchImpl = leavingFetch({
+      decisions: { d1: openDecision(), d2: otherDecision() },
+    });
+    const h = signingHarness("/p/alpha/d/d1", fetchImpl, () => null);
+    h.app.start();
+    await settle();
+
+    expect(() => h.app.navigate("/p/alpha/d/d2")).not.toThrow();
+    await settle();
+    expect(root().querySelector("p.answer-message")).toBeNull();
 
     h.app.stop();
   });
