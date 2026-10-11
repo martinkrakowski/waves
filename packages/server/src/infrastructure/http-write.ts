@@ -27,6 +27,11 @@ import type { StorePort } from "../application/ports/store.js";
 import type { NoticeStorePort } from "../application/ports/notice-store.js";
 import type { Now } from "../application/read-model.js";
 import {
+  createRegistrationGate,
+  type RegistrationIdentity,
+  sameRegistration,
+} from "../application/registration-gate.js";
+import {
   createNoticeWriteModel,
   type NoticeWriteModel,
 } from "../application/notice-write-model.js";
@@ -147,7 +152,9 @@ function afterRead(reply: Reply): Refusal {
   return { reply, preRead: false };
 }
 
-function isRefusal(outcome: Outcome | Digest): outcome is Refusal {
+function isRefusal(
+  outcome: Outcome | Digest | RegistrationIdentity,
+): outcome is Refusal {
   return "reply" in outcome;
 }
 
@@ -312,6 +319,37 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
   const enrollDigest =
     enrollToken === undefined ? undefined : sha256(enrollToken);
   const authenticate = createAuthenticator({ store, compare: deps.compare });
+  const gate = createRegistrationGate();
+
+  /**
+   * The answer a write whose registration is gone or is another's: the same
+   * body and the same header as an unknown token's, sent after the body was
+   * read.
+   */
+  const GONE: Refusal = {
+    reply: jsonReply(401, { error: "unauthorized" }),
+    headers: BEARER_REQUIRED,
+    preRead: false,
+  };
+
+  /**
+   * A project write runs only under the registration that authenticated it:
+   * inside the gate the project is read again and its two registration fields
+   * compared, so a delete, a re-registration or a rotation that committed after
+   * the authentication turns the write into the answer an unknown token gets.
+   * `undefined` means the registration that authenticated is gone.
+   */
+  function bound<T>(
+    project: string,
+    registration: RegistrationIdentity,
+    write: () => Promise<T>,
+  ): Promise<T | undefined> {
+    return gate.exclusive(async () =>
+      sameRegistration(await store.getProject(project), registration)
+        ? write()
+        : undefined,
+    );
+  }
 
   const answer = (
     res: ServerResponse,
@@ -434,15 +472,16 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
    * Which project a token belongs to: every stored digest is compared, not only
    * the one the path names, so a valid token for another project is a 403, an
    * unknown one a 401, and the time the answer took says nothing about which
-   * projects exist or which one was meant.
+   * projects exist or which one was meant. An accepted authentication also
+   * hands back the registration that answered, which the write is then bound to.
    */
   async function authenticateWave(
     digest: Digest,
     project: string,
-  ): Promise<Refusal | undefined> {
+  ): Promise<Refusal | RegistrationIdentity> {
     const authenticated = await authenticate(digest, project);
     if (authenticated.kind === "accepted") {
-      return undefined;
+      return authenticated.registration;
     }
     if (authenticated.kind === "unknown") {
       return refuse(jsonReply(401, { error: "unauthorized" }), BEARER_REQUIRED);
@@ -468,10 +507,13 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
     }
     // Both tokens read the body and the framing identically; they differ only in
     // what they may do with a free id, which is the model and not this pipeline.
-    const registration =
+    // The registry change runs inside the same gate a project write's compare
+    // does, so nothing can register, rotate, enroll or remove between one.
+    const registration = await gate.exclusive(() =>
       power === "admin"
-        ? await model.registerProject(decoded.value, rotate)
-        : await model.enrollProject(decoded.value);
+        ? model.registerProject(decoded.value, rotate)
+        : model.enrollProject(decoded.value),
+    );
     // The answer goes out before anything else happens: it carries the only
     // copy of a new token there will ever be, and a log sink that throws must
     // not stand between the token and the client that asked for it.
@@ -497,6 +539,7 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
     req: IncomingMessage,
     project: string,
     wave: string,
+    registration: RegistrationIdentity,
   ): Promise<number> {
     const body = await readBody(req, res, PUT_BODY_CAP);
     if (isRefusal(body)) {
@@ -523,7 +566,12 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
         afterRead(jsonReply(422, { errors: PATH_MISMATCH })),
       );
     }
-    const stored = await model.putWave(project, validated.value);
+    const stored = await bound(project, registration, () =>
+      model.putWave(project, validated.value),
+    );
+    if (stored === undefined) {
+      return answer(res, method, socket, GONE);
+    }
     return answer(
       res,
       method,
@@ -548,6 +596,7 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
     socket: Socket,
     req: IncomingMessage,
     project: string,
+    registration: RegistrationIdentity,
   ): Promise<number> {
     const body = await readBody(req, res, PUT_BODY_CAP);
     if (isRefusal(body)) {
@@ -574,7 +623,12 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
         afterRead(jsonReply(422, { errors: STATUS_PATH_MISMATCH })),
       );
     }
-    const stored = await model.putStatus(project, validated.value);
+    const stored = await bound(project, registration, () =>
+      model.putStatus(project, validated.value),
+    );
+    if (stored === undefined) {
+      return answer(res, method, socket, GONE);
+    }
     return answer(
       res,
       method,
@@ -596,6 +650,7 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
     req: IncomingMessage,
     project: string,
     id: string,
+    registration: RegistrationIdentity,
   ): Promise<number> {
     const body = await readBody(req, res, PUT_BODY_CAP);
     if (isRefusal(body)) {
@@ -605,7 +660,12 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
     if ("reply" in decoded) {
       return answer(res, method, socket, decoded);
     }
-    const result = await noticeModel.raiseDecision(project, id, decoded.value);
+    const result = await bound(project, registration, () =>
+      noticeModel.raiseDecision(project, id, decoded.value),
+    );
+    if (result === undefined) {
+      return answer(res, method, socket, GONE);
+    }
     return answer(res, method, socket, afterRead(raiseReply(result)));
   }
 
@@ -621,6 +681,7 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
     req: IncomingMessage,
     project: string,
     id: string,
+    registration: RegistrationIdentity,
   ): Promise<number> {
     const body = await readBody(req, res, POST_BODY_CAP);
     if (isRefusal(body)) {
@@ -630,7 +691,12 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
     if ("reply" in decoded) {
       return answer(res, method, socket, decoded);
     }
-    const result = await noticeModel.postState(project, id, decoded.value);
+    const result = await bound(project, registration, () =>
+      noticeModel.postState(project, id, decoded.value),
+    );
+    if (result === undefined) {
+      return answer(res, method, socket, GONE);
+    }
     return answer(res, method, socket, afterRead(stateReply(result)));
   }
 
@@ -644,6 +710,7 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
     socket: Socket,
     req: IncomingMessage,
     project: string,
+    registration: RegistrationIdentity,
   ): Promise<number> {
     const body = await readBody(req, res, POST_BODY_CAP);
     if (isRefusal(body)) {
@@ -653,16 +720,31 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
     if ("reply" in decoded) {
       return answer(res, method, socket, decoded);
     }
-    const result = await noticeModel.postEvent(project, decoded.value);
+    const result = await bound(project, registration, () =>
+      noticeModel.postEvent(project, decoded.value),
+    );
+    if (result === undefined) {
+      return answer(res, method, socket, GONE);
+    }
     return answer(res, method, socket, afterRead(eventReply(result)));
   }
 
   /**
    * The write path, in the order the steps are documented. Everything refused
-   * here is refused before the body is read, and therefore closes the
-   * connection; the only reads of a body are in `push`, `putStatus`, `register`
-   * and the three notice writes, all of which run after authentication has
-   * already answered.
+   * here on the head alone is refused before the body is read, and therefore
+   * closes the connection; the only reads of a body are in `push`, `putStatus`,
+   * `register` and the three notice writes, all of which run after
+   * authentication has already answered.
+   *
+   * A project-token write is bound to the registration that authenticated it:
+   * after the body is read the project is read again and the two stored
+   * registration fields compared, and a registration that is gone or different
+   * answers exactly like an unknown token's. The registration gate is why
+   * nothing can commit between that compare and the write: every registry
+   * change — a registration, a rotation, an enrollment, a removal — runs inside
+   * the same gate, so the compare and the store call are one exclusive step.
+   * The answers route in `http-answers.ts`, the owner's signed answer, is not
+   * a project-token write and is not bound here.
    */
   return async (req, res, method, target, matched) => {
     const socket = req.socket;
@@ -748,7 +830,6 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
     if (isRefusal(authenticated)) {
       return denied(res, method, socket, address, authenticated);
     }
-    let power: "admin" | "enroll" = "admin";
     if (isAdminWrite(route)) {
       // A rotation and a removal are the admin token's alone, so the two service
       // tokens resolve to a power and the table below turns that into an answer.
@@ -759,75 +840,115 @@ export function createWriteHandler(deps: WriteDeps): WriteHandler {
       if (decision.kind === "refuse") {
         return denied(res, method, socket, address, refused(decision));
       }
-      power = decision.kind;
+      const power = decision.kind;
+      if (!rate.take(power === "enroll" ? ENROLL_LIMITER_KEY : ADMIN_LIMITER_KEY)) {
+        return answer(
+          res,
+          method,
+          socket,
+          refuse(jsonReply(429, { error: "too many writes" }), RETRY_AFTER_ONE),
+        );
+      }
+      switch (route.kind) {
+        case "register":
+          return register(res, method, socket, req, rotate, power);
+        case "removeProject":
+          return answer(
+            res,
+            method,
+            socket,
+            afterRead(
+              (await gate.exclusive(() => model.deleteProject(route.project)))
+                ? NO_CONTENT
+                : jsonReply(404, { error: "not found" }),
+            ),
+          );
+      }
     } else {
       const wave = await authenticateWave(authenticated, route.project);
-      if (wave !== undefined) {
+      if (isRefusal(wave)) {
         return denied(res, method, socket, address, wave);
       }
-    }
-    /**
-     * One allowance per project for both of the writes it makes, so a project's
-     * push and its status share it: a status is one push a second, not a second
-     * push a second, and a sender that spaces them or honours `Retry-After` is
-     * never refused for saying two things about itself at once.
-     */
-    if (
-      !rate.take(
-        route.kind === "push" ||
-          route.kind === "drop" ||
-          route.kind === "putStatus" ||
-          route.kind === "raiseDecision" ||
-          route.kind === "postState" ||
-          route.kind === "postEvent"
-          ? route.project
-          : power === "enroll"
-            ? ENROLL_LIMITER_KEY
-            : ADMIN_LIMITER_KEY,
-      )
-    ) {
-      return answer(
-        res,
-        method,
-        socket,
-        refuse(jsonReply(429, { error: "too many writes" }), RETRY_AFTER_ONE),
-      );
-    }
-    switch (route.kind) {
-      case "register":
-        return register(res, method, socket, req, rotate, power);
-      case "removeProject":
+      const registration = wave;
+      /**
+       * One allowance per project for both of the writes it makes, so a project's
+       * push and its status share it: a status is one push a second, not a second
+       * push a second, and a sender that spaces them or honours `Retry-After` is
+       * never refused for saying two things about itself at once.
+       */
+      if (!rate.take(route.project)) {
         return answer(
           res,
           method,
           socket,
-          afterRead(
-            (await model.deleteProject(route.project))
-              ? NO_CONTENT
-              : jsonReply(404, { error: "not found" }),
-          ),
+          refuse(jsonReply(429, { error: "too many writes" }), RETRY_AFTER_ONE),
         );
-      case "drop":
-        return answer(
-          res,
-          method,
-          socket,
-          afterRead(
-            (await model.deleteWave(route.project, route.wave))
-              ? NO_CONTENT
-              : jsonReply(404, { error: "not found" }),
-          ),
-        );
-      case "push":
-        return push(res, method, socket, req, route.project, route.wave);
-      case "putStatus":
-        return putStatus(res, method, socket, req, route.project);
-      case "raiseDecision":
-        return raiseDecision(res, method, socket, req, route.project, route.id);
-      case "postState":
-        return postState(res, method, socket, req, route.project, route.id);
-      case "postEvent":
-        return postEvent(res, method, socket, req, route.project);
+      }
+      switch (route.kind) {
+        case "drop": {
+          const dropped = await bound(route.project, registration, () =>
+            model.deleteWave(route.project, route.wave),
+          );
+          return dropped === undefined
+            ? answer(res, method, socket, GONE)
+            : answer(
+                res,
+                method,
+                socket,
+                afterRead(
+                  dropped ? NO_CONTENT : jsonReply(404, { error: "not found" }),
+                ),
+              );
+        }
+        case "push":
+          return push(
+            res,
+            method,
+            socket,
+            req,
+            route.project,
+            route.wave,
+            registration,
+          );
+        case "putStatus":
+          return putStatus(
+            res,
+            method,
+            socket,
+            req,
+            route.project,
+            registration,
+          );
+        case "raiseDecision":
+          return raiseDecision(
+            res,
+            method,
+            socket,
+            req,
+            route.project,
+            route.id,
+            registration,
+          );
+        case "postState":
+          return postState(
+            res,
+            method,
+            socket,
+            req,
+            route.project,
+            route.id,
+            registration,
+          );
+        case "postEvent":
+          return postEvent(
+            res,
+            method,
+            socket,
+            req,
+            route.project,
+            registration,
+          );
+      }
     }
   };
 }

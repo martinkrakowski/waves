@@ -103,7 +103,7 @@ describe("createAuthenticator", () => {
       kind: "accepted",
       id: "alpha",
       registration: {
-        tokenSha256: digestOf(TOKEN).toString("hex"),
+        tokenSha256: Buffer.from(digestOf(TOKEN)).toString("hex"),
         registeredAt: "2026-10-01T12:00:00Z",
       },
     });
@@ -154,7 +154,7 @@ describe("createAuthenticator", () => {
       kind: "accepted",
       id: "alpha",
       registration: {
-        tokenSha256: digestOf(TOKEN).toString("hex"),
+        tokenSha256: Buffer.from(digestOf(TOKEN)).toString("hex"),
         registeredAt: "2026-10-01T12:00:00Z",
       },
     });
@@ -205,7 +205,7 @@ describe("createAuthenticator", () => {
       kind: "accepted",
       id: "alpha",
       registration: {
-        tokenSha256: digestOf(TOKEN).toString("hex"),
+        tokenSha256: Buffer.from(digestOf(TOKEN)).toString("hex"),
         registeredAt: "2026-10-01T12:00:00Z",
       },
     });
