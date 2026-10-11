@@ -101,6 +101,24 @@ function entryChildren(entry, onEarlierText, project) {
     kids.push(
       internalLink(entry.supersededBy, `/p/${project}/d/${entry.supersededBy}`),
     );
+  } else if (entry.source === "signed") {
+    // The owner's own answer: "You …", never "recorded that you", and the
+    // small line says whose signature it was rather than calling it a claim.
+    let line = `You ${entry.state}`;
+    if (entry.option !== undefined) {
+      line += ` (${entry.option})`;
+    }
+    line += ` on ${calendarDate(entry.receivedAt)}`;
+    if (entry.words !== undefined) {
+      line += `: "${entry.words}"`;
+    }
+    kids.push(text(line));
+    kids.push(
+      el("small", {
+        attrs: { class: "card-small" },
+        text: ` signed with your passkey (${entry.by})`,
+      }),
+    );
   } else {
     let line = `${entry.by} recorded that you ${entry.state}`;
     if (entry.option !== undefined) {
