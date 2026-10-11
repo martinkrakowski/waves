@@ -1,5 +1,3 @@
-import type { AnswerVerdict } from "@hexagen-monaco/waves-contract";
-
 import type { DecisionModel } from "./views/decision-model.js";
 
 /**

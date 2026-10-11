@@ -737,7 +737,6 @@ describe("sign: the order of the steps", () => {
   }
 
   it("accepts an assertion whose byte strings are views over buffers", async () => {
-    const key = passkeyFor("views");
     const handler: GetFn = (options) => {
       const pk = (
         options as unknown as { publicKey: { challenge: Uint8Array } }
