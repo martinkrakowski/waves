@@ -1,6 +1,11 @@
-import { TEXT_RULE, readNoticeText, readOptionKey } from "./notice.js";
+import {
+  TEXT_RULE,
+  SHA256_RULE,
+  readNoticeText,
+  readOptionKey,
+} from "./notice.js";
 import { isLaneId } from "./ids.js";
-import type { StateEntryRequest, DecisionState, StateSource } from "./model.js";
+import type { StateEntryRequest, DecisionState } from "./model.js";
 import type { Collector, ValidationResult } from "./validation.js";
 import {
   IssueCollector,
@@ -40,7 +45,6 @@ const WRITABLE_STATES = [
 ] as const;
 
 const BY_RULE = { minChars: 1, maxChars: 80 };
-const SHA256_RULE = { pattern: /^[0-9a-f]{64}$/ };
 
 function readLaneIdRef(
   ctx: Collector,
@@ -175,7 +179,7 @@ function readStateEntry(
 
   return {
     state: state as DecisionState,
-    source: source as StateSource,
+    source: source!,
     revision: revision!,
     textSha256: textSha256!,
     expectedEntries: expectedEntries!,

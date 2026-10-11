@@ -28,6 +28,7 @@ export const LABEL_RULE: StringRule = {
 export const OPTION_KEY_RULE: StringRule = {
   pattern: /^[a-z0-9]{1,8}$/,
 };
+export const SHA256_RULE: StringRule = { pattern: /^[0-9a-f]{64}$/ };
 export const TOPIC_RULE: StringRule = {
   maxChars: 32,
   pattern: /^[a-z][a-z-]{0,31}$/,
