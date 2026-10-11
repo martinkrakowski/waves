@@ -6,6 +6,8 @@ export const app = boot({
   history,
   win: window,
   fetch,
+  credentials: navigator.credentials,
+  crypto,
   // `navigator.clipboard` is undefined outside a secure context, which the page
   // says as a copy that could not be made.
   clipboard: navigator.clipboard,

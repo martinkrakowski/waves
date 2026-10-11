@@ -9,6 +9,7 @@ export type Route =
       readonly wave?: string;
     }
   | { readonly kind: "inbox" }
+  | { readonly kind: "enrol-key" }
   | {
       readonly kind: "project-inbox";
       readonly project: string;
@@ -42,6 +43,17 @@ export interface AppGlobals {
    * reads as a copy that cannot be made rather than as nothing to do.
    */
   readonly clipboard?: { writeText(text: string): Promise<void> };
+  /**
+   * The WebCrypto global and the credentials container, handed to the
+   * `/enrol-key` page's logic as the `crypto` and `credentials` it takes as
+   * parameters. Both are optional: a browser without passkeys has neither, and
+   * the page says so.
+   */
+  readonly crypto?: Crypto;
+  readonly credentials?: {
+    create(options: PublicKeyCredentialCreationOptions): Promise<unknown>;
+    get(options: PublicKeyCredentialRequestOptions): Promise<unknown>;
+  };
   readonly setTimer: (callback: () => void, delayMs: number) => unknown;
   readonly clearTimer: (handle: unknown) => void;
   readonly clock: () => number;
