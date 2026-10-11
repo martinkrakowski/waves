@@ -568,8 +568,10 @@ refuses a `signature` key: a session cannot write a signed entry. `validateStore
 is the gate for a state entry as the store holds it (no `expectedEntries`). It accepts
 `source: "signed"` only for `approved`, `declined` and `answered`, and only with a
 `signature` of `credentialId`, `authenticatorData`, `clientDataJSON`, `signature`,
-`nonce` and `index`, bounded exactly as above. A `signature` on any entry whose source
-is not `signed` is refused.
+`nonce` and `index`, bounded exactly as above. A signed entry answers the same way the
+request it came from had to: `answered` needs an `option` or `words`, `declined`
+refuses an `option`, and the refusal names `/state`, the field that carries it. A
+`signature` on any entry whose source is not `signed` is refused.
 
 **The owner-keys document.** `validateOwnerKeys` is the gate for the file
 `WAVES_OWNER_KEYS_FILE` names. It is public keys only — a private key never reaches

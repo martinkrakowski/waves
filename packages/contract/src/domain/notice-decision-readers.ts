@@ -1,7 +1,8 @@
 import { isLaneId, type ProjectId } from "./ids.js";
 import { readProjectId } from "./fields.js";
-import { readAnswerSignature } from "./notice-answer.js";
+import { applyAnswerRules, readAnswerSignature } from "./notice-answer.js";
 import type {
+  AnswerVerdict,
   DecisionOption,
   DecisionState,
   DoorValue,
@@ -424,6 +425,15 @@ function applyStoredSourceRules(
   }
   if (source !== "signed" && signaturePresent) {
     ctx.add("/signature", "expected no signature for this source");
+  }
+  if (source === "signed" && ANSWER_STATES.has(state)) {
+    applyAnswerRules(
+      ctx,
+      state as AnswerVerdict,
+      optionPresent,
+      wordsPresent,
+      "/state",
+    );
   }
 }
 

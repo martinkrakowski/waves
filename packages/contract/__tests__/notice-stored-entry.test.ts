@@ -107,6 +107,25 @@ describe("validateStoredStateEntry", () => {
     ).toBe("other-decision");
   });
 
+  it("refuses a signed answered entry with neither option nor words", () => {
+    entryPaths({ ...minimalSigned(), state: "answered" }, ["/state"]);
+  });
+
+  it("refuses a signed declined entry with an option", () => {
+    entryPaths({ ...minimalSigned(), state: "declined", option: "b" }, [
+      "/option",
+    ]);
+  });
+
+  it("leaves a reported entry's own rules exactly as they were", () => {
+    expect(
+      expectValidEntry({ ...minimalEntry(), state: "declined" }).state,
+    ).toBe("declined");
+    const withoutWords = { ...minimalEntry(), state: "answered" };
+    delete (withoutWords as Record<string, unknown>).words;
+    entryPaths(withoutWords, ["/words"]);
+  });
+
   it("refuses a non-object root and an input that is not serialisable", () => {
     entryPaths("entry", [""]);
     entryPaths({ ...minimalEntry(), big: 1n }, [""]);

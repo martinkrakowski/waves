@@ -185,15 +185,18 @@ export function readAnswerSignature(
 
 /** What a verdict says about itself: `answered` carries an option or his own
  * words, `declined` carries no option. Nothing else is inferred from the
- * verdict, and a field that fails is refused, never repaired. */
-function applyAnswerRules(
+ * verdict, and a field that fails is refused, never repaired. `verdictPath` is
+ * where that verdict is read from: `/verdict` in the answer request, `/state` in
+ * the stored entry the request becomes, which says the same through `state`. */
+export function applyAnswerRules(
   ctx: Collector,
   verdict: AnswerVerdict | undefined,
   optionPresent: boolean,
   wordsPresent: boolean,
+  verdictPath: string,
 ): void {
   if (verdict === "answered" && !optionPresent && !wordsPresent) {
-    ctx.add("/verdict", "expected option or words for an answered verdict");
+    ctx.add(verdictPath, "expected option or words for an answered verdict");
   }
   if (verdict === "declined" && optionPresent) {
     ctx.add("/option", "expected no option for a declined verdict");
@@ -266,6 +269,7 @@ function readAnswerRequest(
     verdict,
     own(record, "option") !== undefined,
     own(record, "words") !== undefined,
+    "/verdict",
   );
 
   if (ctx.issues.length > 0) return undefined;
