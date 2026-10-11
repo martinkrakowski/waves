@@ -218,8 +218,8 @@ export function pinReadOf(
 }
 
 export interface RecordInput {
-  readonly entries: readonly Record<string, unknown>[];
-  readonly revisions?: readonly Record<string, unknown>[];
+  readonly entries: readonly unknown[];
+  readonly revisions?: readonly unknown[];
   readonly decision?: Record<string, unknown>;
   readonly id?: string;
   readonly textSha256?: string;
