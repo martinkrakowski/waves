@@ -34,6 +34,7 @@ import {
 } from "../../src/infrastructure/assertion-verifier.js";
 import type { AssertionInput } from "../../src/infrastructure/assertion-verifier.js";
 import type { Head } from "../../src/application/notice-read-model.js";
+import { NONCE_TTL_MS } from "../../src/application/nonce-store.js";
 import {
   decisionEntry,
   decisionRevision,
@@ -1051,8 +1052,10 @@ describe("the calls the ceremony makes", () => {
       .publicKey;
     expect(pk.rpId).toBe(LOCATION.hostname);
     expect(pk.userVerification).toBe("required");
-    // The same ceiling enrol-key.js asks the authenticator for.
-    expect(pk.timeout).toBe(120_000);
+    // Shorter than the nonce's lifetime, so a slow but successful prompt
+    // is not refused as not-verified after the nonce has already died.
+    expect(pk.timeout).toBe(90_000);
+    expect(pk.timeout).toBeLessThan(NONCE_TTL_MS);
     expect(pk).not.toHaveProperty("allowCredentials");
     expect(pk.challenge).toBeInstanceOf(Uint8Array);
     expect((pk.challenge as Uint8Array).length).toBe(32);

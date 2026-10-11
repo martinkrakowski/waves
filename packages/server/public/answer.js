@@ -24,10 +24,12 @@ import {
 const MAX_WORDS_CHARS = 2000;
 
 /**
- * A second, in milliseconds: the ceiling `enrol-key.js` asks the authenticator
- * to use, and the same here so one page does not out-wait the other.
+ * A second, in milliseconds: shorter than the enrol page's ceiling on purpose,
+ * because the server's nonce only lives 120 s — the answer page must give up
+ * before the nonce does, so a slow but successful prompt is never refused as
+ * `not-verified` and counted as a failure against the owner's address.
  */
-const TIMEOUT_MS = 120_000;
+const TIMEOUT_MS = 90_000;
 
 /**
  * The four reasons the server refuses a signed answer for, in the words the
