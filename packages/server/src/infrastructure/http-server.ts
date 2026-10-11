@@ -10,6 +10,7 @@ import {
   createRateLimiter,
 } from "../application/limiters.js";
 import type { NoticeStorePort } from "../application/ports/notice-store.js";
+import type { NonceSource } from "../application/ports/nonce-source.js";
 import type { Now } from "../application/read-model.js";
 import { createReadModel, type ReadModel } from "../application/read-model.js";
 import {
@@ -43,7 +44,10 @@ import {
   type Route,
   route,
 } from "./http-routes.js";
+import { createAnswerHandler } from "./http-answers.js";
 import { createWriteHandler } from "./http-write.js";
+import { randomNonce } from "./nonce-source.js";
+import type { LoadedKey } from "./owner-keys-file.js";
 import {
   HTML_TYPE,
   readStaticFile,
@@ -82,6 +86,13 @@ export interface HttpServerDeps {
   readonly compare?: DigestComparer;
   readonly mint?: () => string;
   readonly hashText?: (text: string) => string;
+  /**
+   * The owner's public keys, loaded at start. undefined leaves the two answer
+   * paths off, so they answer exactly like a path that was never a route.
+   */
+  readonly ownerKeys?: readonly LoadedKey[];
+  /** Where a nonce's bytes come from; the default is the crypto adapter's. */
+  readonly nonceSource?: NonceSource;
 }
 
 async function staticReply(
@@ -215,6 +226,12 @@ export function createHttpServer(deps: HttpServerDeps): Server {
   const noticeReadModel = createNoticeReadModel({ store, noticeStore, now });
   const realRoot = realRootOf(root);
   const compare: DigestComparer = deps.compare ?? digestsEqual;
+  // One failure window and one allowance per address for the whole server, so
+  // the write path and the answer path spend the same instances: a caller that
+  // burned its allowance pushing cannot buy a nonce ask with it, and ten
+  // failed tokens lock the asks out with the writes.
+  const failures = createFailureLimiter(now);
+  const rate = createRateLimiter(now);
   const write = createWriteHandler({
     store,
     noticeStore,
@@ -227,8 +244,17 @@ export function createHttpServer(deps: HttpServerDeps): Server {
     compare,
     mintToken: deps.mint ?? mintToken,
     digestHex: (token: string): string => sha256(token).toString("hex"),
-    failures: createFailureLimiter(now),
-    rate: createRateLimiter(now),
+    failures,
+    rate,
+  });
+  const answers = createAnswerHandler({
+    store,
+    noticeStore,
+    now,
+    nonceSource: deps.nonceSource ?? randomNonce,
+    failures,
+    rate,
+    trustProxy: deps.trustProxy === true,
   });
 
   const respond = async (
@@ -241,7 +267,26 @@ export function createHttpServer(deps: HttpServerDeps): Server {
     if (Buffer.byteLength(target) > MAX_URL_BYTES) {
       return send(res, jsonReply(414, { error: "uri too long" }), { method });
     }
-    const matched = route(pathname, root);
+    let matched: Route = route(pathname, root);
+    if (
+      deps.ownerKeys === undefined &&
+      (matched.kind === "decisionNonce" || matched.kind === "decisionAnswers")
+    ) {
+      // No owner keys loaded, so the two answer paths do not exist. The match
+      // is replaced before any other branch looks at it, so every method
+      // answers the same status, body and headers the same request to a path
+      // that never was a route answers — a probe cannot tell a disabled route
+      // from an unknown one, whatever it asks with.
+      matched = { kind: "missing" };
+    }
+    if (
+      method === "POST" &&
+      (matched.kind === "decisionNonce" || matched.kind === "decisionAnswers")
+    ) {
+      // Only reachable with keys loaded: without them the match above was
+      // replaced, and no other method reaches the answer handler at all.
+      return answers(req, res, matched);
+    }
     if (WRITE_METHODS.has(method)) {
       return write(req, res, method, target, matched);
     }

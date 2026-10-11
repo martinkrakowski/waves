@@ -7,10 +7,12 @@ import { join } from "node:path";
 import type { Project, StoredSnapshot } from "@hexagen-monaco/waves-contract";
 
 import type { DigestComparer } from "../src/application/bearer.js";
+import type { NonceSource } from "../src/application/ports/nonce-source.js";
 import type { NoticeStorePort } from "../src/application/ports/notice-store.js";
 import type { StorePort } from "../src/application/ports/store.js";
 import { createHttpServer } from "../src/infrastructure/http-server.js";
 import { MemoryStore } from "../src/infrastructure/memory-store.js";
+import type { LoadedKey } from "../src/infrastructure/owner-keys-file.js";
 import {
   expectingRequest,
   type RawResult,
@@ -40,6 +42,10 @@ export interface HarnessOptions {
   readonly hashText?: (text: string) => string;
   readonly now?: () => number;
   readonly publicDir?: string;
+  /** Loaded owner keys; absent leaves the answer paths answering like unknown ones. */
+  readonly ownerKeys?: readonly LoadedKey[];
+  /** Where a nonce's bytes come from; a counter in the tests. */
+  readonly nonceSource?: NonceSource;
 }
 
 export interface Started {
@@ -151,6 +157,8 @@ export async function startHarness(
     trustProxy: options.trustProxy,
     compare: options.compare,
     mint: options.mint,
+    ownerKeys: options.ownerKeys,
+    nonceSource: options.nonceSource,
     log: (line) => {
       lines.push(line);
       allLines.push(line);
