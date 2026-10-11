@@ -2048,6 +2048,43 @@ describe("leaving the decision resets the answer flow", () => {
     h.app.stop();
   });
 
+  it("says nothing on the next decision about an answer that settles after leaving", async () => {
+    let releaseGet!: () => void;
+    const fetchImpl = leavingFetch({
+      nonce: () => NONCE_OK,
+      answers: () => ({ status: 201, body: { index: 0, state: "approved" } }),
+      decisions: { d1: openDecision(), d2: otherDecision() },
+    });
+    const h = signingHarness("/p/alpha/d/d1", fetchImpl, (options) => {
+      const pk = (
+        options as unknown as { publicKey: { challenge: Uint8Array } }
+      ).publicKey;
+      const made = assertionFor(pk.challenge, "settled-on-next-decision");
+      return new Promise<unknown>((resolve) => {
+        releaseGet = () => resolve(browserAssertion(made.input));
+      });
+    });
+    h.app.start();
+    await settle();
+
+    press("answer-yes");
+    await flush();
+    press("answer-sign");
+    await settle();
+
+    h.app.navigate("/p/alpha/d/d2");
+    await settle();
+    expect(root().querySelector("p.answer-message")).toBeNull();
+
+    releaseGet();
+    await settle();
+
+    expect(root().querySelector("p.answer-message")).toBeNull();
+    expect(root().textContent ?? "").not.toContain("Signed and recorded.");
+
+    h.app.stop();
+  });
+
   it("does not carry a prompt left open on one visit over to the next", async () => {
     const fetchImpl = leavingFetch({
       nonce: () => NONCE_OK,
