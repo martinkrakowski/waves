@@ -1067,21 +1067,11 @@ export function createApp(deps) {
 
   /**
    * The two presses. Each runs one step of the controller and draws what came
-   * back, so a state on screen is always one the device answered with. A press
-   * that throws is answered as a failed draw rather than an exception the page
-   * never heard of.
+   * back, so a state on screen is always one the device answered with.
    */
   function enrolHandlers() {
     const step = async (run) => {
-      try {
-        enrolCurrent = await run();
-      } catch {
-        enrolCurrent = {
-          kind: "createError",
-          name: "Error",
-          message: "the browser did not answer",
-        };
-      }
+      enrolCurrent = await run();
       draw();
     };
     return {
