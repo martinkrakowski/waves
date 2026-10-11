@@ -663,6 +663,51 @@ const INVALID: readonly (readonly [string, unknown])[] = [
     },
   ],
   [
+    "a head with a signed answered answer that has neither words nor an option",
+    {
+      ...inboxView(),
+      projects: [
+        {
+          ...inboxProject(),
+          decisions: [
+            {
+              ...inboxHead(),
+              earlierAnswer: {
+                state: "answered",
+                source: "signed",
+                at: NOW_ISO,
+                by: "owner",
+              },
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  [
+    "a head with a signed declined answer that carries an option",
+    {
+      ...inboxView(),
+      projects: [
+        {
+          ...inboxProject(),
+          decisions: [
+            {
+              ...inboxHead(),
+              coveredAnswer: {
+                state: "declined",
+                source: "signed",
+                at: NOW_ISO,
+                by: "owner",
+                option: "a",
+              },
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  [
     "a head with a from that is not a project id",
     {
       ...inboxView(),
@@ -798,6 +843,61 @@ describe("drawableInbox", () => {
                     source: "signed",
                     at: NOW_ISO,
                     by: "owner",
+                  },
+                }),
+              ],
+            }),
+          ],
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("takes a signed answered answer with an option, and one declined with words", () => {
+    expect(
+      drawableInbox(
+        inboxView({
+          projects: [
+            inboxProject({
+              decisions: [
+                inboxHead({
+                  earlierAnswer: {
+                    state: "answered",
+                    source: "signed",
+                    at: NOW_ISO,
+                    by: "owner",
+                    option: "a",
+                  },
+                  coveredAnswer: {
+                    state: "declined",
+                    source: "signed",
+                    at: NOW_ISO,
+                    by: "owner",
+                    words: "no",
+                  },
+                }),
+              ],
+            }),
+          ],
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("takes a reported declined answer that carries an option", () => {
+    expect(
+      drawableInbox(
+        inboxView({
+          projects: [
+            inboxProject({
+              decisions: [
+                inboxHead({
+                  coveredAnswer: {
+                    state: "declined",
+                    source: "reported",
+                    at: NOW_ISO,
+                    by: "owner",
+                    option: "a",
                   },
                 }),
               ],

@@ -57,11 +57,29 @@ export function time(value) {
 export const ANSWER_STATES = ["approved", "declined", "answered"];
 
 /**
+ * The verdict rules a signed answer answers to, wherever one is summarised — on
+ * a head's `earlierAnswer` or `coveredAnswer` as on the entry itself:
+ * `answered` needs `words` or an `option`, and `declined` carries no `option`.
+ * A reported summary keeps the shape it always had. Exported for the decision
+ * page, whose own signed entries answer to the same rules.
+ */
+export function signedAnswerRules(value) {
+  return (
+    (value.state !== "answered" ||
+      value.words !== undefined ||
+      value.option !== undefined) &&
+    (value.state !== "declined" || value.option === undefined)
+  );
+}
+
+/**
  * An answer on a head: the answer a withdrawal covers, or the answer given to an
  * earlier text. It is one of the three answer states and nothing else, because
  * the page has a verdict word for those three only; and its source is
  * `reported` or `signed` — a session's claim or the owner's own passkey
- * signature — and the card's sentence says which of the two it was.
+ * signature — and the card's sentence says which of the two it was. A signed
+ * one is the owner's own, so it answers to the same verdict rules the entry
+ * did; a reported one is a claim the page prints as it was told.
  */
 export function answer(value) {
   return (
@@ -72,7 +90,8 @@ export function answer(value) {
     time(value.at) &&
     typeof value.by === "string" &&
     (value.words === undefined || typeof value.words === "string") &&
-    (value.option === undefined || typeof value.option === "string")
+    (value.option === undefined || typeof value.option === "string") &&
+    (value.source !== "signed" || signedAnswerRules(value))
   );
 }
 

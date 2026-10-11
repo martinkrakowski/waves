@@ -24,6 +24,7 @@ import {
   GROUP_STATES,
   oneOf,
   SHAPES,
+  signedAnswerRules,
   SOURCES,
   STATES,
   time,
@@ -203,18 +204,15 @@ function signatureMatches(signature, index) {
 
 /**
  * The owner's own answer: an answer state, signed, and held to the contract's
- * verdict rules — `answered` needs words or an option, `declined` has no
- * option. `words` is optional for it: the signature is what makes it an answer,
- * not the sentence beside it.
+ * verdict rules — the ones `signedAnswerRules` in `inbox.js` pins once, so the
+ * entry and every head summary answer to the same rules. `words` is optional
+ * for it: the signature is what makes it an answer, not the sentence beside it.
  */
 function signedAnswer(entry) {
   return (
     ANSWER_STATES.includes(entry.state) &&
     signatureMatches(entry.signature, entry.index) &&
-    (entry.state !== "answered" ||
-      entry.words !== undefined ||
-      entry.option !== undefined) &&
-    (entry.state !== "declined" || entry.option === undefined)
+    signedAnswerRules(entry)
   );
 }
 
