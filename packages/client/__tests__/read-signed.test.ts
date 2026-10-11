@@ -25,7 +25,7 @@ type ReadCommand = Extract<
 const PIN_PATH = "/etc/waves/owner-keys.json";
 
 function command(id = "d1"): ReadCommand {
-  return { kind: "decision", action: "read", id };
+  return { kind: "decision", action: "read", id, signed: true };
 }
 
 interface Run {
