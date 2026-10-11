@@ -543,7 +543,7 @@ posts to the answers route. A closed object with keys exactly `revision`,
 | ------------------- | ------- | -------- | ---------------------------------------------------- |
 | `revision`          | integer | yes      | ≥ 1                                                  |
 | `textSha256`        | string  | yes      | 64 lower-case hex characters                         |
-| `index`             | integer | yes      | ≥ 0                                                  |
+| `index`             | integer | yes      | 0 to 69                                              |
 | `verdict`           | string  | yes      | `approved` \| `declined` \| `answered`               |
 | `option`            | string  | no       | an option key, `^[a-z0-9]{1,8}$`                     |
 | `words`             | string  | no       | 1 to 2000 characters, NFC, no leading/trailing space |
@@ -558,9 +558,12 @@ length of 4n+1 decodes to no whole number of bytes and is refused, and the bits 
 the end of the last character that no byte uses must be zero — so of a value of
 4n+3 characters `…AB` and `…AE` are the same run of bytes and only the second is
 accepted, and of a value of 4n+2 only a last character in `AQgw` is. One run of
-bytes therefore has one spelling. `answered` needs an `option` or `words`;
-`declined` refuses an `option`; nothing else is inferred from the verdict. Nothing
-here is repaired or defaulted: a field that fails is refused, naming its path.
+bytes therefore has one spelling. `index` is the position the entry will take among the
+decision's state entries, and the design allows 50 written by a session and 20 signed
+(`MAX_STATE_ENTRIES`, 70), so an `index` of 70 or more is refused. `answered` needs an
+`option` or `words`; `declined` refuses an `option`; nothing else is inferred from the
+verdict. Nothing here is repaired or defaulted: a field that fails is refused, naming
+its path.
 
 **The stored signed entry.** `StateSource` is `session` | `reported` | `signed`, and
 `validateStateEntry` — the body a project token posts — still refuses `signed` and

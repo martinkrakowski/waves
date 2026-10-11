@@ -149,6 +149,7 @@ export const MAX_DECISIONS_PER_PROJECT = 500;
 export const MAX_EVENTS_PER_PROJECT = 2000;
 export const MAX_REVISIONS_PER_DECISION = 20;
 export const MAX_SESSION_ENTRIES_PER_DECISION = 50;
+export const MAX_SIGNED_ENTRIES_PER_DECISION = 20;
 
 export type NoticeRefs = { wave?: WaveId; lane?: LaneId; pr?: number };
 

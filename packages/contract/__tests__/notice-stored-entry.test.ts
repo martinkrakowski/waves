@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   validateStoredStateEntry,
+  MAX_STATE_ENTRIES,
   type StoredStateEntry,
 } from "../src/index.js";
 import { errorsOf } from "./support.js";
@@ -266,6 +267,25 @@ describe("validateStoredStateEntry", () => {
       },
       ["/signature"],
     );
+  });
+
+  it("refuses a signature whose index is past the last position a decision can hold", () => {
+    entryPaths(
+      {
+        ...minimalSigned(),
+        signature: { ...minimalSignature(), index: MAX_STATE_ENTRIES },
+      },
+      ["/signature/index"],
+    );
+    expect(
+      expectValidEntry({
+        ...minimalSigned(),
+        signature: {
+          ...minimalSignature(),
+          index: MAX_STATE_ENTRIES - 1,
+        },
+      }).signature?.index,
+    ).toBe(MAX_STATE_ENTRIES - 1);
   });
 
   it("refuses a signature whose six fields break the answer request's bounds", () => {

@@ -5,6 +5,10 @@ import {
   readOptionKey,
 } from "./notice.js";
 import type { AnswerRequest, AnswerSignature, AnswerVerdict } from "./model.js";
+import {
+  MAX_SESSION_ENTRIES_PER_DECISION,
+  MAX_SIGNED_ENTRIES_PER_DECISION,
+} from "./model.js";
 import type { Collector, StringRule, ValidationResult } from "./validation.js";
 import {
   IssueCollector,
@@ -13,11 +17,18 @@ import {
   readClosedObject,
   readEnum,
   readIntegerAtLeast,
+  readIntegerInRange,
   readOptional,
   readText,
 } from "./validation.js";
 
 export const ANSWER_CHALLENGE_SCHEMA = "waves-answer/v1";
+
+/** The design's bound on one decision's state entries: 50 a session may write
+ * and 20 the owner may sign. `index` is the position the entry will take among
+ * them, so the last position that can exist is one below this. */
+export const MAX_STATE_ENTRIES =
+  MAX_SESSION_ENTRIES_PER_DECISION + MAX_SIGNED_ENTRIES_PER_DECISION;
 
 const ANSWER_REQUEST_KEYS = [
   "revision",
@@ -157,11 +168,12 @@ export function readAnswerSignature(
     `${path}/nonce`,
     NONCE_RULE,
   );
-  const index = readIntegerAtLeast(
+  const index = readIntegerInRange(
     ctx,
     own(record, "index"),
     `${path}/index`,
     0,
+    MAX_STATE_ENTRIES - 1,
   );
   if (
     credentialId === undefined ||
@@ -222,7 +234,13 @@ function readAnswerRequest(
     "/textSha256",
     SHA256_RULE,
   );
-  const index = readIntegerAtLeast(ctx, own(record, "index"), "/index", 0);
+  const index = readIntegerInRange(
+    ctx,
+    own(record, "index"),
+    "/index",
+    0,
+    MAX_STATE_ENTRIES - 1,
+  );
   const verdict = readEnum(
     ctx,
     own(record, "verdict"),

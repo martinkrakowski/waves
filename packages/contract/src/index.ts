@@ -14,6 +14,7 @@ export {
   MAX_RAISED_BY_CHARS,
   MAX_REVISIONS_PER_DECISION,
   MAX_SESSION_ENTRIES_PER_DECISION,
+  MAX_SIGNED_ENTRIES_PER_DECISION,
   MAX_TEXT_CHARS,
   OPTION_KEY_PATTERN,
 } from "./domain/model.js";
@@ -64,6 +65,7 @@ export {
 } from "./domain/notice-decision.js";
 export {
   ANSWER_CHALLENGE_SCHEMA,
+  MAX_STATE_ENTRIES,
   answerChallengeText,
   validateAnswerRequest,
 } from "./domain/notice-answer.js";

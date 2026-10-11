@@ -3,6 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   answerChallengeText,
   validateAnswerRequest,
+  MAX_SESSION_ENTRIES_PER_DECISION,
+  MAX_SIGNED_ENTRIES_PER_DECISION,
+  MAX_STATE_ENTRIES,
   type AnswerChallengeValues,
   type AnswerRequest,
 } from "../src/index.js";
@@ -205,6 +208,20 @@ describe("validateAnswerRequest", () => {
     answerPaths({ ...minimalAnswer(), index: -1 }, ["/index"]);
     answerPaths({ ...minimalAnswer(), index: 0.5 }, ["/index"]);
     expect(expectValidAnswer({ ...minimalAnswer(), index: 0 }).index).toBe(0);
+  });
+
+  it("bounds index to the last position a decision's state entries can take", () => {
+    expect(MAX_STATE_ENTRIES).toBe(
+      MAX_SESSION_ENTRIES_PER_DECISION + MAX_SIGNED_ENTRIES_PER_DECISION,
+    );
+    answerPaths({ ...minimalAnswer(), index: MAX_STATE_ENTRIES }, ["/index"]);
+    answerPaths({ ...minimalAnswer(), index: MAX_STATE_ENTRIES + 1000 }, [
+      "/index",
+    ]);
+    expect(
+      expectValidAnswer({ ...minimalAnswer(), index: MAX_STATE_ENTRIES - 1 })
+        .index,
+    ).toBe(MAX_STATE_ENTRIES - 1);
   });
 
   it("refuses a verdict outside the three answers", () => {
