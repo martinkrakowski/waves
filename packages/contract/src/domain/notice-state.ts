@@ -5,7 +5,7 @@ import {
   readOptionKey,
 } from "./notice.js";
 import { isLaneId } from "./ids.js";
-import type { StateEntryRequest, DecisionState, StateSource } from "./model.js";
+import type { StateEntryRequest, DecisionState } from "./model.js";
 import type { Collector, ValidationResult } from "./validation.js";
 import {
   IssueCollector,
@@ -179,7 +179,7 @@ function readStateEntry(
 
   return {
     state: state as DecisionState,
-    source: source as StateSource,
+    source: source!,
     revision: revision!,
     textSha256: textSha256!,
     expectedEntries: expectedEntries!,

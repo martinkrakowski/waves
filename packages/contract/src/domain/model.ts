@@ -207,7 +207,9 @@ export interface DecisionRevision {
 
 export interface StateEntryRequest {
   readonly state: DecisionState;
-  readonly source: StateSource;
+  /** A session body cannot say `signed`: only the store holds a signed entry,
+   * and `validateStoredStateEntry` is its gate. */
+  readonly source: Exclude<StateSource, "signed">;
   readonly revision: number;
   readonly textSha256: string;
   readonly expectedEntries: number;

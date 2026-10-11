@@ -564,7 +564,9 @@ here is repaired or defaulted: a field that fails is refused, naming its path.
 
 **The stored signed entry.** `StateSource` is `session` | `reported` | `signed`, and
 `validateStateEntry` — the body a project token posts — still refuses `signed` and
-refuses a `signature` key: a session cannot write a signed entry. `validateStoredStateEntry`
+refuses a `signature` key: a session cannot write a signed entry. Its `source` is
+typed `Exclude<StateSource, "signed">`, so a caller cannot build one that says
+`signed` in the first place. `validateStoredStateEntry`
 is the gate for a state entry as the store holds it (no `expectedEntries`). It accepts
 `source: "signed"` only for `approved`, `declined` and `answered`, and only with a
 `signature` of `credentialId`, `authenticatorData`, `clientDataJSON`, `signature`,
