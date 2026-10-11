@@ -104,6 +104,28 @@ describe("answerChallengeText", () => {
     expect(asString).not.toBe(answerChallengeText({ ...values(), index: 1 }));
   });
 
+  it.each([
+    ["project", { project: "beta" }, '"project":"beta"'],
+    ["decision", { decision: "another-one" }, '"decision":"another-one"'],
+    [
+      "textSha256",
+      { textSha256: "1".repeat(64) },
+      `"textSha256":"${"1".repeat(64)}"`,
+    ],
+    ["index", { index: 4 }, '"index":4'],
+    ["verdict", { verdict: "approved" as const }, '"verdict":"approved"'],
+    ["option", { option: "c" }, '"option":"c"'],
+    ["words", { words: "No" }, '"words":"No"'],
+    ["nonce", { nonce: "B".repeat(43) }, `"nonce":"${"B".repeat(43)}"`],
+  ])(
+    "a change of %s alone changes the text, and the text carries the new value",
+    (_name, change, fragment) => {
+      const text = answerChallengeText({ ...values(), ...change });
+      expect(text).not.toBe(answerChallengeText(values()));
+      expect(text).toContain(fragment);
+    },
+  );
+
   it("no white space falls between the tokens", () => {
     const text = answerChallengeText(values());
     expect(text).toBe(expectedText());
