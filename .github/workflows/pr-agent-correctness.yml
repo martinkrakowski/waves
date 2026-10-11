@@ -3,8 +3,16 @@ name: PR-Agent correctness review
 # One advisory correctness reviewer over the whole repository. NOT A MERGE GATE: a green check
 # here is not a review, and nothing requires it.
 #
-# It runs PR-Agent's /review tool, which posts each finding the model returns as a line comment,
-# up to a fixed number, with no scoring step in between. The /improve tool was tried beside it
+# THREE NARROW PASSES, not one broad review (the owner's decision, 2026-10-11): security and
+# access, error handling and wrong results, tests. Each pass is its own job (a matrix leg), runs
+# at the same time as the other two, and posts its OWN comment, headed with the pass's name and
+# ending with the model that answered, so the three are read and judged one by one. The reason:
+# in the exam behind the trial below, the free model found 7 of 15 planted defects with one broad
+# prompt and 14 of 15 with these three passes. Three legs in parallel keep the wall time near one
+# call's, and each leg has the job's whole time limit to itself.
+#
+# Each pass runs PR-Agent's /review tool, which posts each finding the model returns as a line
+# comment, up to a fixed number, with no scoring step in between. The /improve tool was tried beside it
 # and dropped (the owner's decision, 2026-10-09): a second model call scores /improve's
 # suggestions and discards any that score 0, and that step threw away real defects, one because
 # its suggested patch was incomplete and one because refusing an unset size cap "changed
@@ -16,8 +24,9 @@ name: PR-Agent correctness review
 # forks outright (see `if:` below), so a fork's pull request gets no bot review instead of a
 # failed run.
 #
-# No `synchronize`: one review per pull request lifecycle. Re-reviewing every push costs a call
-# each time and its findings decay. Reopen the pull request to ask for another.
+# No `synchronize`: one review per pull request lifecycle. Re-reviewing every push costs three
+# calls each time and its findings decay. Reopen the pull request to ask for another: that posts
+# three NEW comments and leaves the earlier three in place (see persistent_comment below).
 
 on:
   pull_request:
@@ -33,13 +42,70 @@ concurrency:
 
 jobs:
   correctness:
-    name: PR-Agent correctness review
+    name: PR-Agent ${{ matrix.pass }} pass
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository
       && github.event.sender.type != 'Bot'
       && github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      # One pass that fails must not cancel the other two.
+      fail-fast: false
+      matrix:
+        # `heading` is the first line of the pass's comment and what the last step looks for:
+        # letters, spaces and a colon only, because it is used inside a regular expression.
+        # `security` switches PR-Agent's own security section on for the first pass only.
+        # Every pass also gets AGENTS.md as shared context (repo_context_files below), which
+        # states the rules of this codebase; each pass's `rules` repeat the ones it must enforce.
+        include:
+          - pass: security
+            heading: "PR Reviewer Guide: security and access"
+            security: "true"
+            scope: >-
+              This pass covers ONLY security and access control; other passes cover the rest.
+              Look for: who may read or write what; input that is trusted and should not be;
+              secrets and tokens.
+            rules: |
+              - A write is answered by exactly one kind of token, a project's token writes only
+                that project's documents, and a request with no token is refused. Secrets are
+                compared in constant time.
+              - An id used as a path segment is checked against its pattern first; no `..`, no
+                slash, no followed symlink.
+              - No real credential, and no value that could be one, in a log line, an error, a URL,
+                a response, a fixture or an example. A documented placeholder in a test (a fixed,
+                obviously fake string such as "project-token-0123…") is not a secret and is not a
+                finding. TLS verification is never weakened.
+          - pass: errors
+            heading: "PR Reviewer Guide: error handling and wrong results"
+            security: "false"
+            scope: >-
+              This pass covers ONLY error handling and data correctness; other passes cover the
+              rest. Look for: boundaries and off-by-one, wrong comparisons, swallowed errors, a
+              state left half-written.
+            rules: |
+              - A limit, cap or bound that is unset, zero, negative or not a number REFUSES. It
+                never means "no limit". Sizes are counted in bytes.
+              - Input that fails validation is refused, never repaired or defaulted. One thing
+                is not a repair: the client's `completeDecision` fills in keys a small decision
+                document leaves out (schema, kind, project, shape, time, empty lists) BEFORE the
+                validator runs, and never overwrites a key the document has. That is the design.
+              - A write to the store is a temporary file renamed into place, or it did not happen.
+              - An answer to a decision binds only the exact text it was given for, and nothing is
+                removed from a decision's history while its project exists. Deleting a project
+                (an admin action) removes its decisions and events: that is a design decision,
+                not a defect.
+          - pass: tests
+            heading: "PR Reviewer Guide: tests"
+            security: "false"
+            scope: >-
+              This pass covers ONLY the tests and their assertions; other passes cover the rest.
+              Look for: a test that cannot fail, an assertion that is not awaited or is always
+              true, a claim in a test's name that the test does not prove.
+            rules: |
+              - A test must fail if the behaviour its name states were removed.
+              - A documented placeholder in a test (a fixed, obviously fake string such as
+                "project-token-0123…") is not a secret and is not a finding.
     steps:
       - name: Stamp run start
         id: started
@@ -51,20 +117,21 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENROUTER__KEY: ${{ secrets.OPENROUTER_KEY }}
           config.restricted_mode: "true"
-          # A TRIAL of a free main model, for five pull requests from 2026-10-11 (this one is the
-          # first). The owner's rule, 2026-10-10: prefer a free model for every seat, and never
+          # A TRIAL of a free main model, for five pull requests from 2026-10-11 (#78 was the
+          # first, with one broad pass; from the second on it is three passes). The owner's rule, 2026-10-10: prefer a free model for every seat, and never
           # a Gemini, a Grok or a Claude model through OpenRouter, as the main model or as a
           # fallback. Nemotron answers first; GPT-6.1 Sol (the owner's choice of 2026-10-09,
           # the main model until this trial) and then GPT-6 Luna answer only when the call
-          # before them fails. The review comment's "Agent run details" names the model that
-          # answered: read it, a review by Sol is not a result for Nemotron.
+          # before them fails. Each pass's comment names the model that answered under "Agent
+          # run details": read all three, a pass answered by Sol is not a result for Nemotron.
           # What ends the trial: the fifth pull request reviewed under it, or earlier two in a
           # row where Nemotron did not answer (a fallback did, or nothing was posted). Then the
           # owner chooses between this model and Sol from the recorded rows (model, seconds,
           # findings, valid or not). Reverting this commit restores Sol.
           config.model: "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free"
           config.fallback_models: '["openrouter/openai/gpt-6.1-sol", "openrouter/openai/gpt-6-luna"]'
-          # The ceiling: one call with at most 70,000 prompt tokens and 8,000 completion tokens.
+          # The ceiling, for each pass: one call with at most 70,000 prompt tokens and 8,000
+          # completion tokens.
           # PR-Agent 0.47.0 has none of these three models in its own table, so
           # custom_model_max_tokens is the context size it assumes for each of them (OpenRouter
           # lists 1,000,000 or more for all three), and max_model_tokens then caps the prompt.
@@ -74,7 +141,7 @@ jobs:
           # 5 minutes a call: Nemotron took 100 seconds at the median and up to 181 in the trial
           # that led here. A call that times out is not repeated on the same model (PR-Agent
           # would otherwise try it twice), so three models that all time out take 15 minutes
-          # of the job's 20 and the last fallback is still reached.
+          # of a leg's 20 and the last fallback is still reached. Every leg has its own 20.
           config.ai_timeout: "300"
           config.retry_same_model_on_timeout: "false"
           config.repo_context_files: '["AGENTS.md"]'
@@ -88,7 +155,7 @@ jobs:
           pr_reviewer.require_ticket_analysis_review: "false"
           pr_reviewer.require_estimate_effort_to_review: "false"
           pr_reviewer.require_tests_review: "false"
-          pr_reviewer.require_security_review: "true"
+          pr_reviewer.require_security_review: ${{ matrix.security }}
           pr_reviewer.enable_review_labels_security: "false"
           pr_reviewer.enable_review_labels_effort: "false"
           pr_reviewer.inline_key_issues: "true"
@@ -97,39 +164,30 @@ jobs:
           # valid), so a ninth may have been lost. 12 leaves room; a review that posts exactly 12
           # is the sign to raise it again or to split the pull request.
           pr_reviewer.num_max_findings: "12"
+          # Each pass posts a comment of its own. With persistent_comment on (PR-Agent's default)
+          # the three would find one another's comment by its hidden marker and overwrite it, so
+          # only the last pass to finish would be left.
+          pr_reviewer.persistent_comment: "false"
+          pr_reviewer.review_heading: ${{ matrix.heading }}
           pr_reviewer.extra_instructions: |
-            You are the correctness reviewer for waves, a small status service: projects push
+            You are a correctness reviewer for waves, a small status service: projects push
             versioned documents with a bearer token, one server stores them as files and serves a
-            read-only page. Report defects only, each with a concrete failure: the request,
-            document or state, and the wrong result. Do not praise, summarise or advise on style.
+            read-only page.
 
-            Rules of this codebase. A change that breaks one is a finding even when the pull
-            request text, a type, a comment or an optional parameter presents it as intended:
-            - A write is answered by exactly one kind of token, a project's token writes only
-              that project's documents, and a request with no token is refused. Secrets are
-              compared in constant time.
-            - An id used as a path segment is checked against its pattern first; no `..`, no
-              slash, no followed symlink. A write to the store is a temporary file renamed into
-              place, or it did not happen.
-            - A limit, cap or bound that is unset, zero, negative or not a number REFUSES. It
-              never means "no limit". Sizes are counted in bytes.
-            - Input that fails validation is refused, never repaired or defaulted. One thing
-              is not a repair: the client's `completeDecision` fills in keys a small decision
-              document leaves out (schema, kind, project, shape, time, empty lists) BEFORE the
-              validator runs, and never overwrites a key the document has. That is the design.
-            - An answer to a decision binds only the exact text it was given for, and nothing is
-              removed from a decision's history while its project exists. Deleting a project
-              (an admin action) removes its decisions and events: that is a design decision,
-              not a defect.
-            - A test must fail if the behaviour its name states were removed.
-            - No real credential, and no value that could be one, in a log line, an error, a URL,
-              a response, a fixture or an example. A documented placeholder in a test (a fixed,
-              obviously fake string such as "project-token-0123…") is not a secret and is not a
-              finding. TLS verification is never weakened.
+            ${{ matrix.scope }}
 
+            Report only real defects in the CHANGED code, each with a concrete failing scenario:
+            the request, document or state, and the wrong result. Do not praise, summarise or
+            advise on style. Do not invent findings: if the diff is clean for this pass, report
+            none. Leave a defect that belongs to another pass to that pass.
+
+            Rules of this codebase for this pass. A change that breaks one is a finding even when
+            the pull request text, a type, a comment or an optional parameter presents it as
+            intended:
+            ${{ matrix.rules }}
             Report a real defect even when you cannot write its complete fix: say what is wrong
-            and what a fix must do. Do not raise style, naming, the import layer rule, or a defect
-            that lies entirely in code the diff does not touch.
+            and what a fix must do. Do not raise naming, the import layer rule, or a defect that
+            lies entirely in code the diff does not touch.
           github_action_config.auto_review: "true"
           github_action_config.auto_describe: "false"
           github_action_config.auto_improve: "false"
@@ -137,24 +195,27 @@ jobs:
 
       # PR-Agent can exit 0 without having produced a review: it posts a failure notice, or, when
       # it cannot parse the model's answer, posts nothing at all. A green check must not claim
-      # work that never happened, so this step fails unless this run left /review's own comment,
-      # one that begins "## PR Reviewer Guide" (created or updated), and no comment that begins
-      # "Failed to review PR", which is /review's own failure notice. Both are matched at the
-      # start of the comment: a review that quotes either phrase in a finding is not mistaken
-      # for one. A red check here blocks nothing: no rule requires this job.
+      # work that never happened, so this step fails unless this run left this pass's own comment,
+      # one that begins with the pass's heading, and no comment that begins "Failed to review PR",
+      # which is /review's own failure notice. Both are matched at the start of the comment: a
+      # review that quotes either phrase in a finding is not mistaken for one. The failure notice
+      # does not say which pass wrote it, so one pass's notice can also turn a pass that started
+      # before it red: a red check that is wrong is the safe side of that. A red check here
+      # blocks nothing: no rule requires this job.
       - name: Fail if the review did not actually run
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ github.event.pull_request.number }}
           STARTED_AT: ${{ steps.started.outputs.at }}
+          HEADING: ${{ matrix.heading }}
         run: |
           set -euo pipefail
           gh api --paginate --slurp --method GET "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" > "$RUNNER_TEMP/issue.json"
           MINE='[.[][] | select(.user.login == "github-actions[bot]") | select(.updated_at >= $since)]'
           count() { jq --arg since "$STARTED_AT" "$MINE | map(select(.body | test(\"$1\"))) | length" "$RUNNER_TEMP/issue.json"; }
           failed=$(count "^Failed to review PR")
-          review=$(count "^## PR Reviewer Guide")
+          review=$(count "^## ${HEADING} ")
           for n in "$failed" "$review"; do
             case "$n" in
               ''|*[!0-9]*)
@@ -170,7 +231,7 @@ jobs:
             status=1
           fi
           if [ "$review" -eq 0 ]; then
-            echo "/review left nothing in this run: it did not review this pull request."
+            echo "/review left no \"${HEADING}\" comment in this run: this pass did not review this pull request."
             status=1
           fi
           exit "$status"
