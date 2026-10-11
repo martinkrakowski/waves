@@ -65,6 +65,15 @@ function ignore(): undefined {
  * every mutating operation of an instance runs through one in-process queue, so
  * a read-modify-write of `projects.json` never interleaves with another and a
  * `putSnapshot` cannot race a `deleteProject`.
+ *
+ * A document file that is a symbolic link is refused and reported: the
+ * operation throws `Error("<path> is a symbolic link, not a file")`. The link
+ * is never followed — nothing is read through it, nothing is written through
+ * it — and the store never deletes or replaces it by a single-document
+ * operation: removing it is the operator's. A dangling link is refused the
+ * same way. The check is on the last path component only; the directories
+ * above it are the `lstat` checks, which a writer to the data directory could
+ * still race.
  */
 export class FileStore implements StorePort<Project, StoredSnapshot> {
   readonly #dataDir: string;
