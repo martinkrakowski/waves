@@ -1770,7 +1770,10 @@ describe("the decision route", () => {
       id: "d1",
     });
     expect(textsOf(root(), "h1")).toStrictEqual(["Go?"]);
+    // The answer probe's one `GET` of the nonce path is asked for at the open,
+    // before the pass the page itself makes.
     expect(fetchImpl.calls).toStrictEqual([
+      "/api/v1/projects/alpha/decisions/d1/nonce",
       "/api/v1/projects",
       "/api/v1/attention",
       "/api/v1/projects/alpha/decisions/d1",
