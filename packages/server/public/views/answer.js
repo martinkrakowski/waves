@@ -41,6 +41,8 @@ const OUTCOME_TEXT = {
     "The text on this page does not match the server's record of it. Nothing was signed. Reload the page.",
   "in-progress":
     "A passkey prompt from an earlier press is still open. Finish or cancel it first.",
+  unknown:
+    "The server's reply did not arrive, so this page cannot say whether the answer was recorded. Look at the entries on this page before you try again.",
 };
 
 /** A refusal's sentence, by the reason the server refused for. */
@@ -57,6 +59,8 @@ const TRY_AGAIN = "The answer was not recorded. Try again.";
 const WORDS_LABEL = "Your answer, in your own words";
 const EMPTY_PROBLEM = "Write your answer first.";
 const TOO_LONG_PROBLEM = "That is too long to sign.";
+const NOT_PRINTABLE_PROBLEM =
+  "Write it as one line: a line break or a tab cannot be signed.";
 
 const CONFIRM_LEAD = "You are about to sign this answer with your passkey.";
 const WORKING = "Waiting for your passkey…";
@@ -157,6 +161,13 @@ function wordsChildren(ui, handlers) {
   } else if (ui.problem === "too-long") {
     children.push(
       el("p", { attrs: { class: "answer-problem" }, text: TOO_LONG_PROBLEM }),
+    );
+  } else if (ui.problem === "not-printable") {
+    children.push(
+      el("p", {
+        attrs: { class: "answer-problem" },
+        text: NOT_PRINTABLE_PROBLEM,
+      }),
     );
   }
   children.push(

@@ -158,6 +158,12 @@ describe("outcomeMessage", () => {
     );
   });
 
+  it("words a reply that never arrived as unknown, not as failed", () => {
+    expect(outcomeMessage({ kind: "unknown" })).toBe(
+      "The server's reply did not arrive, so this page cannot say whether the answer was recorded. Look at the entries on this page before you try again.",
+    );
+  });
+
   it("words a refusal by the reason the server refused for", () => {
     expect(outcomeMessage({ kind: "refused", reason: "one-way-door" })).toBe(
       "This is marked hard to undo, so it cannot be answered in the page.",
@@ -269,6 +275,17 @@ describe("answerSection: words", () => {
     expect(
       draw({ kind: "words", draft: "fine" }).querySelector("p.answer-problem"),
     ).toBeNull();
+  });
+
+  it("says why a draft with a line break in it cannot be signed", () => {
+    const host = draw({
+      kind: "words",
+      draft: "line one\nline two",
+      problem: "not-printable",
+    });
+    expect(textOf(host.querySelector("p.answer-problem"))).toBe(
+      "Write it as one line: a line break or a tab cannot be signed.",
+    );
   });
 
   it("offers the two ways on, in order, each calling only its handler", () => {

@@ -17,7 +17,7 @@ export type AnswerUi =
       readonly kind: "words";
       readonly draft: string;
       /** Why the draft cannot be signed as it stands, when it cannot. */
-      readonly problem?: "empty" | "too-long";
+      readonly problem?: "empty" | "too-long" | "not-printable";
     }
   | { readonly kind: "confirm"; readonly choice: AnswerChoice }
   | { readonly kind: "working"; readonly choice: AnswerChoice };
@@ -46,6 +46,7 @@ export type AnswerOutcome =
   | { readonly kind: "refused"; readonly reason?: string }
   | { readonly kind: "not-answerable" }
   | { readonly kind: "in-progress" }
+  | { readonly kind: "unknown" }
   | { readonly kind: "failed" };
 
 /** The line the page puts under the answer controls, wherever it draws them. */
