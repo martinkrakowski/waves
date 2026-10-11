@@ -221,11 +221,11 @@ export function earlierAnswerNode(head) {
   }
   const ear = head.earlierAnswer;
   const withWords = ear.words ? `: "${ear.words}"` : "";
-  // A signed earlier answer is the owner's own on the previous text; a
-  // reported one keeps the sentence the page has always printed.
+  // A signed earlier answer is the owner's own, and it may sit more than one
+  // text back; the reported one keeps the sentence the page has always printed.
   const sentence =
     ear.source === "signed"
-      ? `A signed answer exists on the previous text: ${ear.state}${withWords}.`
+      ? `A signed answer exists on an earlier text: ${ear.state}${ear.words ? `, with the words "${ear.words}"` : ""}.`
       : `An earlier text of this decision was answered: ${ear.state}${withWords}. That answer does not apply to the current text.`;
   return el("p", { attrs: { class: "card-earlier" }, text: sentence });
 }

@@ -89,7 +89,10 @@ export function decisionState(decision: StoredDecision): DecisionState {
  * reported an answer that a later revision's new text supersedes. The current
  * text's run is what "not the current text" means here, so an entry from before
  * the run is an earlier answer even when the text later returns. `open` and
- * `delegated` are not answers, so they never appear here.
+ * `delegated` are not answers, so they never appear here. A signed answer
+ * outranks the reported ones: when the owner signed an answer on an earlier
+ * text, that one is named however many reported answers came after it — the
+ * owner's own word is the one a later revision must not displace.
  */
 export function earlierAnswer(
   decision: StoredDecision,
@@ -98,13 +101,17 @@ export function earlierAnswer(
   if (run === undefined) {
     return undefined;
   }
-  let found: StoredEntry | undefined;
+  let last: StoredEntry | undefined;
+  let lastSigned: StoredEntry | undefined;
   for (const entry of decision.entries) {
     if (!isOnCurrentText(entry, run) && isAnswer(entry.state)) {
-      found = entry;
+      last = entry;
+      if (entry.source === "signed") {
+        lastSigned = entry;
+      }
     }
   }
-  return found;
+  return lastSigned ?? last;
 }
 
 /**

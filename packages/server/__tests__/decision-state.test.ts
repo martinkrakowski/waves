@@ -14,6 +14,7 @@ import type { StoredEntry } from "../src/application/ports/notice-store.js";
 
 const HASH_A = "a".repeat(64);
 const HASH_B = "b".repeat(64);
+const HASH_C = "c".repeat(64);
 
 function entry(overrides: Partial<StoredEntry> = {}): StoredEntry {
   return {
@@ -159,6 +160,97 @@ describe("earlierAnswer", () => {
       entries: [entry({ textSha256: HASH_A })],
     };
     expect(earlierAnswer(d)).toBeUndefined();
+  });
+
+  it("is the earlier signed answer, not the later reported one", () => {
+    // Text A holds a signed declined; text B a reported approved; text C is
+    // current. The owner's own word is the one the card must name.
+    const d = {
+      project: "p",
+      id: "d",
+      revisions: [
+        revOf(1, HASH_A, fresh(3)),
+        revOf(2, HASH_B, fresh(2)),
+        revOf(3, HASH_C, fresh(1)),
+      ],
+      entries: [
+        entry({
+          index: 0,
+          revision: 1,
+          textSha256: HASH_A,
+          state: "declined",
+          source: "signed",
+          words: "no",
+        }),
+        entry({
+          index: 1,
+          revision: 2,
+          textSha256: HASH_B,
+          state: "approved",
+          source: "reported",
+        }),
+      ],
+    };
+    expect(earlierAnswer(d)?.source).toBe("signed");
+    expect(earlierAnswer(d)?.state).toBe("declined");
+  });
+
+  it("is the last signed answer when there is more than one", () => {
+    const d = {
+      project: "p",
+      id: "d",
+      revisions: [
+        revOf(1, HASH_A, fresh(3)),
+        revOf(2, HASH_B, fresh(2)),
+        revOf(3, HASH_C, fresh(1)),
+      ],
+      entries: [
+        entry({
+          index: 0,
+          revision: 1,
+          textSha256: HASH_A,
+          state: "approved",
+          source: "signed",
+        }),
+        entry({
+          index: 1,
+          revision: 2,
+          textSha256: HASH_B,
+          state: "declined",
+          source: "signed",
+        }),
+      ],
+    };
+    expect(earlierAnswer(d)?.state).toBe("declined");
+  });
+
+  it("is the last reported answer when no signed one exists", () => {
+    const d = {
+      project: "p",
+      id: "d",
+      revisions: [
+        revOf(1, HASH_A, fresh(3)),
+        revOf(2, HASH_B, fresh(2)),
+        revOf(3, HASH_C, fresh(1)),
+      ],
+      entries: [
+        entry({
+          index: 0,
+          revision: 1,
+          textSha256: HASH_A,
+          state: "approved",
+          source: "reported",
+        }),
+        entry({
+          index: 1,
+          revision: 2,
+          textSha256: HASH_B,
+          state: "declined",
+          source: "reported",
+        }),
+      ],
+    };
+    expect(earlierAnswer(d)?.state).toBe("declined");
   });
 });
 

@@ -355,7 +355,7 @@ describe("renderDecision", () => {
       }),
     );
     expect(textOf(host)).toContain(
-      'A signed answer exists on the previous text: declined: "no".',
+      'A signed answer exists on an earlier text: declined, with the words "no".',
     );
   });
 

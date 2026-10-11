@@ -607,8 +607,39 @@ describe("the inbox page rules", () => {
         }),
       );
       expect(textOf(host)).toContain(
-        'A signed answer exists on the previous text: declined: "no".',
+        'A signed answer exists on an earlier text: declined, with the words "no".',
       );
+    });
+
+    it("names a signed earlier answer with no words as the verdict alone", () => {
+      const host = draw(
+        inboxView({
+          projects: [
+            {
+              id: "alpha",
+              name: "Alpha",
+              counts: { waiting: 1, oneWay: 0, reported: 0, closed: 0 },
+              decisions: [
+                inboxHead({
+                  question: "Changed?",
+                  state: "open",
+                  group: "waiting",
+                  earlierAnswer: {
+                    state: "declined",
+                    source: "signed",
+                    at: "2026-10-08T13:00:00Z",
+                    by: "owner",
+                  },
+                }),
+              ],
+            },
+          ],
+        }),
+      );
+      expect(textOf(host)).toContain(
+        "A signed answer exists on an earlier text: declined.",
+      );
+      expect(textOf(host)).not.toContain(", with the words");
     });
   });
 
