@@ -279,18 +279,31 @@ export function createHttpServer(deps: HttpServerDeps): Server {
       // from an unknown one, whatever it asks with.
       matched = { kind: "missing" };
     }
+    const extra = extraFor(pathname);
     if (
       method === "POST" &&
       (matched.kind === "decisionNonce" || matched.kind === "decisionAnswers")
     ) {
       // Only reachable with keys loaded: without them the match above was
       // replaced, and no other method reaches the answer handler at all.
+      if (matched.kind === "decisionNonce" && expected !== undefined) {
+        // With a read token configured, a nonce ask tells anyone whether a
+        // project and decision exist and how many entries the decision has,
+        // so it owes the same credential the read routes owe, checked by the
+        // same function and answered before the project is looked up or a
+        // nonce is issued.
+        if (!authorised(req, expected)) {
+          return send(res, jsonReply(401, { error: "unauthorized" }), {
+            method,
+            extra: { ...extra, "WWW-Authenticate": CHALLENGE },
+          });
+        }
+      }
       return answers(req, res, matched);
     }
     if (WRITE_METHODS.has(method)) {
       return write(req, res, method, target, matched);
     }
-    const extra = extraFor(pathname);
     if (matched.kind === "ready" && READ_METHODS.has(method)) {
       return send(
         res,

@@ -79,6 +79,7 @@ async function wired(
   options: {
     readonly decisions?: readonly string[];
     readonly adminToken?: string;
+    readonly readToken?: string;
   } = {},
 ): Promise<{
   readonly started: Started;
@@ -105,6 +106,7 @@ async function wired(
     ownerKeys: buildAssertion().keys,
     nonceSource: counter.source,
     adminToken: options.adminToken,
+    readToken: options.readToken,
   });
   return { started, store, pass: clk.pass, issued: counter.issued };
 }
@@ -297,6 +299,69 @@ describe("the nonce route with keys loaded", () => {
         index: 0,
       });
     }
+  });
+});
+
+describe("the nonce route with a read token", () => {
+  const CREDENTIAL = `Basic ${Buffer.from(`waves:${READ_TOKEN}`).toString("base64")}`;
+
+  it("refuses a tokenless ask with the read routes' 401 and issues no nonce", async () => {
+    const { started, pass, issued } = await wired({ readToken: READ_TOKEN });
+
+    const refused = await ask(started, noncePath());
+    expect(refused.status).toBe(401);
+    expect(await refused.json()).toEqual({ error: "unauthorized" });
+    expect(refused.headers.get("www-authenticate")).toBe(
+      'Basic realm="waves", charset="UTF-8"',
+    );
+    expect(refused.headers.get("cache-control")).toBe("no-store");
+    expect(issued).toEqual([]);
+
+    // The refused ask spent no allowance and stored nothing, so the next ask
+    // a second later is the first nonce the decision has ever been given.
+    pass();
+    const later = await ask(started, noncePath(), {
+      authorization: CREDENTIAL,
+    });
+    expect(later.status).toBe(200);
+    expect(await later.json()).toEqual({ nonce: "nonce-1", index: 0 });
+  });
+
+  it("answers an ask with the right credential", async () => {
+    const { started } = await wired({ readToken: READ_TOKEN });
+
+    const response = await ask(started, noncePath(), {
+      authorization: CREDENTIAL,
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ nonce: "nonce-1", index: 0 });
+  });
+
+  it("refuses a wrong credential", async () => {
+    const { started, issued } = await wired({ readToken: READ_TOKEN });
+
+    const wrong = await ask(started, noncePath(), {
+      authorization: `Basic ${Buffer.from(`waves:${UNKNOWN_TOKEN}`).toString("base64")}`,
+    });
+    expect(wrong.status).toBe(401);
+    expect(await wrong.json()).toEqual({ error: "unauthorized" });
+    expect(issued).toEqual([]);
+  });
+
+  it("answers 401, not 404, for an unknown decision with no credential", async () => {
+    const { started } = await wired({ readToken: READ_TOKEN });
+
+    const response = await ask(started, noncePath("absent"));
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: "unauthorized" });
+  });
+
+  it("answers a tokenless ask as before when no read token is set", async () => {
+    const { started } = await wired();
+
+    const response = await ask(started, noncePath());
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ nonce: "nonce-1", index: 0 });
   });
 });
 
