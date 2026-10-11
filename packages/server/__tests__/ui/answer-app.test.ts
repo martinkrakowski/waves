@@ -313,4 +313,41 @@ describe("the decision page offers answer controls only when the server takes an
 
     h.app.stop();
   });
+
+  it("does not redraw answer controls when a past decision's probe settles on a later one", async () => {
+    const body1 = decisionResponse({});
+    const body2 = decisionResponse({
+      head: inboxHead({ id: "d2" }),
+      revisions: [storedRevision({ decision: decisionRevision({ id: "d2" }) })],
+    });
+
+    let resolveProbe!: (a: Answer) => void;
+    const probe = (id: string): Promise<Answer> => {
+      if (id === "d1") {
+        return new Promise<Answer>((resolve) => {
+          resolveProbe = resolve;
+        });
+      }
+      return Promise.resolve({ status: 404 });
+    };
+
+    const fetchImpl = answerFetch({
+      decisions: { d1: body1, d2: body2 },
+      probe,
+    });
+    const h = harness("/p/alpha/d/d1", fetchImpl);
+    h.app.start();
+    await flush();
+
+    h.app.navigate("/p/alpha/d/d2");
+    await flush();
+    await flush();
+    expect(root().querySelector("section.answer")).toBeNull();
+
+    resolveProbe({ status: 405 });
+    await flush();
+    expect(root().querySelector("section.answer")).toBeNull();
+
+    h.app.stop();
+  });
 });
