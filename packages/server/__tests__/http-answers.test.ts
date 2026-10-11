@@ -103,6 +103,8 @@ interface Wired {
   readonly pass: (ms?: number) => void;
   /** The assertion whose public key the harness holds as the owner's. */
   readonly owner: Built;
+  /** The nonces the harness's own source has minted, in order. */
+  readonly issued: readonly string[];
 }
 
 async function wired(
@@ -141,7 +143,7 @@ async function wired(
     adminToken: options.adminToken,
     trustProxy: options.trustProxy,
   });
-  return { started, store, pass: clk.pass, owner };
+  return { started, store, pass: clk.pass, owner, issued: counter.issued };
 }
 
 /** What the owner says with his answer: a verdict and, for `answered`, more. */
@@ -1200,6 +1202,7 @@ describe("GET and HEAD on the answer paths", () => {
     const h = await wired();
     const granted = await askNonce(h, ID);
     const trio = await trioOf(h.store, PROJECT, ID);
+    expect(h.issued).toEqual([granted.nonce]);
 
     for (const method of ["GET", "HEAD"] as const) {
       for (const path of [noncePath(), answersPath()]) {
@@ -1207,6 +1210,7 @@ describe("GET and HEAD on the answer paths", () => {
           method,
         });
         expect(response.status).toBe(405);
+        expect(h.issued).toEqual([granted.nonce]);
       }
     }
 
