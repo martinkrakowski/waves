@@ -1,9 +1,11 @@
 import {
   chmodSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
+  rmSync,
   statSync,
   symlinkSync,
   writeFileSync,
@@ -590,7 +592,7 @@ describe("FileNoticeStore edge cases", () => {
     }
   });
 
-  it("skips a decision file that is gone by the time it is read", async () => {
+  it("refuses a symlinked decision file when listing", async () => {
     const { store, dataDir, dispose } = harness();
     try {
       await store.appendRevision("alpha", "d1", storedRevision(1), 0, 3);
@@ -598,8 +600,9 @@ describe("FileNoticeStore edge cases", () => {
         join(dataDir, "nowhere.json"),
         join(dataDir, "decisions", "alpha", "ghost.json"),
       );
-      const listed = await store.listDecisions("alpha");
-      expect(listed.map((decision) => decision.id)).toEqual(["d1"]);
+      await expect(store.listDecisions("alpha")).rejects.toThrow(
+        /is a symbolic link, not a file/,
+      );
     } finally {
       await dispose();
     }
@@ -612,6 +615,57 @@ describe("FileNoticeStore edge cases", () => {
       await store.appendRevision("alpha", "d1", storedRevision(1), 0, 3);
       const listed = await store.listDecisions("alpha");
       expect(listed.map((decision) => decision.id)).toEqual(["d1", "d2"]);
+    } finally {
+      await dispose();
+    }
+  });
+});
+
+describe("FileNoticeStore refuses a symlinked document file on read", () => {
+  // Plants a symlink over `storedPath` pointing at a copy of its bytes in a
+  // directory outside the data directory, and asserts that `run` refuses it
+  // with the symlink message while the outside copy keeps its bytes.
+  async function refuseLink(
+    storedPath: string,
+    run: () => Promise<unknown>,
+  ): Promise<void> {
+    const outsideDir = mkdtempSync(join(tmpdir(), "waves-outside-"));
+    const bytes = readFileSync(storedPath, "utf8");
+    const outsideFile = join(outsideDir, "copy.json");
+    writeFileSync(outsideFile, bytes);
+    rmSync(storedPath);
+    symlinkSync(outsideFile, storedPath);
+    try {
+      await expect(run()).rejects.toThrow(/is a symbolic link, not a file/);
+      expect(readFileSync(outsideFile, "utf8")).toBe(bytes);
+      expect(lstatSync(storedPath).isSymbolicLink()).toBe(true);
+    } finally {
+      await rm(outsideDir, { recursive: true, force: true });
+    }
+  }
+
+  it("refuses a symlinked decision file on every read", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.appendRevision("alpha", "d1", storedRevision(1), 0, 3);
+      const stored = join(dataDir, "decisions", "alpha", "d1.json");
+
+      await refuseLink(stored, () => store.getDecision("alpha", "d1"));
+      await expect(store.listDecisions("alpha")).rejects.toThrow(
+        /is a symbolic link, not a file/,
+      );
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("refuses a symlinked events file when listing events", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.appendEvent("alpha", event(), 10);
+      const stored = join(dataDir, "events", "alpha.json");
+
+      await refuseLink(stored, () => store.listEvents("alpha", 10));
     } finally {
       await dispose();
     }

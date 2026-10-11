@@ -1,5 +1,5 @@
 import type { Stats } from "node:fs";
-import { lstat, mkdir, readFile, readdir, rm } from "node:fs/promises";
+import { lstat, mkdir, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { Project, StoredSnapshot } from "@hexagen-monaco/waves-contract";
@@ -15,6 +15,7 @@ import { assertIds } from "./ids.js";
 import {
   assertRealDirectory,
   errorCode,
+  readTextNoFollow,
   writeAtomic,
 } from "./store-helpers.js";
 
@@ -324,14 +325,7 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
   }
 
   async #readText(path: string): Promise<string | undefined> {
-    try {
-      return await readFile(path, "utf8");
-    } catch (error) {
-      if (errorCode(error) === "ENOENT") {
-        return undefined;
-      }
-      throw error;
-    }
+    return readTextNoFollow(path);
   }
 
   async #entryNames(
