@@ -99,8 +99,27 @@ describe("validateStateEntry — refusals", () => {
     expectStatePaths({ ...minimalState(), extra: true }, ["/extra"]);
   });
 
-  it("rejects source: signed", () => {
-    expectStatePaths({ ...minimalState(), source: "signed" }, ["/source"]);
+  it("a session cannot write a signed entry", () => {
+    expect(
+      errorsOf(validateStateEntry({ ...minimalState(), source: "signed" })),
+    ).toEqual([
+      { path: "/source", message: "expected one of session, reported" },
+    ]);
+    expectStatePaths(
+      {
+        ...minimalState(),
+        source: "reported",
+        signature: {
+          credentialId: "A".repeat(16),
+          authenticatorData: "B".repeat(49) + "A",
+          clientDataJSON: "C".repeat(20),
+          signature: "D".repeat(8),
+          nonce: "A".repeat(43),
+          index: 0,
+        },
+      },
+      ["/signature"],
+    );
   });
 
   it("rejects open as a written state", () => {

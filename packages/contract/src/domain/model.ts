@@ -149,6 +149,7 @@ export const MAX_DECISIONS_PER_PROJECT = 500;
 export const MAX_EVENTS_PER_PROJECT = 2000;
 export const MAX_REVISIONS_PER_DECISION = 20;
 export const MAX_SESSION_ENTRIES_PER_DECISION = 50;
+export const MAX_SIGNED_ENTRIES_PER_DECISION = 20;
 
 export type NoticeRefs = { wave?: WaveId; lane?: LaneId; pr?: number };
 
@@ -167,7 +168,11 @@ export type DecisionState =
   | "withdrawn"
   | "superseded";
 
-export type StateSource = "session" | "reported";
+export type StateSource = "session" | "reported" | "signed";
+
+/** What the owner said when he signed: he approved the recommendation, declined,
+ * or answered with another option or in his own words. */
+export type AnswerVerdict = "approved" | "declined" | "answered";
 
 export interface DecisionOption {
   readonly key: string;
@@ -203,7 +208,9 @@ export interface DecisionRevision {
 
 export interface StateEntryRequest {
   readonly state: DecisionState;
-  readonly source: StateSource;
+  /** A session body cannot say `signed`: only the store holds a signed entry,
+   * and `validateStoredStateEntry` is its gate. */
+  readonly source: Exclude<StateSource, "signed">;
   readonly revision: number;
   readonly textSha256: string;
   readonly expectedEntries: number;
@@ -213,6 +220,67 @@ export interface StateEntryRequest {
   readonly option?: string;
   readonly reason?: string;
   readonly supersededBy?: LaneId;
+}
+
+/** The body of a signed answer, as the page posts it. The server rebuilds the
+ * challenge from it and checks the assertion; the contract only bounds it. */
+export interface AnswerRequest {
+  readonly revision: number;
+  readonly textSha256: string;
+  readonly index: number;
+  readonly verdict: AnswerVerdict;
+  readonly option?: string;
+  readonly words?: string;
+  readonly nonce: string;
+  readonly credentialId: string;
+  readonly authenticatorData: string;
+  readonly clientDataJSON: string;
+  readonly signature: string;
+}
+
+/** The assertion a signed answer keeps: the credential that signed, the three
+ * opaque byte strings it signed over, and the nonce and position it bound. */
+export interface AnswerSignature {
+  readonly credentialId: string;
+  readonly authenticatorData: string;
+  readonly clientDataJSON: string;
+  readonly signature: string;
+  readonly nonce: string;
+  readonly index: number;
+}
+
+/** One state entry as the store holds it: the writer's entry minus the
+ * `expectedEntries` it pinned on. A `signed` entry carries the assertion that
+ * bound it; no other source's entry carries one. */
+export interface StoredStateEntry {
+  readonly state: DecisionState;
+  readonly source: StateSource;
+  readonly revision: number;
+  readonly textSha256: string;
+  readonly by: string;
+  readonly at: string;
+  readonly words?: string;
+  readonly option?: string;
+  readonly reason?: string;
+  readonly supersededBy?: LaneId;
+  readonly signature?: AnswerSignature;
+}
+
+/** One credential the owner's answers may come from: the public half only. The
+ * private key stays on the device that made it and never reaches the server. */
+export interface OwnerKey {
+  readonly credentialId: string;
+  readonly publicKeySpki: string;
+  readonly label: string;
+  readonly addedAt: string;
+  readonly retired?: boolean;
+}
+
+/** The owner-keys document: the credentials the page accepts an assertion from,
+ * and nothing else. No route registers, replaces or removes one (W62). */
+export interface OwnerKeys {
+  readonly schema: "waves-owner-keys/v1";
+  readonly keys: OwnerKey[];
 }
 
 export interface NoticeEvent {

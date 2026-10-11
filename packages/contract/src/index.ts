@@ -14,10 +14,14 @@ export {
   MAX_RAISED_BY_CHARS,
   MAX_REVISIONS_PER_DECISION,
   MAX_SESSION_ENTRIES_PER_DECISION,
+  MAX_SIGNED_ENTRIES_PER_DECISION,
   MAX_TEXT_CHARS,
   OPTION_KEY_PATTERN,
 } from "./domain/model.js";
 export type {
+  AnswerRequest,
+  AnswerSignature,
+  AnswerVerdict,
   Backlog,
   BacklogGit,
   BacklogScope,
@@ -41,6 +45,8 @@ export type {
   NoticeEvidence,
   NoticeEvent,
   NoticeRefs,
+  OwnerKey,
+  OwnerKeys,
   Premise,
   PremiseStatus,
   Project,
@@ -51,12 +57,26 @@ export type {
   StateEntryRequest,
   StateSource,
   StoredSnapshot,
+  StoredStateEntry,
 } from "./domain/model.js";
 export {
   validateDecision,
   decisionBindingText,
 } from "./domain/notice-decision.js";
+export {
+  ANSWER_CHALLENGE_SCHEMA,
+  MAX_STATE_ENTRIES,
+  answerChallengeText,
+  validateAnswerRequest,
+} from "./domain/notice-answer.js";
+export type { AnswerChallengeValues } from "./domain/notice-answer.js";
+export { validateStoredStateEntry } from "./domain/notice-decision-readers.js";
 export { validateEvent } from "./domain/notice-event.js";
+export {
+  OWNER_KEYS_SCHEMA,
+  MAX_OWNER_KEYS,
+  validateOwnerKeys,
+} from "./domain/owner-keys.js";
 export { validateProject } from "./domain/project.js";
 export { isRetained, isStale, staleAfterMs } from "./domain/staleness.js";
 export { validateStateEntry } from "./domain/notice-state.js";

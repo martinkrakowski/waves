@@ -1,6 +1,6 @@
 {
   "name": "@hexagen-monaco/waves-contract",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "The waves/v1 contract: the envelope, the project status document, the notice document (decisions and events), their validators, and the staleness and retention rules.",
   "type": "module",
   "license": "MIT",
