@@ -758,6 +758,46 @@ describe("sign: the order of the steps", () => {
       state: "approved",
     });
   });
+
+  it("a fetch that refuses to be called as a method still stores the answer", async () => {
+    const wired = recordingFetch([
+      GOOD_NONCE,
+      { status: 201, body: { index: ENTRY_COUNT, state: "approved" } },
+    ]);
+    const innerFetch = wired.fetch;
+    const browserFetch = async function (
+      this: unknown,
+      path: string,
+      init?: {
+        readonly method?: string;
+        readonly headers?: Readonly<Record<string, string>>;
+        readonly body?: string;
+      },
+    ): Promise<{ readonly status: number; json(): Promise<unknown> }> {
+      if (this !== undefined && this !== globalThis) {
+        throw new TypeError("Illegal invocation");
+      }
+      return innerFetch(path, init);
+    };
+    const creds = recordingCredentials(passkeyFor("unbound-fetch").handler);
+    const answerer = createAnswerer({
+      fetch: browserFetch,
+      credentials: creds.credentials,
+      subtle,
+      location: LOCATION,
+    });
+    const model = modelOf();
+    const outcome = await answerer.sign(model, okChoice("yes"));
+    expect(outcome).toStrictEqual({
+      kind: "stored",
+      index: ENTRY_COUNT,
+      state: "approved",
+    });
+    expect(wired.calls).toHaveLength(2);
+    expect(wired.calls[0]?.path).toContain("nonce");
+    expect(wired.calls[0]?.method).toBe("POST");
+    expect(wired.calls[1]?.method).toBe("POST");
+  });
 });
 
 describe("sign: what the answers route answers", () => {
