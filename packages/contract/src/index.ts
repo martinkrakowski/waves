@@ -44,6 +44,8 @@ export type {
   NoticeEvidence,
   NoticeEvent,
   NoticeRefs,
+  OwnerKey,
+  OwnerKeys,
   Premise,
   PremiseStatus,
   Project,
@@ -68,6 +70,11 @@ export {
 export type { AnswerChallengeValues } from "./domain/notice-answer.js";
 export { validateStoredStateEntry } from "./domain/notice-decision-readers.js";
 export { validateEvent } from "./domain/notice-event.js";
+export {
+  OWNER_KEYS_SCHEMA,
+  MAX_OWNER_KEYS,
+  validateOwnerKeys,
+} from "./domain/owner-keys.js";
 export { validateProject } from "./domain/project.js";
 export { isRetained, isStale, staleAfterMs } from "./domain/staleness.js";
 export { validateStateEntry } from "./domain/notice-state.js";

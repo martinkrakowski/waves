@@ -263,6 +263,23 @@ export interface StoredStateEntry {
   readonly signature?: AnswerSignature;
 }
 
+/** One credential the owner's answers may come from: the public half only. The
+ * private key stays on the device that made it and never reaches the server. */
+export interface OwnerKey {
+  readonly credentialId: string;
+  readonly publicKeySpki: string;
+  readonly label: string;
+  readonly addedAt: string;
+  readonly retired?: boolean;
+}
+
+/** The owner-keys document: the credentials the page accepts an assertion from,
+ * and nothing else. No route registers, replaces or removes one (W62). */
+export interface OwnerKeys {
+  readonly schema: "waves-owner-keys/v1";
+  readonly keys: OwnerKey[];
+}
+
 export interface NoticeEvent {
   readonly schema: typeof NOTICE_SCHEMA;
   readonly kind: "event";
