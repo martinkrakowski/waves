@@ -280,7 +280,7 @@ The owner's steps, one per step:
    answers `405` (answering is on) where it answered `404` before:
 
    ```sh
-   curl -s -o /dev/null -w '%{http_code}\n' https://waves.midnight.lan/api/v1/projects/<project>/decisions/<decision>/nonce
+   curl -s --cacert "$HOME/.config/waves/ca.crt" -o /dev/null -w '%{http_code}\n' https://waves.midnight.lan/api/v1/projects/<project>/decisions/<decision>/nonce
    ```
 
 To turn it off, deploy again without the overlay: the mount is removed, the
