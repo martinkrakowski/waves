@@ -292,8 +292,8 @@ describe("validateStoredStateEntry", () => {
     for (const [field, value] of [
       ["credentialId", "A".repeat(15)],
       ["authenticatorData", "B".repeat(48)],
-      ["clientDataJSON", "C".repeat(19)],
-      ["signature", "D".repeat(7)],
+      ["clientDataJSON", "A".repeat(19)],
+      ["signature", "A".repeat(7)],
       ["nonce", "A".repeat(42)],
       ["index", -1],
     ] as const) {
