@@ -7,10 +7,10 @@ kind: Kustomization
 # owner-keys.json inside it. It holds PUBLIC keys only — nothing here ever
 # touches a private key.
 #
-# It must be used only AFTER the Secret exists: the Secret is not optional, so
-# with it missing the pod waits with the event "secret not found", which names
-# the cause, while the server would refuse to start on a named but missing
-# file. Apply it with:
+# It must be used only AFTER the Secret exists: the Secret is declared as
+# required, so with it missing the pod waits with the event "secret not
+# found", which names the cause, while the server would refuse to start on a
+# named but missing file. Apply it with:
 #
 #   WAVES_OVERLAY=deploy/k8s/overlays/midnight-owner-keys sh deploy/deploy.sh
 #
