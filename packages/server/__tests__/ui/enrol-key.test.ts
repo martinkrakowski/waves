@@ -284,6 +284,27 @@ describe("enrolKey.create results", () => {
     });
   });
 
+  it.each<[string, unknown]>([
+    ["null", null],
+    ["an empty object", {}],
+  ])("shows an error when create resolves to %s", async (_name, response) => {
+    const creds = fakeCredentials(response);
+    const controller = enrolKey(creds, makeCrypto(0x41), LOCATION);
+    expect(await controller.create("platform")).toEqual({
+      kind: "createError",
+      name: "Error",
+      message: "the browser returned no credential",
+    });
+  });
+
+  it("shows no key after a create that resolved to null", async () => {
+    const creds = fakeCredentials(null);
+    const controller = enrolKey(creds, makeCrypto(0x41), LOCATION);
+    const state = await controller.create("platform");
+    expect(state).not.toHaveProperty("credentialId");
+    expect(state.kind).not.toBe("ready");
+  });
+
   it.each<[string, Record<string, unknown>]>([
     ["without getPublicKeyAlgorithm", { getPublicKeyAlgorithm: undefined }],
     ["without getAuthenticatorData", { getAuthenticatorData: undefined }],
@@ -488,6 +509,20 @@ describe("enrolKey.test verification", () => {
     ]);
     expect(verified.checks[0]?.detail).toContain("Error");
     expect(verified.checks[0]?.detail).toContain("refused");
+  });
+
+  it.each<[string, unknown]>([
+    ["null", null],
+    ["an empty object", {}],
+  ])("reports a get that resolves to %s as one failed check", async (_name, assertion) => {
+    const { creds, controller } = await ready();
+    creds.get.mockResolvedValue(assertion);
+    const verified = await controller.test();
+    expect(verified.checks).toHaveLength(1);
+    expect(verified.checks[0]?.label).toBe("sign");
+    expect(verified.checks[0]?.ok).toBe(false);
+    expect(typeof verified.checks[0]?.detail).toBe("string");
+    expect(verified.checks[0]?.detail.length).toBeGreaterThan(0);
   });
 
   it("throws if asked to sign before a key was created", async () => {

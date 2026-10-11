@@ -465,11 +465,31 @@ export function enrolKey(credentials, crypto, location) {
           message: errorMessage(error),
         };
       }
-      const { state, stored } = inspectCreation(attestation, location);
-      if (stored !== null) {
-        created = stored;
+      const usable =
+        attestation !== null &&
+        typeof attestation === "object" &&
+        typeof attestation.response === "object" &&
+        attestation.response !== null;
+      if (!usable) {
+        return {
+          kind: "createError",
+          name: "Error",
+          message: "the browser returned no credential",
+        };
       }
-      return state;
+      try {
+        const { state, stored } = inspectCreation(attestation, location);
+        if (stored !== null) {
+          created = stored;
+        }
+        return state;
+      } catch (error) {
+        return {
+          kind: "createError",
+          name: errorName(error),
+          message: errorMessage(error),
+        };
+      }
     },
     /** Sign once with the created passkey, returning the checks to draw. */
     async test() {
@@ -496,12 +516,43 @@ export function enrolKey(credentials, crypto, location) {
           backedUp: false,
         };
       }
-      return verifyAssertion(assertion, {
-        crypto,
-        ...created,
-        challenge,
-        origin: created.origin,
-      });
+      if (assertion === null || typeof assertion !== "object") {
+        return {
+          kind: "verified",
+          checks: [
+            {
+              label: "sign",
+              ok: false,
+              detail: "the browser returned no assertion",
+            },
+          ],
+          userVerified: false,
+          backupEligible: false,
+          backedUp: false,
+        };
+      }
+      try {
+        return await verifyAssertion(assertion, {
+          crypto,
+          ...created,
+          challenge,
+          origin: created.origin,
+        });
+      } catch (error) {
+        return {
+          kind: "verified",
+          checks: [
+            {
+              label: "sign",
+              ok: false,
+              detail: `${errorName(error)}: ${errorMessage(error)}`,
+            },
+          ],
+          userVerified: false,
+          backupEligible: false,
+          backedUp: false,
+        };
+      }
     },
   };
 }
