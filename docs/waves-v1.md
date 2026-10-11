@@ -512,6 +512,77 @@ returns that re-read's revision, hash and entry count in the `409`
 A `textSha256` of any 64 hex characters is accepted here; the server recomputes it from
 the revision via `decisionBindingText`.
 
+### Owner keys and signed answers
+
+Stage 2 (design W61, W62). **The routes do not exist yet**: there is no nonce route,
+no answers route, and no way to register, replace or remove a key, with any token.
+What follows is the contract the server, the page and the client will be held to;
+assertion checking (`node:crypto`) belongs to an adapter.
+
+**The challenge text.** `answerChallengeText`
+(`packages/contract/src/domain/notice-answer.ts`) returns one JSON text, no white
+space between tokens, strings escaped as `JSON.stringify` escapes them, built from an
+object literal with exactly these keys in exactly this order:
+
+```
+{"v":"waves-answer/v1","project":…,"decision":…,"textSha256":…,"index":…,"verdict":…,"option":…|null,"words":…|null,"nonce":…}
+```
+
+`v` is always `"waves-answer/v1"`. `option` and `words` are a string or `null`; an
+absent value is `null`, never a missing key. `index` is the non-negative integer the
+entry will take in the decision's state entries. The text is built from that literal,
+never from the caller's object, so a caller's key order and any extra key it carries
+cannot reach it and no two different sets of values share text.
+
+**The answer request.** `validateAnswerRequest` is the gate for the body the page
+posts to the answers route. A closed object with keys exactly `revision`,
+`textSha256`, `index`, `verdict`, `option`, `words`, `nonce`, `credentialId`,
+`authenticatorData`, `clientDataJSON`, `signature`.
+
+| field               | type    | required | bounds                                               |
+| ------------------- | ------- | -------- | ---------------------------------------------------- |
+| `revision`          | integer | yes      | ≥ 1                                                  |
+| `textSha256`        | string  | yes      | 64 lower-case hex characters                         |
+| `index`             | integer | yes      | ≥ 0                                                  |
+| `verdict`           | string  | yes      | `approved` \| `declined` \| `answered`               |
+| `option`            | string  | no       | an option key, `^[a-z0-9]{1,8}$`                     |
+| `words`             | string  | no       | 1 to 2000 characters, NFC, no leading/trailing space |
+| `nonce`             | string  | yes      | exactly 43 base64url characters, no padding          |
+| `credentialId`      | string  | yes      | 16 to 1366 base64url characters                      |
+| `authenticatorData` | string  | yes      | 50 to 1024 base64url characters                      |
+| `clientDataJSON`    | string  | yes      | 20 to 2048 base64url characters                      |
+| `signature`         | string  | yes      | 8 to 200 base64url characters                        |
+
+Base64url is `A-Z a-z 0-9 _ -`; `=`, `+` and `/` are refused, so one run of bytes has
+one spelling. `answered` needs an `option` or `words`; `declined` refuses an
+`option`; nothing else is inferred from the verdict. Nothing here is repaired or
+defaulted: a field that fails is refused, naming its path.
+
+**The stored signed entry.** `StateSource` is `session` | `reported` | `signed`, and
+`validateStateEntry` — the body a project token posts — still refuses `signed` and
+refuses a `signature` key: a session cannot write a signed entry. `validateStoredStateEntry`
+is the gate for a state entry as the store holds it (no `expectedEntries`). It accepts
+`source: "signed"` only for `approved`, `declined` and `answered`, and only with a
+`signature` of `credentialId`, `authenticatorData`, `clientDataJSON`, `signature`,
+`nonce` and `index`, bounded exactly as above. A `signature` on any entry whose source
+is not `signed` is refused.
+
+**The owner-keys document.** `validateOwnerKeys` is the gate for the file
+`WAVES_OWNER_KEYS_FILE` names. It is public keys only — a private key never reaches
+the server. A closed object `{ "schema": "waves-owner-keys/v1", "keys": [ … ] }` with
+1 to 8 keys, each a closed object:
+
+| field           | type    | required | bounds                                                                 |
+| --------------- | ------- | -------- | ---------------------------------------------------------------------- |
+| `credentialId`  | string  | yes      | 16 to 1366 base64url characters                                        |
+| `publicKeySpki` | string  | yes      | 80 to 200 standard-base64 characters, `=` allowed; a P-256 SPKI is 124 |
+| `label`         | string  | yes      | 1 to 80 characters, NFC, no leading/trailing space                     |
+| `addedAt`       | string  | yes      | strict ISO-8601 UTC                                                    |
+| `retired`       | boolean | no       | —                                                                      |
+
+An empty `keys` array is refused, and two keys with the same `credentialId` are
+refused, naming the second one's path.
+
 ### The event
 
 `validateEvent` is the gate (`packages/contract/src/domain/notice-event.ts`). An
