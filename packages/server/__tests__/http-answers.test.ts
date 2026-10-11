@@ -545,22 +545,27 @@ describe("the answers route with keys loaded", () => {
 
     it("refuses a nonce that was never issued", async () => {
       const h = await wired();
+      h.pass();
       // A nonce in the one spelling the contract accepts, but one no route
       // ever minted: 43 base64url characters with the trailing bits at zero.
       const invented = `${"z".repeat(42)}0`;
-      const response = await answerOnce(
+      const trio = await trioOf(h.store, PROJECT, ID);
+      const body = signedBody(
         h,
         ID,
         { verdict: "approved" },
-        {
-          body: { nonce: invented },
-        },
+        { nonce: invented, index: 0, ...trio },
       );
+      expect(body.nonce).toBe(invented);
+
+      const response = await postAnswer(h, ID, body, {});
       expect(response.status).toBe(403);
       expect(await response.json()).toEqual({
         error: "not verified",
         reason: "not-verified",
       });
+      const stored = await h.store.getDecision(PROJECT, ID);
+      expect(stored!.entries).toEqual([]);
     });
   });
 
