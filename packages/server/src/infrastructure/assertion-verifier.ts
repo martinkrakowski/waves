@@ -22,6 +22,7 @@ export const RELYING_PARTY_ID = "waves.midnight.lan";
 export const REFUSAL_REASONS = [
   "unknown-credential",
   "retired-key",
+  "malformed-encoding",
   "client-data-malformed",
   "wrong-type",
   "wrong-origin",
@@ -64,6 +65,18 @@ function sameDigest(given: Uint8Array, expected: Uint8Array): boolean {
   return given.length === expected.length && digestsEqual(given, expected);
 }
 
+/** Decodes base64url that is in its one spelling and nothing else: no padding,
+ * no `+` or `/`, no characters outside the alphabet, and no non-zero bits in
+ * the last character that no byte uses. `Buffer.from(…, "base64url")` repairs
+ * all of those, so the round trip decides. */
+function decodeStrict(text: string): Buffer {
+  const decoded = Buffer.from(text, "base64url");
+  if (decoded.toString("base64url") !== text) {
+    throw new Refusal("malformed-encoding");
+  }
+  return decoded;
+}
+
 /**
  * Whether the owner's assertion is good, checked in the one order the codes of
  * `REFUSAL_REASONS` name. Nothing here reaches for a use case that does not
@@ -101,7 +114,7 @@ function checkedAssertion(
   if (loaded.key.retired === true) {
     throw new Refusal("retired-key");
   }
-  const clientDataBytes = Buffer.from(input.clientDataJSON, "base64url");
+  const clientDataBytes = decodeStrict(input.clientDataJSON);
   let clientData: unknown;
   try {
     clientData = JSON.parse(clientDataBytes.toString("utf8"));
@@ -139,7 +152,7 @@ function checkedAssertion(
   if (fields.crossOrigin === true) {
     throw new Refusal("cross-origin");
   }
-  const authenticatorData = Buffer.from(input.authenticatorData, "base64url");
+  const authenticatorData = decodeStrict(input.authenticatorData);
   if (authenticatorData.length < 37) {
     throw new Refusal("authenticator-data-short");
   }
@@ -154,7 +167,7 @@ function checkedAssertion(
   if ((flags & 0x04) === 0) {
     throw new Refusal("user-not-verified");
   }
-  const signatureBytes = Buffer.from(input.signature, "base64url");
+  const signatureBytes = decodeStrict(input.signature);
   const signed = Buffer.concat([
     authenticatorData,
     createHash("sha256").update(clientDataBytes).digest(),

@@ -31,6 +31,7 @@ describe("REFUSAL_REASONS", () => {
     expect(REFUSAL_REASONS).toEqual([
       "unknown-credential",
       "retired-key",
+      "malformed-encoding",
       "client-data-malformed",
       "wrong-type",
       "wrong-origin",
@@ -70,6 +71,104 @@ describe("verifyAssertion", () => {
   it("refuses a retired key", () => {
     const built = buildAssertion({ retired: true });
     expect(reasonOf(built)).toBe("retired-key");
+  });
+
+  describe("refuses base64url that is not in its one spelling", () => {
+    /** The standard-base64 spelling of the same bytes, with `+` or `/` where
+     * base64url has `-` or `_`; the good values here name no such character,
+     * so the last byte is chosen until the spelling carries one. */
+    function standardSpelling(text: string): string {
+      const bytes = Buffer.from(text, "base64url");
+      for (let value = 0; value < 256; value++) {
+        const candidate = Buffer.from(bytes);
+        candidate[candidate.length - 1] = value;
+        const spelling = candidate.toString("base64").replace(/=+$/, "");
+        if (/[+/]/.test(spelling)) {
+          return spelling;
+        }
+      }
+      throw new Error("no standard spelling carries + or /");
+    }
+
+    /** The last character with one of the bits no byte uses set. */
+    function withDirtyTail(text: string): string {
+      const chars =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+      const unused = (text.length * 6) % 8;
+      expect(unused).not.toBe(0);
+      const last = text[text.length - 1]!;
+      const value = chars.indexOf(last);
+      expect(value).toBeGreaterThanOrEqual(0);
+      return text.slice(0, -1) + chars[value! | (1 << (unused - 1))];
+    }
+
+    function fieldOf(
+      built: ReturnType<typeof buildAssertion>,
+      field: "clientDataJSON" | "authenticatorData" | "signature",
+    ): string {
+      return built.input[field];
+    }
+
+    function withField(
+      built: ReturnType<typeof buildAssertion>,
+      field: "clientDataJSON" | "authenticatorData" | "signature",
+      value: string,
+    ): ReturnType<typeof buildAssertion>["input"] {
+      return { ...built.input, [field]: value };
+    }
+
+    it.each([
+      ["clientDataJSON", (text: string) => `${text}=`],
+      ["authenticatorData", (text: string) => `${text}=`],
+      ["signature", (text: string) => `${text}=`],
+    ] as const)("refuses padding appended to %s", (field, change) => {
+      const built = buildAssertion();
+      const result = verifyAssertion(
+        withField(built, field, change(fieldOf(built, field))),
+        built.text,
+        built.keys,
+      );
+      expect(result).toEqual({ ok: false, reason: "malformed-encoding" });
+    });
+
+    it.each(["clientDataJSON", "authenticatorData", "signature"] as const)(
+      "refuses a `!` appended to %s",
+      (field) => {
+        const built = buildAssertion();
+        const result = verifyAssertion(
+          withField(built, field, `${fieldOf(built, field)}!`),
+          built.text,
+          built.keys,
+        );
+        expect(result).toEqual({ ok: false, reason: "malformed-encoding" });
+      },
+    );
+
+    it.each(["clientDataJSON", "authenticatorData", "signature"] as const)(
+      "refuses a standard-base64 spelling of %s",
+      (field) => {
+        const built = buildAssertion();
+        const result = verifyAssertion(
+          withField(built, field, standardSpelling(fieldOf(built, field))),
+          built.text,
+          built.keys,
+        );
+        expect(result).toEqual({ ok: false, reason: "malformed-encoding" });
+      },
+    );
+
+    it.each(["clientDataJSON", "authenticatorData", "signature"] as const)(
+      "refuses non-zero trailing bits in %s",
+      (field) => {
+        const built = buildAssertion();
+        const result = verifyAssertion(
+          withField(built, field, withDirtyTail(fieldOf(built, field))),
+          built.text,
+          built.keys,
+        );
+        expect(result).toEqual({ ok: false, reason: "malformed-encoding" });
+      },
+    );
   });
 
   it("refuses a signature another key made", () => {

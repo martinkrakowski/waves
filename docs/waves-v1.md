@@ -610,20 +610,21 @@ With the keys loaded, the server checks an assertion in one order, one reason
 code per check (`verifyAssertion`,
 `packages/server/src/infrastructure/assertion-verifier.ts`):
 
-| check                                                      | refusal reason             |
-| ---------------------------------------------------------- | -------------------------- |
-| the credential is one of the loaded keys                   | `unknown-credential`       |
-| that key is not retired                                    | `retired-key`              |
-| `clientDataJSON` is UTF-8 JSON and a plain object          | `client-data-malformed`    |
-| `type` is `webauthn.get`                                   | `wrong-type`               |
-| `origin` is `https://waves.midnight.lan`                   | `wrong-origin`             |
-| `challenge` is the base64url SHA-256 of the challenge text | `wrong-challenge`          |
-| `crossOrigin` is not `true`                                | `cross-origin`             |
-| the authenticator data is at least 37 bytes                | `authenticator-data-short` |
-| its first 32 bytes are the SHA-256 of `waves.midnight.lan` | `wrong-rp-id-hash`         |
-| the user-present flag is set                               | `user-not-present`         |
-| the user-verified flag is set                              | `user-not-verified`        |
-| the ES256 signature covers it all                          | `bad-signature`            |
+| check                                                                                   | refusal reason             |
+| --------------------------------------------------------------------------------------- | -------------------------- |
+| the credential is one of the loaded keys                                                | `unknown-credential`       |
+| that key is not retired                                                                 | `retired-key`              |
+| `clientDataJSON`, `authenticatorData` and `signature` are base64url in its one spelling | `malformed-encoding`       |
+| `clientDataJSON` is UTF-8 JSON and a plain object                                       | `client-data-malformed`    |
+| `type` is `webauthn.get`                                                                | `wrong-type`               |
+| `origin` is `https://waves.midnight.lan`                                                | `wrong-origin`             |
+| `challenge` is the base64url SHA-256 of the challenge text                              | `wrong-challenge`          |
+| `crossOrigin` is not `true`                                                             | `cross-origin`             |
+| the authenticator data is at least 37 bytes                                             | `authenticator-data-short` |
+| its first 32 bytes are the SHA-256 of `waves.midnight.lan`                              | `wrong-rp-id-hash`         |
+| the user-present flag is set                                                            | `user-not-present`         |
+| the user-verified flag is set                                                           | `user-not-verified`        |
+| the ES256 signature covers it all                                                       | `bad-signature`            |
 
 ### The event
 
