@@ -506,16 +506,6 @@ describe("readSigned", () => {
       });
       expectRefused(ran, "no signed answer on the current text", 4);
     });
-
-    it("exits 4 when the record holds no revision at all", async () => {
-      const key = answerKey();
-      const ran = await verify({
-        pin: pinReadOf([{ key, label: "l" }]),
-        entries: [],
-        revisions: [],
-      });
-      expectRefused(ran, "no signed answer on the current text", 4);
-    });
   });
 
   describe("the current revision is verified from its own text", () => {
@@ -578,6 +568,52 @@ describe("readSigned", () => {
         ran,
         "the revision's stored textSha256 does not match its own text",
       );
+    });
+
+    it("answers a record with no revisions with exit 3, not 4", async () => {
+      const key = answerKey();
+      const ran = await verify({
+        pin: pinReadOf([{ key, label: "l" }]),
+        entries: [signedEntry({ key }).entry],
+        revisions: [],
+      });
+      expectRefused(ran, "the decision record is malformed");
+    });
+
+    it("answers a current revision with a non-number revision with exit 3", async () => {
+      const key = answerKey();
+      const onText = signedEntry({ key });
+      const ran = await verify({
+        pin: pinReadOf([{ key, label: "l" }]),
+        entries: [onText.entry],
+        revisions: [
+          {
+            revision: "one",
+            textSha256: onText.textSha256,
+            receivedAt: "2026-10-08T12:00:01Z",
+            decision: decisionDocument(),
+          },
+        ],
+      });
+      expectRefused(ran, "the decision record is malformed");
+    });
+
+    it("answers a current revision with a non-integer revision with exit 3", async () => {
+      const key = answerKey();
+      const onText = signedEntry({ key });
+      const ran = await verify({
+        pin: pinReadOf([{ key, label: "l" }]),
+        entries: [onText.entry],
+        revisions: [
+          {
+            revision: 1.5,
+            textSha256: onText.textSha256,
+            receivedAt: "2026-10-08T12:00:01Z",
+            decision: decisionDocument(),
+          },
+        ],
+      });
+      expectRefused(ran, "the decision record is malformed");
     });
   });
 

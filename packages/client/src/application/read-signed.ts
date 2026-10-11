@@ -74,11 +74,10 @@ export async function readSigned(
 
   const revisions = record.revisions as readonly unknown[];
   const entries = record.entries as readonly unknown[];
-  const last =
-    revisions.length === 0 ? undefined : revisions[revisions.length - 1];
-  if (last === undefined) {
-    return refuse("no signed answer on the current text", EXIT_UNSIGNED);
+  if (revisions.length === 0) {
+    return refuse("the decision record is malformed", EXIT_UNVERIFIED);
   }
+  const last = revisions[revisions.length - 1];
   if (!isRecord(last)) {
     return refuse(
       "the record's current revision is not an object",
@@ -102,7 +101,10 @@ export async function readSigned(
       EXIT_UNVERIFIED,
     );
   }
-  const revision = own(last, "revision") as number;
+  const revision = own(last, "revision");
+  if (typeof revision !== "number" || !Number.isInteger(revision)) {
+    return refuse("the decision record is malformed", EXIT_UNVERIFIED);
+  }
 
   const choice = chooseSignedAnswer(entries, revision, textSha256);
   if (!choice.ok) {
