@@ -553,6 +553,9 @@ export function derToRawP256(der) {
     for (let i = 0; i < count; i++) {
       total = (total << 8) | read();
     }
+    if (total < 0 || (count === 1 && total < 0x80)) {
+      throw new Error("length is not minimal");
+    }
     return total;
   };
   const integer = () => {

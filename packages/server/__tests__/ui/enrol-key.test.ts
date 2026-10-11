@@ -594,9 +594,9 @@ describe("derToRawP256", () => {
     expect(verify(null, MESSAGE_DER, KEY.publicKey, rebuilt)).toBe(true);
   });
 
-  it("uses a long-form length when the SEQUENCE is long enough", () => {
+  it("reads a two-byte long-form length when the SEQUENCE declares one", () => {
     const der = Buffer.from([
-      0x30, 0x81, 0x06, 0x02, 0x01, 0x05, 0x02, 0x01, 0x07,
+      0x30, 0x82, 0x00, 0x06, 0x02, 0x01, 0x05, 0x02, 0x01, 0x07,
     ]);
     expect(derToRawP256(der).length).toBe(64);
   });
@@ -657,6 +657,29 @@ describe("derToRawP256", () => {
     [
       "a SEQUENCE length is read past the buffer",
       Uint8Array.from([0x30, 0x84, 0x00, 0x00]),
+    ],
+    [
+      "a long-form length is negative after the shifts",
+      Uint8Array.from([0x30, 0x84, 0x80, 0x00, 0x00, 0x00]),
+    ],
+    [
+      "a long-form length is non-minimal",
+      Uint8Array.from([
+        0x30,
+        0x81,
+        0x45,
+        0x02,
+        0x21,
+        0x00,
+        ...Array(32).fill(0x80),
+        0x02,
+        0x20,
+        ...Array(32).fill(0x01),
+      ]),
+    ],
+    [
+      "a one-byte long-form length of 129 bytes overruns the signature",
+      Uint8Array.from([0x30, 0x81, 0x81, 0x02, 0x01, 0x05, 0x02, 0x01, 0x07]),
     ],
     [
       "the SEQUENCE overruns the buffer",
