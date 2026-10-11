@@ -5,6 +5,7 @@ import {
   MAX_DECISIONS_PER_PROJECT,
   MAX_REVISIONS_PER_DECISION,
   MAX_SESSION_ENTRIES_PER_DECISION,
+  MAX_SIGNED_ENTRIES_PER_DECISION,
   type StateEntryRequest,
 } from "@hexagen-monaco/waves-contract";
 
@@ -15,6 +16,7 @@ import { sha256Hex } from "../src/infrastructure/sha256.js";
 import {
   decisionRevision,
   event,
+  signedEntry,
   stateEntryRequest,
   storedRevision,
 } from "./notice-contract.js";
@@ -521,6 +523,167 @@ describe("postState", () => {
     ).toMatchObject({
       kind: "conflict",
       error: `at most ${MAX_SESSION_ENTRIES_PER_DECISION} session entries per decision`,
+    });
+  });
+
+  it("counts only session entries against the cap, never signed ones", async () => {
+    const store = new MemoryStore();
+    const m = model(store);
+    await m.raiseDecision(PROJECT, ID, BODY);
+    // A full allowance of signed answers stands on the decision already; the
+    // session allowance is untouched by them (W59: counted apart).
+    for (let at = 0; at < MAX_SIGNED_ENTRIES_PER_DECISION; at += 1) {
+      await store.appendEntry(PROJECT, ID, signedEntry(at), at, 1);
+    }
+    // Fifty session entries still land, each pinning the total count that the
+    // signed ones are part of.
+    for (let at = 0; at < MAX_SESSION_ENTRIES_PER_DECISION; at += 1) {
+      const result = await m.postState(
+        PROJECT,
+        ID,
+        stateEntry({
+          state: "delegated",
+          source: "session",
+          words: undefined,
+          option: "a",
+          expectedEntries: MAX_SIGNED_ENTRIES_PER_DECISION + at,
+        }),
+      );
+      expect(result.kind).toBe("posted");
+    }
+    // The fifty-first is refused, naming the session cap, not the total.
+    expect(
+      await m.postState(
+        PROJECT,
+        ID,
+        stateEntry({
+          state: "delegated",
+          source: "session",
+          words: undefined,
+          option: "a",
+          expectedEntries:
+            MAX_SIGNED_ENTRIES_PER_DECISION + MAX_SESSION_ENTRIES_PER_DECISION,
+        }),
+      ),
+    ).toMatchObject({
+      kind: "conflict",
+      error: `at most ${MAX_SESSION_ENTRIES_PER_DECISION} session entries per decision`,
+    });
+  });
+
+  it("refuses a reported answer on a text that already holds a signed one", async () => {
+    const store = new MemoryStore();
+    const m = model(store);
+    await m.raiseDecision(PROJECT, ID, BODY);
+    await store.appendEntry(
+      PROJECT,
+      ID,
+      signedEntry(0, { textSha256: BINDING_HASH }),
+      0,
+      1,
+    );
+
+    expect(
+      await m.postState(PROJECT, ID, stateEntry({ expectedEntries: 1 })),
+    ).toEqual({
+      kind: "conflict",
+      error: "a signed answer exists on this text",
+      revision: 1,
+      textSha256: BINDING_HASH,
+      entries: 1,
+    });
+  });
+
+  it("accepts a session withdrawal over a signed answer", async () => {
+    const store = new MemoryStore();
+    const m = model(store);
+    await m.raiseDecision(PROJECT, ID, BODY);
+    await store.appendEntry(
+      PROJECT,
+      ID,
+      signedEntry(0, { textSha256: BINDING_HASH }),
+      0,
+      1,
+    );
+
+    expect(
+      await m.postState(
+        PROJECT,
+        ID,
+        stateEntry({
+          state: "withdrawn",
+          source: "session",
+          words: undefined,
+          reason: "gone",
+          expectedEntries: 1,
+        }),
+      ),
+    ).toEqual({ kind: "posted", index: 1 });
+  });
+
+  it("accepts a reported answer once the text has moved past the signed one", async () => {
+    const store = new MemoryStore();
+    const m = model(store);
+    await m.raiseDecision(PROJECT, ID, BODY);
+    await store.appendEntry(
+      PROJECT,
+      ID,
+      signedEntry(0, { textSha256: BINDING_HASH }),
+      0,
+      1,
+    );
+    const changed = decisionRevision(ID, PROJECT, {
+      question: "New question?",
+    });
+    expect(await m.raiseDecision(PROJECT, ID, changed)).toMatchObject({
+      kind: "stored",
+      revision: 2,
+    });
+
+    expect(
+      await m.postState(
+        PROJECT,
+        ID,
+        stateEntry({
+          revision: 2,
+          textSha256: sha256Hex(decisionBindingText(changed)),
+          expectedEntries: 1,
+        }),
+      ),
+    ).toEqual({ kind: "posted", index: 1 });
+  });
+
+  it("refuses a reported answer when the signed answer's text returns", async () => {
+    const store = new MemoryStore();
+    const m = model(store);
+    await m.raiseDecision(PROJECT, ID, BODY);
+    await store.appendEntry(
+      PROJECT,
+      ID,
+      signedEntry(0, { textSha256: BINDING_HASH }),
+      0,
+      1,
+    );
+    const changed = decisionRevision(ID, PROJECT, {
+      question: "New question?",
+    });
+    await m.raiseDecision(PROJECT, ID, changed);
+    // The original text returns as revision 3: the same hash is the same
+    // text, so the signed answer on it still shuts reported entries out.
+    expect(await m.raiseDecision(PROJECT, ID, BODY)).toMatchObject({
+      kind: "stored",
+      revision: 3,
+    });
+
+    expect(
+      await m.postState(
+        PROJECT,
+        ID,
+        stateEntry({ revision: 3, expectedEntries: 1 }),
+      ),
+    ).toMatchObject({
+      kind: "conflict",
+      error: "a signed answer exists on this text",
     });
   });
 });

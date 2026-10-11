@@ -8,6 +8,7 @@ import {
   groupOf,
   isAnswer,
   REPORTED_WINDOW_MS,
+  signedOnCurrentText,
 } from "../src/domain/decision-state.js";
 import type { StoredEntry } from "../src/application/ports/notice-store.js";
 
@@ -282,6 +283,84 @@ describe("coveredAnswer", () => {
     expect(
       coveredAnswer({ project: "p", id: "d", revisions: [], entries: [] }),
     ).toBeUndefined();
+  });
+});
+
+describe("signedOnCurrentText", () => {
+  it("is true when a signed answer is on the current text", () => {
+    const d = {
+      project: "p",
+      id: "d",
+      revisions: [rev()],
+      entries: [entry({ index: 0, source: "signed" })],
+    };
+    expect(signedOnCurrentText(d)).toBe(true);
+  });
+
+  it("is true for a signed answer earlier in the current text's run", () => {
+    const d = {
+      project: "p",
+      id: "d",
+      revisions: [revOf(1, HASH_A, fresh(1)), revOf(2, HASH_A, fresh(0))],
+      entries: [
+        entry({ index: 0, revision: 1, textSha256: HASH_A, source: "signed" }),
+        entry({ index: 1, revision: 2, textSha256: HASH_A, source: "session" }),
+      ],
+    };
+    expect(signedOnCurrentText(d)).toBe(true);
+  });
+
+  it("is false when no entry is signed", () => {
+    const d = {
+      project: "p",
+      id: "d",
+      revisions: [rev()],
+      entries: [entry({ index: 0, source: "reported" })],
+    };
+    expect(signedOnCurrentText(d)).toBe(false);
+  });
+
+  it("is false for a decision with no revisions", () => {
+    expect(
+      signedOnCurrentText({
+        project: "p",
+        id: "d",
+        revisions: [],
+        entries: [],
+      }),
+    ).toBe(false);
+  });
+
+  it("is false when the signed answer is on an earlier text", () => {
+    // Revision 1 is text A with the signed answer, revision 2 is text B.
+    const d = {
+      project: "p",
+      id: "d",
+      revisions: [revOf(1, HASH_A, fresh(2)), revOf(2, HASH_B, fresh(1))],
+      entries: [
+        entry({ index: 0, revision: 1, textSha256: HASH_A, source: "signed" }),
+      ],
+    };
+    expect(signedOnCurrentText(d)).toBe(false);
+  });
+
+  it("is true when the signed answer's text returns after a revision", () => {
+    // Revision 1 is text A with the signed answer, revision 2 is text B,
+    // revision 3 is text A again: the same hash is the same text, wherever
+    // in the history the signed entry is.
+    const d = {
+      project: "p",
+      id: "d",
+      revisions: [
+        revOf(1, HASH_A, fresh(15)),
+        revOf(2, HASH_B, fresh(14)),
+        revOf(3, HASH_A, fresh(0)),
+      ],
+      entries: [
+        entry({ index: 0, revision: 1, textSha256: HASH_A, source: "signed" }),
+      ],
+    };
+    expect(signedOnCurrentText(d)).toBe(true);
   });
 });
 

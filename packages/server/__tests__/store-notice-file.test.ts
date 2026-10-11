@@ -16,8 +16,10 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { FileNoticeStore, MemoryStore } from "../src/index.js";
 import {
+  answerSignature,
   decisionRevision,
   event,
+  signedEntry,
   storedEntry,
   storedRevision,
 } from "./notice-contract.js";
@@ -1057,6 +1059,106 @@ describe("corrupted notice files", () => {
           id: "d1",
           revisions: [goodRev()],
           entries: [{ ...goodEntry(), revision: 2 }],
+        }),
+      );
+      expect(await store.getDecision("alpha", "d1")).toBeUndefined();
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("appends a signed entry and reads it back with its signature", async () => {
+    const { store, dispose } = harness();
+    try {
+      await store.appendRevision("alpha", "d1", storedRevision(1), 0, 3);
+      const signed = signedEntry(0);
+      const outcome = await store.appendEntry("alpha", "d1", signed, 0, 1);
+      expect(outcome).toBe("stored");
+
+      const read = await store.getDecision("alpha", "d1");
+      expect(read?.entries).toEqual([signed]);
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("getDecision reads a planted signed entry with its signature", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      writeDecisionFile(
+        dataDir,
+        "alpha",
+        "d1",
+        JSON.stringify({
+          project: "alpha",
+          id: "d1",
+          revisions: [goodRev()],
+          entries: [signedEntry(0)],
+        }),
+      );
+      const read = await store.getDecision("alpha", "d1");
+      expect(read?.entries).toEqual([signedEntry(0)]);
+      expect(read?.entries[0]?.source).toBe("signed");
+      expect(read?.entries[0]?.signature).toEqual(answerSignature(0));
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("skips a signed entry whose signature names another index (W63)", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      writeDecisionFile(
+        dataDir,
+        "alpha",
+        "d1",
+        JSON.stringify({
+          project: "alpha",
+          id: "d1",
+          revisions: [goodRev()],
+          entries: [signedEntry(0, { signature: answerSignature(1) })],
+        }),
+      );
+      expect(await store.getDecision("alpha", "d1")).toBeUndefined();
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("skips a signed entry that carries no signature", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      const { signature: _dropped, ...bare } = signedEntry(0);
+      void _dropped;
+      writeDecisionFile(
+        dataDir,
+        "alpha",
+        "d1",
+        JSON.stringify({
+          project: "alpha",
+          id: "d1",
+          revisions: [goodRev()],
+          entries: [bare],
+        }),
+      );
+      expect(await store.getDecision("alpha", "d1")).toBeUndefined();
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("skips a reported entry that carries a signature", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      writeDecisionFile(
+        dataDir,
+        "alpha",
+        "d1",
+        JSON.stringify({
+          project: "alpha",
+          id: "d1",
+          revisions: [goodRev()],
+          entries: [{ ...storedEntry(0), signature: answerSignature(0) }],
         }),
       );
       expect(await store.getDecision("alpha", "d1")).toBeUndefined();
