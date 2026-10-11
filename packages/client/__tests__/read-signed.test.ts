@@ -93,6 +93,8 @@ describe("readSigned", () => {
     expect(ran.code).toBe(0);
     expect(ran.out).toEqual([
       "signed answer: approved",
+      "revision: 1",
+      `textSha256: ${built.textSha256}`,
       "option: b",
       "words: Go with B",
       "signed with: the owner's phone",
@@ -111,6 +113,8 @@ describe("readSigned", () => {
     expect(ran.code).toBe(0);
     expect(ran.out).toEqual([
       "signed answer: declined",
+      "revision: 1",
+      `textSha256: ${built.textSha256}`,
       "signed with: the owner's phone",
       `verified against ${PIN_PATH}`,
     ]);
@@ -118,12 +122,16 @@ describe("readSigned", () => {
 
   it("still verifies against a retired key, and says so", async () => {
     const key = answerKey();
-    const ran = await verify(
-      goodRun(key, [{ key, label: "the old phone", retired: true }]),
-    );
+    const built = signedEntry({ key, words: "Go with B" });
+    const ran = await verify({
+      pin: pinReadOf([{ key, label: "the old phone", retired: true }]),
+      entries: [built.entry],
+    });
     expect(ran.code).toBe(0);
     expect(ran.out).toEqual([
       "signed answer: approved",
+      "revision: 1",
+      `textSha256: ${built.textSha256}`,
       "words: Go with B",
       "signed with: the old phone",
       "signed with a retired key",
@@ -152,6 +160,8 @@ describe("readSigned", () => {
     expect(ran.code).toBe(0);
     expect(ran.out).toEqual([
       "signed answer: approved",
+      "revision: 1",
+      `textSha256: ${signed.textSha256}`,
       "words: Go with B",
       "signed with: the owner's phone",
       `verified against ${PIN_PATH}`,
@@ -218,6 +228,8 @@ describe("readSigned", () => {
     expect(ran.code).toBe(0);
     expect(ran.out).toEqual([
       "signed answer: approved",
+      "revision: 1",
+      `textSha256: ${hash}`,
       "words: Go with B",
       "signed with: the owner's phone",
       `verified against ${PIN_PATH}`,

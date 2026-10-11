@@ -141,6 +141,8 @@ export async function readSigned(
   }
 
   deps.out(`signed answer: ${choice.verdict}`);
+  deps.out(`revision: ${revision}`);
+  deps.out(`textSha256: ${textSha256}`);
   if (choice.entry.option !== undefined) {
     deps.out(`option: ${choice.entry.option}`);
   }

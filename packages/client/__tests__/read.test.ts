@@ -265,6 +265,8 @@ describe("read", () => {
     ).toBe(0);
     expect(harnessBuilt.out).toEqual([
       "signed answer: approved",
+      "revision: 1",
+      `textSha256: ${built.textSha256}`,
       "words: Go with B",
       "signed with: the owner's phone",
       "verified against /etc/waves/owner-keys.json",

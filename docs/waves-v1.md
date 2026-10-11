@@ -633,8 +633,9 @@ checks the assertion against the owner keys pinned in `/etc/waves/owner-keys.jso
 — a regular file, owned by root, writable by neither group nor others, and never
 a link. Any failed check, a bad pin file included, is exit 3 with one sentence
 naming the check; no signed answer on the current text is exit 4. Exit 0 prints
-the verified answer, and nothing the server said is trusted where the reader can
-recompute it.
+the verified answer followed by the revision and the recomputed `textSha256` of
+the text it was verified against, and nothing the server said is trusted where
+the reader can recompute it.
 
 ### The event
 
