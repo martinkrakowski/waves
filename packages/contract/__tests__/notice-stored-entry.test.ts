@@ -231,6 +231,27 @@ describe("validateStoredStateEntry", () => {
     ]);
   });
 
+  it.each([
+    ["delegated", { option: "a" }],
+    ["withdrawn", { reason: "fixed another way" }],
+    ["superseded", { supersededBy: "other-decision" }],
+  ])("refuses a signed entry whose state is %s", (state, present) => {
+    entryPaths({ ...minimalSigned(), state, ...present }, ["/source"]);
+  });
+
+  it.each([
+    "credentialId",
+    "authenticatorData",
+    "clientDataJSON",
+    "signature",
+    "nonce",
+    "index",
+  ])("refuses a signature object missing its %s", (field) => {
+    const signature = { ...minimalSignature() };
+    delete signature[field];
+    entryPaths({ ...minimalSigned(), signature }, [`/signature/${field}`]);
+  });
+
   it("a signature on a reported entry is refused", () => {
     entryPaths({ ...minimalEntry(), signature: minimalSignature() }, [
       "/signature",
