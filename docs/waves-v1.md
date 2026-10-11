@@ -561,7 +561,12 @@ revision, `textSha256` and entry count when the pin moved; `409` with reason
 `one-way-door`, `act-elsewhere`, `signed-cap` or `entry-ceiling` for the doors
 of W68 and the caps; and `500 internal` for the one failure no request can
 cause. Every reply carries `no-store`, and nothing anywhere in it is repaired
-or defaulted.
+or defaulted. The failure lockout the route answers `429 too many failures`
+with is per client address, and it is the same lockout the token-bearing
+writes use: ten failures in sixty seconds lock that address out of the nonce
+route, the answers route and every write, until the window passes. Behind a
+proxy this is per client only when `WAVES_TRUST_PROXY` is set exactly as the
+deployment sets it.
 
 **The challenge text.** `answerChallengeText`
 (`packages/contract/src/domain/notice-answer.ts`) returns one JSON text, no white
