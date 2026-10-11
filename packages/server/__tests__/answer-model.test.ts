@@ -541,10 +541,7 @@ describe("the answer model", () => {
       index: MAX_SIGNED_ENTRIES_PER_DECISION,
       state: "approved",
     });
-    const entry = await readBack(
-      h.store,
-      MAX_SIGNED_ENTRIES_PER_DECISION,
-    );
+    const entry = await readBack(h.store, MAX_SIGNED_ENTRIES_PER_DECISION);
     expect(entry.signature?.index).toBe(MAX_SIGNED_ENTRIES_PER_DECISION);
   });
 
