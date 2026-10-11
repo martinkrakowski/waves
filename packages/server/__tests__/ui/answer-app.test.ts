@@ -1396,3 +1396,280 @@ describe("the answer flow keeps its draft across a redraw", () => {
     h.app.stop();
   });
 });
+
+describe("a refresh must not let him sign something he has not read", () => {
+  const MOVED =
+    "This decision changed while you were answering. Nothing was recorded. Read it again before you answer.";
+
+  /** A second revision of the same decision, and its real hash. */
+  const REVISION_2 = decisionRevision({
+    question: "Go, now that the backup is done?",
+  });
+  const HASH_2 = createHash("sha256")
+    .update(decisionBindingText(REVISION_2), "utf8")
+    .digest("hex");
+
+  /** A nonce reply that agrees with the page's zero-entry count. */
+  const NONCE_REPLY: SigningReply = {
+    status: 200,
+    body: { nonce: NONCE_VALUE, index: 0 },
+  };
+
+  /**
+   * The three ways a pass can bring a different decision than the one the
+   * reader is answering: a second revision, the same revision under another
+   * text, and one more entry — each with head and arrays in agreement.
+   */
+  const MOVED_CASES: [string, () => unknown][] = [
+    [
+      "a second revision",
+      () =>
+        decisionResponse({
+          head: inboxHead({
+            question: "Go, now that the backup is done?",
+            revision: 2,
+            revisions: 2,
+            textSha256: HASH_2,
+          }),
+          revisions: [
+            storedRevision({ textSha256: HASH, decision: REVISION }),
+            storedRevision({
+              revision: 2,
+              textSha256: HASH_2,
+              decision: REVISION_2,
+            }),
+          ] as never,
+        }),
+    ],
+    [
+      "the same revision under another text",
+      () =>
+        decisionResponse({
+          head: inboxHead({ textSha256: HASH_2 }),
+          revisions: [storedRevision({ textSha256: HASH_2 })] as never,
+        }),
+    ],
+    [
+      "one more entry",
+      () =>
+        decisionResponse({
+          head: inboxHead({ textSha256: HASH, entries: 1 }),
+          revisions: [
+            storedRevision({ textSha256: HASH, decision: REVISION }),
+          ] as never,
+          entries: [signedApprovedEntry()] as never,
+        }),
+    ],
+  ];
+
+  for (const [name, moved] of MOVED_CASES) {
+    it(`takes the confirm step back to the choices when a refresh brings ${name}`, async () => {
+      const fetchImpl = signingFetch({
+        nonce: () => {
+          throw new Error("nonce should not be asked");
+        },
+        answers: () => {
+          throw new Error("answers should not be asked");
+        },
+        decision: openDecision(),
+      });
+      const h = signingHarness("/p/alpha/d/d1", fetchImpl, () => {
+        throw new Error("the passkey should not be asked");
+      });
+      h.app.start();
+      await settle();
+
+      press("answer-yes");
+      await flush();
+
+      fetchImpl.setDecision(moved());
+      h.timers.runLast();
+      await settle();
+
+      expect(messageText()).toBe(MOVED);
+      expect(textsOf(root(), "section.answer button")).toEqual([
+        "Yes",
+        "No",
+        "Answer in my own words",
+      ]);
+      expect(root().querySelector('[data-key="answer-sign"]')).toBeNull();
+      expect(fetchImpl.calls.filter((c) => c.method === "POST")).toHaveLength(
+        0,
+      );
+
+      h.app.stop();
+    });
+  }
+
+  for (const [name, moved] of MOVED_CASES) {
+    it(`takes the words step back to the choices when a refresh brings ${name}, and keeps the draft`, async () => {
+      const fetchImpl = signingFetch({
+        nonce: () => {
+          throw new Error("nonce should not be asked");
+        },
+        answers: () => {
+          throw new Error("answers should not be asked");
+        },
+        decision: openDecision(),
+      });
+      const h = signingHarness("/p/alpha/d/d1", fetchImpl, () => {
+        throw new Error("the passkey should not be asked");
+      });
+      h.app.start();
+      await settle();
+
+      press("answer-words-open");
+      await flush();
+      const area = textarea("answer-words");
+      area.value = "my own words";
+      area.dispatchEvent(new Event("input", { bubbles: true }));
+      await flush();
+
+      fetchImpl.setDecision(moved());
+      h.timers.runLast();
+      await settle();
+
+      expect(messageText()).toBe(MOVED);
+      expect(textsOf(root(), "section.answer button")).toEqual([
+        "Yes",
+        "No",
+        "Answer in my own words",
+      ]);
+      expect(root().querySelector('[data-key="answer-sign"]')).toBeNull();
+      expect(fetchImpl.calls.filter((c) => c.method === "POST")).toHaveLength(
+        0,
+      );
+
+      press("answer-words-open");
+      await flush();
+      expect(textarea("answer-words").value).toBe("my own words");
+
+      h.app.stop();
+    });
+  }
+
+  it("redraws the confirm step unchanged when a refresh brings the same decision", async () => {
+    const fetchImpl = signingFetch({
+      nonce: () => {
+        throw new Error("nonce should not be asked");
+      },
+      answers: () => {
+        throw new Error("answers should not be asked");
+      },
+      decision: openDecision(),
+    });
+    const h = signingHarness("/p/alpha/d/d1", fetchImpl, () => {
+      throw new Error("the passkey should not be asked");
+    });
+    h.app.start();
+    await settle();
+
+    press("answer-yes");
+    await flush();
+    const before = root().querySelector("div.answer-confirm")!.innerHTML;
+
+    h.timers.runLast();
+    await settle();
+
+    expect(
+      root().querySelector("div.answer-confirm")!.innerHTML,
+    ).toBe(before);
+    expect(root().querySelector('[data-key="answer-sign"]')).not.toBeNull();
+
+    h.app.stop();
+  });
+
+  it("puts the focus back on the sign button when a refresh redraws the same decision", async () => {
+    const fetchImpl = signingFetch({
+      nonce: () => {
+        throw new Error("nonce should not be asked");
+      },
+      answers: () => {
+        throw new Error("answers should not be asked");
+      },
+      decision: openDecision(),
+    });
+    const h = signingHarness("/p/alpha/d/d1", fetchImpl, () => {
+      throw new Error("the passkey should not be asked");
+    });
+    h.app.start();
+    await settle();
+
+    press("answer-yes");
+    await flush();
+    (
+      root().querySelector('[data-key="answer-sign"]') as HTMLButtonElement
+    ).focus();
+    expect(document.activeElement?.getAttribute("data-key")).toBe(
+      "answer-sign",
+    );
+
+    h.timers.runLast();
+    await settle();
+
+    const drawnAgain = root().querySelector(
+      '[data-key="answer-sign"]',
+    ) as HTMLButtonElement;
+    expect(document.activeElement).toBe(drawnAgain);
+
+    h.app.stop();
+  });
+
+  it("holds a sign in flight through a refresh, and answers for itself", async () => {
+    let releaseGet!: () => void;
+    const fetchImpl = signingFetch({
+      nonce: () => NONCE_REPLY,
+      answers: () => ({ status: 409, body: { reason: "stale" } }),
+      decision: openDecision(),
+    });
+    const h = signingHarness("/p/alpha/d/d1", fetchImpl, (options) => {
+      const pk = (
+        options as unknown as { publicKey: { challenge: Uint8Array } }
+      ).publicKey;
+      const made = assertionFor(pk.challenge, "refresh-while-working");
+      return new Promise<unknown>((resolve) => {
+        releaseGet = () => resolve(browserAssertion(made.input));
+      });
+    });
+    h.app.start();
+    await settle();
+
+    press("answer-yes");
+    await flush();
+    press("answer-sign");
+    await settle();
+
+    // While the passkey prompt is open, a refresh that brings a new revision
+    // changes nothing he can see: the buttons stay held back and the working
+    // line stays, over the text he was shown at the press.
+    const before = root().querySelector("section.answer")!.innerHTML;
+    fetchImpl.setDecision(MOVED_CASES[0]![1]());
+    h.timers.runLast();
+    await settle();
+
+    expect(root().querySelector("section.answer")!.innerHTML).toBe(before);
+    expect(
+      (root().querySelector('[data-key="answer-sign"]') as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      (root().querySelector('[data-key="answer-cancel"]') as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(root().querySelector("p.answer-working")).not.toBeNull();
+
+    // The ceremony ends against the text that was on screen at the press, and
+    // the server's refusal is what tells him the page has moved on.
+    releaseGet();
+    await settle();
+
+    const posted = fetchImpl.calls.find(
+      (c) => c.method === "POST" && c.path === ANSWERS("d1"),
+    )!.body as Record<string, unknown>;
+    expect(posted.revision).toBe(1);
+    expect(posted.textSha256).toBe(HASH);
+    expect(messageText()).toBe(MOVED);
+
+    h.app.stop();
+  });
+});
