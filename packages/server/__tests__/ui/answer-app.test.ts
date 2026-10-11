@@ -1571,9 +1571,7 @@ describe("a refresh must not let him sign something he has not read", () => {
     h.timers.runLast();
     await settle();
 
-    expect(
-      root().querySelector("div.answer-confirm")!.innerHTML,
-    ).toBe(before);
+    expect(root().querySelector("div.answer-confirm")!.innerHTML).toBe(before);
     expect(root().querySelector('[data-key="answer-sign"]')).not.toBeNull();
 
     h.app.stop();
@@ -1728,13 +1726,13 @@ describe("leaving the decision resets the answer flow", () => {
           if (path === NONCE(id) && method === "GET") {
             reply = { status: 405 };
           } else if (path === NONCE(id) && method === "POST") {
-            reply = options.nonce === undefined
-              ? { status: 405 }
-              : options.nonce();
+            reply =
+              options.nonce === undefined ? { status: 405 } : options.nonce();
           } else if (path === ANSWERS(id) && method === "POST") {
-            reply = options.answers === undefined
-              ? { status: 201, body: { index: 0, state: "approved" } }
-              : options.answers();
+            reply =
+              options.answers === undefined
+                ? { status: 201, body: { index: 0, state: "approved" } }
+                : options.answers();
           } else if (path === DECISION(id)) {
             reply = { status: 200, body };
           } else {
