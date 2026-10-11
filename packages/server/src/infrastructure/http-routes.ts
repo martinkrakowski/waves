@@ -34,6 +34,16 @@ export type Route =
       readonly project: string;
       readonly id: string;
     }
+  | {
+      readonly kind: "decisionNonce";
+      readonly project: string;
+      readonly id: string;
+    }
+  | {
+      readonly kind: "decisionAnswers";
+      readonly project: string;
+      readonly id: string;
+    }
   | { readonly kind: "decisions"; readonly project: string }
   | { readonly kind: "events"; readonly project: string }
   | { readonly kind: "inbox" }
@@ -59,6 +69,8 @@ const ALLOWED: Readonly<Record<Route["kind"], string>> = {
   wave: "GET, HEAD, PUT, DELETE",
   decision: "GET, HEAD, PUT",
   decisionStates: "POST",
+  decisionNonce: "POST",
+  decisionAnswers: "POST",
   decisions: "GET, HEAD",
   events: "GET, HEAD, POST",
   inbox: "GET, HEAD",
@@ -218,6 +230,22 @@ export function route(pathname: string, root: string): Route {
         parts[7] === "states"
       ) {
         return { kind: "decisionStates", project, id: String(parts[6]) };
+      }
+      if (
+        parts.length === 8 &&
+        parts[5] === "decisions" &&
+        isLaneId(String(parts[6])) &&
+        parts[7] === "nonce"
+      ) {
+        return { kind: "decisionNonce", project, id: String(parts[6]) };
+      }
+      if (
+        parts.length === 8 &&
+        parts[5] === "decisions" &&
+        isLaneId(String(parts[6])) &&
+        parts[7] === "answers"
+      ) {
+        return { kind: "decisionAnswers", project, id: String(parts[6]) };
       }
       if (
         parts.length === 7 &&
