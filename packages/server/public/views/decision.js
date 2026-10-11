@@ -113,8 +113,15 @@ function factsLine(model) {
  * Assembles the whole page from the model and its sub-builders. Each section is
  * pushed onto the children array only when its builder returns a node, so a
  * page with no commitments or no evidence leaves no empty heading behind.
+ *
+ * The optional second argument is the answer lane's half of the page: the node
+ * its controller built — the answer controls, or the note that says where to
+ * answer instead — and the sentence the footer says in its place. Left out, or
+ * given without a footer, the page's own footer stands and the page is exactly
+ * the page it always was. This view file does not import the controller: it
+ * draws what it is given, and nothing when it is given nothing.
  */
-export function renderDecision(model) {
+export function renderDecision(model, answer) {
   const head = model.head;
   const decision = model.currentRevision.decision;
   const children = [breadcrumbs(model)];
@@ -144,6 +151,13 @@ export function renderDecision(model) {
     children.push(commits);
   }
 
+  // The answer belongs between the commitments and everything under them: the
+  // page has said what it promised before it offers to sign an answer, and the
+  // controls are not evidence and not the history.
+  if (answer !== undefined) {
+    children.push(answer.answer.node);
+  }
+
   // act-elsewhere for shapes that are not action: action shows its line in the
   // options block above.
   if (decision.actElsewhere !== undefined && decision.shape !== "action") {
@@ -167,7 +181,15 @@ export function renderDecision(model) {
     children.push(earlier);
   }
 
-  children.push(el("p", { attrs: { class: "decision-footer" }, text: FOOTER }));
+  children.push(
+    el("p", {
+      attrs: { class: "decision-footer" },
+      text:
+        answer === undefined || answer.answer.footer === undefined
+          ? FOOTER
+          : answer.answer.footer,
+    }),
+  );
 
   return el("section", {
     attrs: { class: "view decision" },
