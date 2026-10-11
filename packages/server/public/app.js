@@ -1071,7 +1071,12 @@ export function createApp(deps) {
    */
   function enrolHandlers() {
     const step = async (run) => {
-      enrolCurrent = await run();
+      const mine = enrolController();
+      const answer = await run();
+      if (enrolLogic !== mine) {
+        return;
+      }
+      enrolCurrent = answer;
       draw();
     };
     return {

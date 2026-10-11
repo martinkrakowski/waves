@@ -284,6 +284,43 @@ describe("the /enrol-key route through the app", () => {
     app.stop();
   });
 
+  it("drops an answer that arrives after the reader left the page", async () => {
+    let release: (value: unknown) => void = () => {};
+    const gated = new Promise((resolve) => {
+      release = resolve;
+    });
+    const creds = {
+      create: vi
+        .fn()
+        .mockImplementation(() =>
+          gated.then(() => Promise.resolve(makeCreation())),
+        ),
+      get: vi.fn(),
+    };
+    const { app } = harness({ pathname: "/enrol-key", creds });
+    await settle();
+
+    press(CREATE);
+    expect(creds.create).toHaveBeenCalledTimes(1);
+    app.navigate("/");
+    await settle();
+    app.navigate("/enrol-key");
+    await settle();
+    release(undefined);
+    await flush();
+    await settle();
+
+    app.navigate("/enrol-key");
+    await settle();
+    expect(textsOf(enrolView(), "h1")).toContain("Enrol an owner key");
+    expect(textOf(enrolView())).not.toContain(base64urlOf(CREDENTIAL_ID));
+    expect(textsOf(enrolView(), "button")).toStrictEqual([
+      CREATE,
+      CREATE_ROAMING,
+    ]);
+    app.stop();
+  });
+
   it("says passkeys are not available when the browser has none", async () => {
     vi.stubGlobal("PublicKeyCredential", undefined);
     const { app } = harness({ pathname: "/enrol-key" });
