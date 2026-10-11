@@ -279,6 +279,14 @@ export function createApp(deps) {
    */
   let answerOnScreen = undefined;
   /**
+   * The model the Sign in flight was pressed against. While the passkey prompt
+   * holds him, the confirmation on screen is the one he read at the press, so a
+   * refresh that lands in the meantime redraws the working step from this and
+   * not from the newer data — he is never shown a text his signature does not
+   * cover. Cleared when the outcome settles or the flow is reset.
+   */
+  let answerWorkingModel = undefined;
+  /**
    * Counted up whenever the answer flow is reset, so a probe or an outcome
    * that settles after the reader has left the page it was asked for draws
    * nothing at all.
@@ -1177,6 +1185,7 @@ export function createApp(deps) {
     answerDraft = "";
     answerProbe = undefined;
     answerOnScreen = undefined;
+    answerWorkingModel = undefined;
     answerGeneration += 1;
   }
 
@@ -1227,9 +1236,16 @@ export function createApp(deps) {
         answerUi.kind === "words"
           ? { ...answerUi, draft: answerDraft }
           : answerUi;
+      // While a sign is in flight the section stays on the model it was
+      // pressed against: the reader is told he is signing what he read, and a
+      // pass that lands meanwhile must not put newer text under that promise.
+      const shown =
+        answerUi.kind === "working" && answerWorkingModel !== undefined
+          ? answerWorkingModel
+          : model;
       return {
         answer: {
-          node: answerSection(model, ui, answerHandlers(model)),
+          node: answerSection(shown, ui, answerHandlers(shown)),
           footer: ANSWER_FOOTER,
         },
       };
@@ -1284,6 +1300,7 @@ export function createApp(deps) {
         }
         const choice = answerUi.choice;
         const mine = answerGeneration;
+        answerWorkingModel = model;
         answerUi = { kind: "working", choice };
         draw();
         void answerer()
@@ -1294,6 +1311,7 @@ export function createApp(deps) {
             if (mine !== answerGeneration) {
               return;
             }
+            answerWorkingModel = undefined;
             if (outcome.kind === "stored" || outcome.kind === "moved") {
               if (outcome.kind === "stored") {
                 answerDraft = "";
