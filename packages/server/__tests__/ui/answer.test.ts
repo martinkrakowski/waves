@@ -339,6 +339,11 @@ describe("answerability", () => {
         modelOf({ group: "reported", state: "answered", source: "reported" }),
       ),
     ).toStrictEqual({ kind: "answerable" });
+    expect(
+      answerability(
+        modelOf({ group: "reported", state: "answered", source: "signed" }),
+      ),
+    ).toStrictEqual({ kind: "answerable" });
   });
 
   it("says closed for a closed or history group", () => {
