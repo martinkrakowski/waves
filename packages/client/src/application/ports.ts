@@ -32,6 +32,20 @@ export class FileRefusal extends Error {
   }
 }
 
+/**
+ * A pin file the reader could not even ask about: the kernel or the runtime
+ * refused to open it, describe it or read it, and named the code. The message
+ * is already the one sentence the user sees. The `read --signed` use case
+ * answers it with exit 3 — a pin file that cannot be read is one that cannot
+ * be trusted, and never a usage error of the owner's own making.
+ */
+export class PinRefusal extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PinRefusal";
+  }
+}
+
 export interface FileRead {
   readonly text: string;
   /** The permission bits `fstat` reported on the open descriptor. */

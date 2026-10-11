@@ -1,12 +1,15 @@
 import { chmod, mkdir, symlink, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import * as nodeFs from "node:fs";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { FileRefusal } from "../src/application/ports.js";
+import { PinRefusal } from "../src/application/ports.js";
 import {
   OWNER_KEYS_PATH,
   ownerPinFile,
+  type OpenPinFile,
 } from "../src/infrastructure/owner-pin.js";
 import { temporaryDirectory } from "./support/harness.js";
 
@@ -32,6 +35,16 @@ async function writePin(dir: string, name: string): Promise<string> {
 /** A path Node refuses before the kernel ever sees it, so the open cannot succeed. */
 function refusedName(dir: string): string {
   return `${join(dir, "owner-keys.json")}\0`;
+}
+
+/** A FIFO, made the way this Node can make one, with no writer on it. */
+function makeFifo(path: string): void {
+  const mkfifo = (nodeFs as { mkfifoSync?: (p: string) => void }).mkfifoSync;
+  if (mkfifo !== undefined) {
+    mkfifo(path);
+    return;
+  }
+  execFileSync("mkfifo", [path]);
 }
 
 afterEach(async () => {
@@ -110,11 +123,68 @@ describe("ownerPinFile", () => {
     expect(read).toHaveProperty("text", undefined);
   });
 
-  it("refuses with the code it was refused with when the path cannot be opened", async () => {
+  it("refuses a FIFO at the pin path without waiting for a writer", async () => {
+    const dir = await scratch();
+    const path = join(dir, "owner-keys.json");
+    makeFifo(path);
+
+    const read = await ownerPinFile(path).read();
+    expect(read).toMatchObject({ kind: "present", type: "other" });
+    expect(read).toHaveProperty("text", undefined);
+  });
+
+  it("refuses an unreadable pin file with the code it was refused with", async () => {
+    if (process.getuid?.() === 0) {
+      return;
+    }
+    const dir = await scratch();
+    const path = await writePin(dir, "owner-keys.json");
+    await chmod(path, 0o000);
+
+    await expect(ownerPinFile(path).read()).rejects.toThrow(PinRefusal);
+    await expect(ownerPinFile(path).read()).rejects.toThrow(
+      "the pin file could not be read: EACCES",
+    );
+  });
+
+  it("answers an open error with the pin refusal, not a usage one", async () => {
     const dir = await scratch();
     const pin = ownerPinFile(refusedName(dir));
-    await expect(pin.read()).rejects.toThrow(FileRefusal);
-    await expect(pin.read()).rejects.toThrow(/ERR_INVALID_ARG_VALUE/);
+    await expect(pin.read()).rejects.toThrow(PinRefusal);
+    await expect(pin.read()).rejects.toThrow(
+      "the pin file could not be read: ERR_INVALID_ARG_VALUE",
+    );
+  });
+
+  it("answers an error from the descriptor with the pin refusal", async () => {
+    const failing: OpenPinFile = async () =>
+      ({
+        stat: async () => {
+          throw { code: "EIO" };
+        },
+        close: async () => {},
+      }) as unknown as Awaited<ReturnType<OpenPinFile>>;
+    await expect(ownerPinFile("/any/pin", failing).read()).rejects.toThrow(
+      "the pin file could not be read: EIO",
+    );
+  });
+
+  it("answers an error from the read itself with the pin refusal", async () => {
+    const failing: OpenPinFile = async () =>
+      ({
+        stat: async () => ({
+          isFile: () => true,
+          uid: 0,
+          mode: 0o100644,
+        }),
+        readFile: async () => {
+          throw { code: "EIO" };
+        },
+        close: async () => {},
+      }) as unknown as Awaited<ReturnType<OpenPinFile>>;
+    await expect(ownerPinFile("/any/pin", failing).read()).rejects.toThrow(
+      "the pin file could not be read: EIO",
+    );
   });
 });
 

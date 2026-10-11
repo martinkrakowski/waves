@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Command } from "../src/domain/args.js";
 import { readSigned } from "../src/application/read-signed.js";
-import type { PinRead } from "../src/application/ports.js";
+import { PinRefusal, type PinRead } from "../src/application/ports.js";
 import { harness, PROJECT } from "./support/harness.js";
 import {
   answerKey,
@@ -29,7 +29,9 @@ function command(id = "d1"): ReadCommand {
 }
 
 interface Run {
-  readonly pin: PinRead;
+  readonly pin?: PinRead;
+  /** What the pin port throws instead of answering, when the test is of that. */
+  readonly pinThrows?: unknown;
   readonly entries?: readonly unknown[];
   readonly revisions?: readonly unknown[];
   readonly decision?: Record<string, unknown>;
@@ -44,7 +46,18 @@ interface Ran {
 }
 
 async function verify(run: Run): Promise<Ran> {
-  const built = harness({ pins: run.pin });
+  const built = harness({ pins: run.pin ?? { kind: "missing" } });
+  const deps =
+    run.pinThrows === undefined
+      ? built.deps
+      : {
+          ...built.deps,
+          ownerPins: {
+            read: async (): Promise<PinRead> => {
+              throw run.pinThrows;
+            },
+          },
+        };
   const body = decisionRecord({
     entries: run.entries ?? [],
     revisions: run.revisions,
@@ -54,7 +67,7 @@ async function verify(run: Run): Promise<Ran> {
   });
   const code = await readSigned(
     command(run.id),
-    built.deps,
+    deps,
     JSON.parse(body),
     PROJECT,
   );
@@ -390,6 +403,18 @@ describe("readSigned", () => {
         entries: [signedEntry({ key }).entry],
       });
       expectRefused(ran, `the pin file ${PIN_PATH} is not valid JSON`);
+    });
+
+    it("answers a pin port that throws with exit 3, never an uncaught error", async () => {
+      const ran = await verify({
+        pinThrows: new PinRefusal("the pin file could not be read: EACCES"),
+      });
+      expectRefused(ran, "the pin file could not be read: EACCES");
+    });
+
+    it("answers a pin port that throws a non-error with exit 3 too", async () => {
+      const ran = await verify({ pinThrows: "not even an error" });
+      expectRefused(ran, "the pin file could not be read");
     });
 
     it("refuses a pin file with no text at all", async () => {

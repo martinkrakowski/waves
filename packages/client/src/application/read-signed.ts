@@ -58,7 +58,15 @@ export async function readSigned(
     return code;
   };
 
-  const pin = await deps.ownerPins.read();
+  let pin: PinRead;
+  try {
+    pin = await deps.ownerPins.read();
+  } catch (error) {
+    return refuse(
+      error instanceof Error ? error.message : "the pin file could not be read",
+      EXIT_UNVERIFIED,
+    );
+  }
   const pinned = pinnedKeysOf(pin);
   if (typeof pinned === "string") {
     return refuse(pinned, EXIT_UNVERIFIED);
