@@ -307,6 +307,39 @@ describe("renderDecision", () => {
     );
   });
 
+  it("shows the covered answer under a waiting delegation", () => {
+    const host = draw(
+      decisionResponse({
+        head: inboxHead({
+          group: "waiting",
+          state: "delegated",
+          entries: 2,
+          coveredAnswer: {
+            state: "approved",
+            source: "signed",
+            at: "2026-10-08T13:00:00Z",
+            by: "owner",
+            words: "Yes, go ahead",
+          },
+        }),
+        entries: [
+          decisionEntry(),
+          decisionEntry({
+            index: 1,
+            state: "delegated",
+            source: "session",
+          }),
+        ],
+      }),
+    );
+    expect(textOf(host.querySelector(".card-state"))).toBe(
+      "Decided under delegation. Awaiting your confirmation.",
+    );
+    expect(textOf(host)).toContain(
+      'You had approved this, signed with your passkey: "Yes, go ahead".',
+    );
+  });
+
   it("shows the T4 note for an earlier signed answer", () => {
     const host = draw(
       decisionResponse({

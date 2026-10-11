@@ -227,7 +227,7 @@ describe("groupOf", () => {
 });
 
 describe("coveredAnswer", () => {
-  it("is undefined when the current entry is not a withdrawal or supersession", () => {
+  it("is undefined when the current entry is not a withdrawal, supersession or delegation", () => {
     const d = {
       project: "p",
       id: "d",
@@ -277,6 +277,66 @@ describe("coveredAnswer", () => {
       ],
     };
     expect(coveredAnswer(d)?.state).toBe("answered");
+  });
+
+  it("is the signed answer a delegation on the same text sits over", () => {
+    const d = {
+      project: "p",
+      id: "d",
+      revisions: [rev()],
+      entries: [
+        entry({
+          index: 0,
+          textSha256: HASH_A,
+          state: "declined",
+          source: "signed",
+        }),
+        entry({
+          index: 1,
+          textSha256: HASH_A,
+          state: "delegated",
+          source: "session",
+        }),
+      ],
+    };
+    expect(coveredAnswer(d)?.source).toBe("signed");
+    expect(coveredAnswer(d)?.state).toBe("declined");
+  });
+
+  it("is the reported answer a delegation on the same text sits over", () => {
+    const d = {
+      project: "p",
+      id: "d",
+      revisions: [rev()],
+      entries: [
+        entry({ index: 0, textSha256: HASH_A, state: "approved" }),
+        entry({
+          index: 1,
+          textSha256: HASH_A,
+          state: "delegated",
+          source: "session",
+        }),
+      ],
+    };
+    expect(coveredAnswer(d)?.source).toBe("reported");
+    expect(coveredAnswer(d)?.state).toBe("approved");
+  });
+
+  it("is undefined under a delegation with no answer before it", () => {
+    const d = {
+      project: "p",
+      id: "d",
+      revisions: [rev()],
+      entries: [
+        entry({
+          index: 0,
+          textSha256: HASH_A,
+          state: "delegated",
+          source: "session",
+        }),
+      ],
+    };
+    expect(coveredAnswer(d)).toBeUndefined();
   });
 
   it("is undefined when there is no current entry", () => {

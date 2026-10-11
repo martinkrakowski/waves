@@ -479,6 +479,107 @@ describe("the inbox page rules", () => {
       );
     });
 
+    it("says a covered signed answer under a waiting delegation", () => {
+      const host = draw(
+        inboxView({
+          projects: [
+            {
+              id: "alpha",
+              name: "Alpha",
+              counts: { waiting: 1, oneWay: 0, reported: 0, closed: 0 },
+              decisions: [
+                inboxHead({
+                  question: "Delegated?",
+                  state: "delegated",
+                  group: "waiting",
+                  at: "2026-10-08T13:00:00Z",
+                  entries: 2,
+                  coveredAnswer: {
+                    state: "approved",
+                    source: "signed",
+                    at: "2026-10-08T13:00:00Z",
+                    by: "owner",
+                    words: "Yes, go ahead",
+                  },
+                }),
+              ],
+            },
+          ],
+        }),
+      );
+      const text = textOf(host);
+      expect(text).toContain(
+        "Decided under delegation. Awaiting your confirmation.",
+      );
+      expect(text).toContain(
+        'You had approved this, signed with your passkey: "Yes, go ahead".',
+      );
+    });
+
+    it("says a covered reported answer under a waiting delegation", () => {
+      const host = draw(
+        inboxView({
+          projects: [
+            {
+              id: "alpha",
+              name: "Alpha",
+              counts: { waiting: 1, oneWay: 0, reported: 0, closed: 0 },
+              decisions: [
+                inboxHead({
+                  question: "Delegated?",
+                  state: "delegated",
+                  group: "waiting",
+                  at: "2026-10-08T13:00:00Z",
+                  entries: 2,
+                  coveredAnswer: {
+                    state: "approved",
+                    source: "reported",
+                    at: "2026-10-08T13:00:00Z",
+                    by: "owner",
+                    words: "Yes, go ahead",
+                  },
+                }),
+              ],
+            },
+          ],
+        }),
+      );
+      const text = textOf(host);
+      expect(text).toContain(
+        "Decided under delegation. Awaiting your confirmation.",
+      );
+      expect(text).toContain(
+        'It had been reported that you approved: "Yes, go ahead".',
+      );
+    });
+
+    it("draws no covered note under a waiting delegation with no covered answer", () => {
+      const host = draw(
+        inboxView({
+          projects: [
+            {
+              id: "alpha",
+              name: "Alpha",
+              counts: { waiting: 1, oneWay: 0, reported: 0, closed: 0 },
+              decisions: [
+                inboxHead({
+                  question: "Delegated?",
+                  state: "delegated",
+                  group: "waiting",
+                  at: "2026-10-08T13:00:00Z",
+                  entries: 1,
+                }),
+              ],
+            },
+          ],
+        }),
+      );
+      expect(textsOf(host, ".card-covered")).toStrictEqual([]);
+      expect(textOf(host)).toContain(
+        "Decided under delegation. Awaiting your confirmation.",
+      );
+    });
+
     it("names a signed earlier answer as a signed one", () => {
       const host = draw(
         inboxView({

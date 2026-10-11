@@ -158,9 +158,11 @@ export function groupOf(
 }
 
 /**
- * The answer a withdrawal or supersession covers: the last answer on the current
- * text, before it. Shown beside the session's statement so a session cannot
- * remove an answer by covering it; `undefined` when there is none.
+ * The answer a withdrawal, a supersession or a session's delegation covers: the
+ * last answer on the current text, before the current entry. Shown beside the
+ * session's statement so a session cannot remove an answer by covering it — and
+ * beside a delegation too, so an answer under the delegation the owner has not
+ * confirmed yet is never hidden by it; `undefined` when there is none.
  */
 export function coveredAnswer(
   decision: StoredDecision,
@@ -173,7 +175,11 @@ export function coveredAnswer(
   if (current === undefined) {
     return undefined;
   }
-  if (current.state !== "withdrawn" && current.state !== "superseded") {
+  if (
+    current.state !== "withdrawn" &&
+    current.state !== "superseded" &&
+    current.state !== "delegated"
+  ) {
     return undefined;
   }
   let found: StoredEntry | undefined;

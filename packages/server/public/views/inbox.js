@@ -103,12 +103,33 @@ function factsLine(head) {
 }
 
 /**
+ * The covered-answer note: the answer the current entry covers, said in the
+ * voice of whoever gave it — the owner's own for a signed one, the session's
+ * claim for a reported one. The closed group prints it beside the session's
+ * statement, and a waiting delegation prints it beside its own sentence, so an
+ * answer under a delegation the owner has not confirmed is never hidden by it.
+ */
+export function coveredAnswerNode(head) {
+  if (!head.coveredAnswer) {
+    return undefined;
+  }
+  const cover = head.coveredAnswer;
+  const withWords = cover.words ? `: "${cover.words}"` : "";
+  const sentence =
+    cover.source === "signed"
+      ? `You had ${cover.state} this, signed with your passkey${withWords}.`
+      : `It had been reported that you ${cover.state}${withWords}.`;
+  return el("p", { attrs: { class: "card-covered" }, text: sentence });
+}
+
+/**
  * The state line a head carries, by its group. "Waiting on you" has nothing
- * more for an open owner decision; "Reported as answered" names the verdict in a
- * full sentence and never as the bare word "Approved"; "Closed by a session"
- * says what the session did and, when an answer was reported first, says so
- * beside it without striking it out. Exported for the decision page, which
- * reuses these exact sentences for the same groups.
+ * more for an open owner decision, and a delegation says so — and, when an
+ * answer sits under it, says that too; "Reported as answered" names the verdict
+ * in a full sentence and never as the bare word "Approved"; "Closed by a
+ * session" says what the session did and, when an answer was reported first,
+ * says so beside it without striking it out. Exported for the decision page,
+ * which reuses these exact sentences for the same groups.
  */
 export function stateNodes(head) {
   const nodes = [];
@@ -120,6 +141,10 @@ export function stateNodes(head) {
           text: "Decided under delegation. Awaiting your confirmation.",
         }),
       );
+      const coveredNode = coveredAnswerNode(head);
+      if (coveredNode !== undefined) {
+        nodes.push(coveredNode);
+      }
     } else if (head.decider === "delegated") {
       // open, delegated: still waiting on this decision's text.
       nodes.push(
@@ -178,16 +203,9 @@ export function stateNodes(head) {
       ],
     }),
   );
-  if (head.coveredAnswer) {
-    const cover = head.coveredAnswer;
-    const withWords = cover.words ? `: "${cover.words}"` : "";
-    // The covered answer keeps its own voice: a signed one is the owner's own,
-    // a reported one is the session's claim it always was.
-    const sentence =
-      cover.source === "signed"
-        ? `You had ${cover.state} this, signed with your passkey${withWords}.`
-        : `It had been reported that you ${cover.state}${withWords}.`;
-    nodes.push(el("p", { attrs: { class: "card-covered" }, text: sentence }));
+  const coveredNode = coveredAnswerNode(head);
+  if (coveredNode !== undefined) {
+    nodes.push(coveredNode);
   }
   return nodes;
 }

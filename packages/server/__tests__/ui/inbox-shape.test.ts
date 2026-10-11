@@ -908,6 +908,33 @@ describe("drawableInbox", () => {
     ).toBe(true);
   });
 
+  it("takes a waiting delegated head with a covered answer", () => {
+    expect(
+      drawableInbox(
+        inboxView({
+          projects: [
+            inboxProject({
+              decisions: [
+                inboxHead({
+                  group: "waiting",
+                  state: "delegated",
+                  entries: 2,
+                  coveredAnswer: {
+                    state: "approved",
+                    source: "signed",
+                    at: NOW_ISO,
+                    by: "owner",
+                    words: "yes",
+                  },
+                }),
+              ],
+            }),
+          ],
+        }),
+      ),
+    ).toBe(true);
+  });
+
   it.each(INVALID)("refuses %s", (_rule, view) => {
     expect(drawableInbox(view)).toBe(false);
   });
