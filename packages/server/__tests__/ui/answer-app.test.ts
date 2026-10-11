@@ -642,7 +642,553 @@ describe("the decision page offers answer controls only when the server takes an
   });
 });
 
-describe("the answer flow's steps before signing", () => {
+describe("the answer flow's signing", () => {
+  /** A nonce reply that agrees with the page's zero-entry count. */
+  const GOOD_NONCE: SigningReply = {
+    status: 200,
+    body: { nonce: NONCE_VALUE, index: 0 },
+  };
+  const GOOD_ANSWERS: SigningReply = {
+    status: 201,
+    body: { index: 0, state: "approved" },
+  };
+
+  it("signs Yes and reads back the entry it made", async () => {
+    let releaseGet!: () => void;
+    const fetchImpl = signingFetch({
+      nonce: () => GOOD_NONCE,
+      answers: () => GOOD_ANSWERS,
+      decision: openDecision(),
+    });
+    const h = signingHarness("/p/alpha/d/d1", fetchImpl, (options) => {
+      const pk = (
+        options as unknown as { publicKey: { challenge: Uint8Array } }
+      ).publicKey;
+      const made = assertionFor(pk.challenge, "yes-stored");
+      return new Promise<unknown>((resolve) => {
+        releaseGet = () => resolve(browserAssertion(made.input));
+      });
+    });
+    h.app.start();
+    await settle();
+
+    press("answer-yes");
+    await flush();
+
+    press("answer-sign");
+    await settle();
+
+    // While the ceremony is open: buttons held back, working shown.
+    expect(
+      (
+        root().querySelector('[data-key="answer-sign"]') as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    expect(
+      (
+        root().querySelector('[data-key="answer-cancel"]') as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    expect(root().querySelector("p.answer-working")).not.toBeNull();
+
+    // The passkey was asked once, on this host, for the right challenge.
+    expect(h.getCalls).toHaveLength(1);
+    const pk = (
+      h.getCalls[0] as unknown as {
+        publicKey: Record<string, unknown>;
+      }
+    ).publicKey;
+    expect(pk.rpId).toBe(RELYING_PARTY_ID);
+    expect(pk.userVerification).toBe("required");
+    expect(Buffer.from(pk.challenge as Uint8Array).toString("hex")).toBe(
+      expectedChallenge("approved").toString("hex"),
+    );
+
+    // Release, then put the signed entry on the re-read decision.
+    releaseGet();
+    fetchImpl.setDecision(
+      openDecision([signedApprovedEntry()]),
+    );
+    await settle();
+
+    // Idle with the stored message and the three buttons.
+    expect(messageText()).toBe("Signed and recorded.");
+    expect(textsOf(root(), "section.answer button")).toEqual([
+      "Yes",
+      "No",
+      "Answer in my own words",
+    ]);
+
+    // Exactly one POST nonce, one POST answers, then the re-read GET.
+    expect(
+      fetchImpl.calls.filter(
+        (c) => c.method === "POST" && c.path === NONCE("d1"),
+      ),
+    ).toHaveLength(1);
+    expect(
+      fetchImpl.calls.filter(
+        (c) => c.method === "POST" && c.path === ANSWERS("d1"),
+      ),
+    ).toHaveLength(1);
+    const answersIdx = fetchImpl.calls.findIndex(
+      (c) => c.method === "POST" && c.path === ANSWERS("d1"),
+    );
+    const readIdx = fetchImpl.calls.findLastIndex(
+      (c) => c.method === "GET" && c.path === DECISION("d1"),
+    );
+    expect(readIdx).toBeGreaterThan(answersIdx);
+
+    // The posted body: revision, hash, index, verdict, nonce, no option/words.
+    const body = fetchImpl.calls.find(
+      (c) => c.method === "POST" && c.path === ANSWERS("d1"),
+    )!.body as Record<string, unknown>;
+    expect(body.revision).toBe(1);
+    expect(body.textSha256).toBe(HASH);
+    expect(body.index).toBe(0);
+    expect(body.verdict).toBe("approved");
+    expect(body.nonce).toBe(NONCE_VALUE);
+    expect(body).not.toHaveProperty("option");
+    expect(body).not.toHaveProperty("words");
+
+    // The new entry is on the page.
+    expect(
+      root().querySelector(".decision-history")?.textContent ?? "",
+    ).toContain("signed with your passkey");
+
+    h.app.stop();
+  });
+
+  it("signs own words, sends the trimmed words, and clears the draft", async () => {
+    const WORDS = "hello in my own words";
+    let releaseGet!: () => void;
+    const fetchImpl = signingFetch({
+      nonce: () => GOOD_NONCE,
+      answers: () => ({
+        status: 201,
+        body: { index: 0, state: "answered" },
+      }),
+      decision: openDecision(),
+    });
+    const h = signingHarness("/p/alpha/d/d1", fetchImpl, (options) => {
+      const pk = (
+        options as unknown as { publicKey: { challenge: Uint8Array } }
+      ).publicKey;
+      const made = assertionFor(pk.challenge, "own-words");
+      return new Promise<unknown>((resolve) => {
+        releaseGet = () => resolve(browserAssertion(made.input));
+      });
+    });
+    h.app.start();
+    await settle();
+
+    press("answer-words-open");
+    await flush();
+
+    const area = textarea("answer-words");
+    area.value = WORDS;
+    area.dispatchEvent(new Event("input", { bubbles: true }));
+    await flush();
+
+    press("answer-continue");
+    await flush();
+    expect(
+      textOf(root().querySelector("blockquote.answer-confirm-words")),
+    ).toBe(WORDS);
+
+    press("answer-sign");
+    await settle();
+
+    // Challenge is over the own-words text.
+    expect(h.getCalls).toHaveLength(1);
+    expect(
+      Buffer.from(
+        challengeOf(h.getCalls),
+      ).toString("hex"),
+    ).toBe(expectedChallenge("answered", WORDS).toString("hex"));
+
+    releaseGet();
+    fetchImpl.setDecision(
+      openDecision([
+        signedDecisionEntry({
+          index: 0,
+          state: "answered",
+          revision: 1,
+          textSha256: HASH,
+        }),
+      ]),
+    );
+    await settle();
+
+    expect(messageText()).toBe("Signed and recorded.");
+
+    // Body carries the verdict and the words.
+    const body = fetchImpl.calls.find(
+      (c) => c.method === "POST" && c.path === ANSWERS("d1"),
+    )!.body as Record<string, unknown>;
+    expect(body.verdict).toBe("answered");
+    expect(body.words).toBe(WORDS);
+    expect(body).not.toHaveProperty("option");
+
+    // Opening words again shows an empty textarea (draft was cleared).
+    press("answer-words-open");
+    await flush();
+    expect(textarea("answer-words").value).toBe("");
+
+    h.app.stop();
+  });
+
+  it("signs No with verdict declined", async () => {
+    let releaseGet!: () => void;
+    const fetchImpl = signingFetch({
+      nonce: () => GOOD_NONCE,
+      answers: () => ({
+        status: 201,
+        body: { index: 0, state: "declined" },
+      }),
+      decision: openDecision(),
+    });
+    const h = signingHarness("/p/alpha/d/d1", fetchImpl, (options) => {
+      const pk = (
+        options as unknown as { publicKey: { challenge: Uint8Array } }
+      ).publicKey;
+      const made = assertionFor(pk.challenge, "no-stored");
+      return new Promise<unknown>((resolve) => {
+        releaseGet = () => resolve(browserAssertion(made.input));
+      });
+    });
+    h.app.start();
+    await settle();
+
+    press("answer-no");
+    await flush();
+    press("answer-sign");
+    await settle();
+
+    expect(
+      Buffer.from(challengeOf(h.getCalls)).toString("hex"),
+    ).toBe(expectedChallenge("declined").toString("hex"));
+
+    releaseGet();
+    fetchImpl.setDecision(
+      openDecision([
+        signedDecisionEntry({
+          index: 0,
+          state: "declined",
+          revision: 1,
+          textSha256: HASH,
+        }),
+      ]),
+    );
+    await settle();
+
+    const body = fetchImpl.calls.find(
+      (c) => c.method === "POST" && c.path === ANSWERS("d1"),
+    )!.body as Record<string, unknown>;
+    expect(body.verdict).toBe("declined");
+
+    h.app.stop();
+  });
+
+  const REFUSAL_GETS: [string, GetFn][] = [
+    ["rejects", () => Promise.reject(new Error("owner cancelled"))],
+    ["resolves null", () => null],
+  ];
+
+  for (const [name, getHandler] of REFUSAL_GETS) {
+    it(`cancels when the passkey ${name}, keeps the own-words draft`, async () => {
+      const WORDS = "my own words";
+      const fetchImpl = signingFetch({
+        nonce: () => GOOD_NONCE,
+        answers: () => GOOD_ANSWERS,
+        decision: openDecision(),
+      });
+      const h = signingHarness("/p/alpha/d/d1", fetchImpl, getHandler);
+      h.app.start();
+      await settle();
+
+      press("answer-words-open");
+      await flush();
+      const area = textarea("answer-words");
+      area.value = WORDS;
+      area.dispatchEvent(new Event("input", { bubbles: true }));
+      await flush();
+      press("answer-continue");
+      await flush();
+      press("answer-sign");
+      await settle();
+
+      expect(messageText()).toBe(
+        "The passkey prompt was cancelled or timed out. Nothing was signed.",
+      );
+      expect(
+        h.fetchImpl.calls.filter(
+          (c) => c.method === "POST" && c.path === ANSWERS("d1"),
+        ),
+      ).toHaveLength(0);
+      expect(textsOf(root(), "section.answer button")).toEqual([
+        "Yes",
+        "No",
+        "Answer in my own words",
+      ]);
+      expect(
+        root().querySelectorAll("section.answer button[disabled]"),
+      ).toHaveLength(0);
+      expect(root().querySelector("p.answer-working")).toBeNull();
+
+      press("answer-words-open");
+      await flush();
+      expect(textarea("answer-words").value).toBe(WORDS);
+
+      h.app.stop();
+    });
+  }
+
+  it("moves when the nonce index disagrees, and re-reads", async () => {
+    let readCount = 0;
+    const fetchImpl = signingFetch({
+      nonce: () => ({
+        status: 200,
+        body: { nonce: NONCE_VALUE, index: 1 },
+      }),
+      answers: () => {
+        throw new Error("answers should not be asked");
+      },
+      decision: openDecision(),
+    });
+    const h = signingHarness("/p/alpha/d/d1", fetchImpl, () => null);
+    h.app.start();
+    await settle();
+
+    press("answer-yes");
+    await flush();
+
+    const before = h.getCalls.length;
+    press("answer-sign");
+    await settle();
+
+    expect(h.getCalls).toHaveLength(before);
+    expect(
+      h.fetchImpl.calls.filter(
+        (c) => c.method === "POST" && c.path === ANSWERS("d1"),
+      ),
+    ).toHaveLength(0);
+    expect(messageText()).toBe(
+      "This decision changed while you were answering. Nothing was recorded. Read it again before you answer.",
+    );
+    expect(textsOf(root(), "section.answer button")).toEqual([
+      "Yes",
+      "No",
+      "Answer in my own words",
+    ]);
+
+    // The re-read happened.
+    const decisionGets = h.fetchImpl.calls.filter(
+      (c) => c.method === "GET" && c.path === DECISION("d1"),
+    );
+    expect(decisionGets.length).toBeGreaterThan(1);
+
+    h.app.stop();
+  });
+
+  it("moves when the answer is stale, and re-reads", async () => {
+    let releaseGet!: () => void;
+    const fetchImpl = signingFetch({
+      nonce: () => GOOD_NONCE,
+      answers: () => ({
+        status: 409,
+        body: { reason: "stale" },
+      }),
+      decision: openDecision(),
+    });
+    const h = signingHarness("/p/alpha/d/d1", fetchImpl, (options) => {
+      const pk = (
+        options as unknown as { publicKey: { challenge: Uint8Array } }
+      ).publicKey;
+      const made = assertionFor(pk.challenge, "stale");
+      return new Promise<unknown>((resolve) => {
+        releaseGet = () => resolve(browserAssertion(made.input));
+      });
+    });
+    h.app.start();
+    await settle();
+
+    press("answer-yes");
+    await flush();
+
+    press("answer-sign");
+    await settle();
+
+    // The passkey was asked (moved at the answer, not the nonce).
+    expect(h.getCalls).toHaveLength(1);
+
+    releaseGet();
+    fetchImpl.setDecision(
+      openDecision([signedApprovedEntry()]),
+    );
+    await settle();
+
+    expect(messageText()).toBe(
+      "This decision changed while you were answering. Nothing was recorded. Read it again before you answer.",
+    );
+    expect(textsOf(root(), "section.answer button")).toEqual([
+      "Yes",
+      "No",
+      "Answer in my own words",
+    ]);
+
+    h.app.stop();
+  });
+
+  const END_CASES: [string, SigningReply, SigningReply, string][] = [
+    [
+      "nonce 404",
+      { status: 404 },
+      { status: 500 },
+      "Answering in the page is not switched on.",
+    ],
+    [
+      "nonce 429",
+      { status: 429 },
+      { status: 500 },
+      "Too many tries. Wait a moment and try again.",
+    ],
+    [
+      "answers 403",
+      GOOD_NONCE,
+      { status: 403 },
+      "The server did not accept the signature. Nothing was recorded.",
+    ],
+    [
+      "answers 409 signed-cap",
+      GOOD_NONCE,
+      { status: 409, body: { reason: "signed-cap" } },
+      "This decision cannot take another answer.",
+    ],
+    [
+      "answers 500",
+      GOOD_NONCE,
+      { status: 500 },
+      "The answer was not recorded. Try again.",
+    ],
+  ];
+
+  for (const [name, nonceReply, answersReply, expectedMessage] of END_CASES) {
+    it(`ends with "${expectedMessage}" — ${name}`, async () => {
+      const fetchImpl = signingFetch({
+        nonce: () => nonceReply,
+        answers: () => answersReply,
+        decision: openDecision(),
+      });
+      const key = passkeyFor("end-case");
+      const h = signingHarness("/p/alpha/d/d1", fetchImpl, key.handler);
+      h.app.start();
+      await settle();
+
+      press("answer-yes");
+      await flush();
+      press("answer-sign");
+      await settle();
+
+      expect(messageText()).toBe(expectedMessage);
+      expect(textsOf(root(), "section.answer button")).toEqual([
+        "Yes",
+        "No",
+        "Answer in my own words",
+      ]);
+      expect(
+        root().querySelectorAll("section.answer button[disabled]"),
+      ).toHaveLength(0);
+      expect(root().querySelector("p.answer-working")).toBeNull();
+
+      h.app.stop();
+    });
+  }
+
+   it("refuses a text the page's hash disagrees with, with no request after the press", async () => {
+    const fetchImpl = signingFetch({
+      nonce: () => {
+        throw new Error("nonce should not be asked");
+      },
+      answers: () => {
+        throw new Error("answers should not be asked");
+      },
+      decision: decisionResponse({
+        head: inboxHead({ textSha256: "0".repeat(64) }),
+        revisions: [
+          storedRevision({ textSha256: "0".repeat(64) }),
+        ] as never[],
+      }),
+    });
+    const h = signingHarness("/p/alpha/d/d1", fetchImpl, () => {
+      throw new Error("get should not be asked");
+    });
+    h.app.start();
+    await settle();
+
+    press("answer-yes");
+    await flush();
+    const before = h.fetchImpl.calls.length;
+    press("answer-sign");
+    await settle();
+
+    expect(h.fetchImpl.calls.length).toBe(before);
+    expect(h.getCalls).toHaveLength(0);
+    expect(messageText()).toBe(
+      "The text on this page does not match the server's record of it. Nothing was signed. Reload the page.",
+    );
+    expect(textsOf(root(), "section.answer button")).toEqual([
+      "Yes",
+      "No",
+      "Answer in my own words",
+    ]);
+    expect(
+      root().querySelectorAll("section.answer button[disabled]"),
+    ).toHaveLength(0);
+    expect(root().querySelector("p.answer-working")).toBeNull();
+
+    h.app.stop();
+  });
+
+  it("asks the nonce only once for two quick sign presses", async () => {
+    let releaseNonce!: () => void;
+    const fetchImpl = signingFetch({
+      nonce: () =>
+        new Promise<SigningReply>((resolve) => {
+          releaseNonce = () =>
+            resolve({
+              status: 200,
+              body: { nonce: NONCE_VALUE, index: 0 },
+            });
+        }),
+      answers: () => GOOD_ANSWERS,
+      decision: openDecision(),
+    });
+    const h = signingHarness("/p/alpha/d/d1", fetchImpl, () => null);
+    h.app.start();
+    await settle();
+
+    press("answer-yes");
+    await flush();
+
+    const signButton = root().querySelector(
+      '[data-key="answer-sign"]',
+    ) as HTMLButtonElement;
+    signButton.click();
+    signButton.click();
+
+    await settle();
+
+    expect(
+      h.fetchImpl.calls.filter(
+        (c) => c.method === "POST" && c.path === NONCE("d1"),
+      ),
+    ).toHaveLength(1);
+
+    releaseNonce();
+    await settle();
+    h.app.stop();
+  });
+});describe("the answer flow's steps before signing", () => {
   function setup() {
     const fetchImpl = signingFetch({
       nonce: () => ({
