@@ -93,6 +93,13 @@ function buttonsOf(host: Element): HTMLElement[] {
   return Array.from(host.querySelectorAll("button"));
 }
 
+/** The `data-key` of every keyed control, in the order a reader meets them. */
+function keysOf(host: Element): string[] {
+  return Array.from(host.querySelectorAll("[data-key]"), (element) =>
+    element.getAttribute("data-key"),
+  );
+}
+
 function labelsOf(host: Element): string[] {
   return buttonsOf(host).map((button) => button.textContent ?? "");
 }
@@ -279,6 +286,30 @@ describe("answerSection: words", () => {
     off?.click();
     expect(handlers.onCancel).toHaveBeenCalledTimes(1);
     expect(handlers.onYes).not.toHaveBeenCalled();
+  });
+});
+
+describe("answerSection: the keys the focus logic reads", () => {
+  it("carries a data-key on every control, in every step of the flow", () => {
+    // The keys are the app's own handles: a redraw puts the focus back on the
+    // same control, and the textarea's caret with it, so a keyboard reader is
+    // never dropped out of the flow by the ten-second refresh.
+    expect(keysOf(draw({ kind: "idle" }))).toStrictEqual([
+      "answer-yes",
+      "answer-no",
+      "answer-words-open",
+    ]);
+    expect(keysOf(draw({ kind: "words", draft: "" }))).toStrictEqual([
+      "answer-words",
+      "answer-continue",
+      "answer-cancel",
+    ]);
+    expect(
+      keysOf(draw({ kind: "confirm", choice: { verdict: "approved" } })),
+    ).toStrictEqual(["answer-sign", "answer-cancel"]);
+    expect(
+      keysOf(draw({ kind: "working", choice: { verdict: "approved" } })),
+    ).toStrictEqual(["answer-sign", "answer-cancel"]);
   });
 });
 

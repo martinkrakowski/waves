@@ -83,10 +83,14 @@ export function outcomeMessage(outcome) {
   return TRY_AGAIN;
 }
 
-/** A button the page owns: never a submit, and pressable until it is not. */
-function button(label, onClick, disabled = false) {
+/**
+ * A button the page owns: never a submit, and pressable until it is not. The
+ * `data-key` is the app's own handle on it, so a redraw puts the focus back
+ * on the same button and never drops a keyboard reader out of the flow.
+ */
+function button(label, dataKey, onClick, disabled = false) {
   const node = el("button", {
-    attrs: { class: "answer-button", type: "button" },
+    attrs: { class: "answer-button", type: "button", "data-key": dataKey },
     text: label,
   });
   if (disabled) {
@@ -117,9 +121,9 @@ function idleChildren(ui, handlers) {
   }
   children.push(
     buttonRow([
-      button("Yes", handlers.onYes),
-      button("No", handlers.onNo),
-      button("Answer in my own words", handlers.onWords),
+      button("Yes", "answer-yes", handlers.onYes),
+      button("No", "answer-no", handlers.onNo),
+      button("Answer in my own words", "answer-words-open", handlers.onWords),
     ]),
   );
   return children;
@@ -128,7 +132,11 @@ function idleChildren(ui, handlers) {
 /** The own-words controls: the draft, the problem with it, and the two ways on. */
 function wordsChildren(ui, handlers) {
   const area = el("textarea", {
-    attrs: { class: "answer-words", id: WORDS_ID },
+    attrs: {
+      class: "answer-words",
+      id: WORDS_ID,
+      "data-key": "answer-words",
+    },
   });
   area.setAttribute("rows", "4");
   area.setAttribute("maxlength", String(handlers.maxWords));
@@ -151,8 +159,8 @@ function wordsChildren(ui, handlers) {
   }
   children.push(
     buttonRow([
-      button("Continue", handlers.onContinue),
-      button("Cancel", handlers.onCancel),
+      button("Continue", "answer-continue", handlers.onContinue),
+      button("Cancel", "answer-cancel", handlers.onCancel),
     ]),
   );
   return children;
@@ -214,8 +222,8 @@ function confirmChildren(model, choice, handlers, working) {
       text: `Revision ${model.currentRevision.revision} · this will be entry ${model.currentEntries.length + model.earlierEntries.length + 1} on this decision`,
     }),
     buttonRow([
-      button("Sign with your passkey", handlers.onSign, working),
-      button("Cancel", handlers.onCancel, working),
+      button("Sign with your passkey", "answer-sign", handlers.onSign, working),
+      button("Cancel", "answer-cancel", handlers.onCancel, working),
     ]),
   );
   if (working) {
