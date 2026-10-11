@@ -1,4 +1,5 @@
 import {
+  MAX_WORDS_CHARS,
   answerability,
   choiceOf,
   createAnswerer,
@@ -45,15 +46,6 @@ import {
 import { drawableWave } from "./wave.js";
 
 export const REFRESH_MS = 10_000;
-
-/**
- * The contract's bound on `words`, copied into a name exactly as `answer.js`
- * copies it: `public/` has no build step and cannot import the contract
- * package, and the textarea's `maxlength` must not drift from the ceremony's
- * own refusal of what is too long. The answer page's test imports the
- * contract's number and holds the two together.
- */
-const MAX_WORDS_CHARS = 2000;
 
 const ROOT_ID = "root";
 const PROJECT_PREFIX = "/p/";
