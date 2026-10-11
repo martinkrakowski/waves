@@ -92,6 +92,35 @@ export function storedEntry(
   return { ...rest, index, receivedAt };
 }
 
+/** The assertion a signed entry keeps: fixed texts, so no test depends on the
+ * bytes or length of a random key, signature or nonce. */
+export function answerSignature(
+  index: number,
+): NonNullable<StoredEntry["signature"]> {
+  return {
+    credentialId: "c".repeat(20),
+    authenticatorData: "d".repeat(52),
+    clientDataJSON: "e".repeat(20),
+    signature: "s".repeat(8),
+    nonce: "A".repeat(43),
+    index,
+  };
+}
+
+/** A signed answer as the store holds it: an answer state, `source: "signed"`
+ * and the assertion bound to the index it stands at. */
+export function signedEntry(
+  index: number,
+  overrides: Partial<StoredEntry> = {},
+): StoredEntry {
+  return {
+    ...storedEntry(index),
+    ...overrides,
+    source: "signed",
+    signature: overrides.signature ?? answerSignature(index),
+  };
+}
+
 export function event(overrides: Partial<NoticeEvent> = {}): NoticeEvent {
   return {
     schema: "waves-notice/v1",

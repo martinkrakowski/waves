@@ -2,6 +2,7 @@ import type {
   DecisionRevision,
   NoticeEvent,
   StateEntryRequest,
+  StoredStateEntry,
 } from "@hexagen-monaco/waves-contract";
 
 /**
@@ -21,13 +22,15 @@ export interface StoredRevision {
  * One state entry as the store holds it: the writer's request minus the
  * `expectedEntries` it pinned on, plus the index it took at append time and the
  * moment the server received it. The writer's own `revision` and `textSha256`
- * are kept on the entry so a reader never has to recompute them.
+ * are kept on the entry so a reader never has to recompute them. A `signed`
+ * entry is the only one that carries a `signature`: the assertion that bound it,
+ * at the index it stands at.
  */
 export interface StoredEntry {
   readonly index: number;
   readonly receivedAt: string;
   readonly state: StateEntryRequest["state"];
-  readonly source: StateEntryRequest["source"];
+  readonly source: StateEntryRequest["source"] | "signed";
   readonly revision: number;
   readonly textSha256: string;
   readonly by: string;
@@ -36,6 +39,7 @@ export interface StoredEntry {
   readonly option?: string;
   readonly reason?: string;
   readonly supersededBy?: StateEntryRequest["supersededBy"];
+  readonly signature?: StoredStateEntry["signature"];
 }
 
 /**
