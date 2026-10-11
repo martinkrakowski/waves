@@ -166,7 +166,7 @@ function declaredLength(req: IncomingMessage): number {
  * did not expect is refused rather than guessed at. The syntax of the value has
  * already been checked by the parser, so what is left here is its meaning.
  */
-function wantsJson(req: IncomingMessage): boolean {
+export function wantsJson(req: IncomingMessage): boolean {
   const raw = req.headers["content-type"];
   if (raw === undefined) {
     return false;
@@ -215,7 +215,7 @@ function framing(
  * stream that never ends from tying up the process, whether it announced a
  * length or used chunked transfer-encoding.
  */
-function readCapped(
+export function readCapped(
   req: IncomingMessage,
   cap: number,
 ): Promise<Buffer | undefined> {
@@ -246,7 +246,7 @@ function readCapped(
 }
 
 /** Strict UTF-8, then JSON. Anything either refuses is a 400. */
-function decode(
+export function decode(
   bytes: Buffer,
 ): { readonly ok: true; readonly value: unknown } | Refusal {
   let text: string;

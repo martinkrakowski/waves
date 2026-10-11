@@ -36,6 +36,7 @@ import {
   projectCard,
   projectLanes,
   recentWave,
+  signedDecisionEntry,
   statusFacts,
   statusView,
   storedRevision,
@@ -817,7 +818,48 @@ async function bootDecision(
  */
 const DECISION_OCCURRENCES = 16;
 
+/**
+ * One decision whose one entry is the owner's own signed answer. The payload
+ * rides the entry's `words` — quoted in the history line — and its `by`, named
+ * in the small line under it. The head's signed sentence carries neither, and
+ * the ids, the times and the signature's own fields are held to their rules,
+ * so none of them can carry a payload.
+ */
+function decisionWithSigned(payload: string): unknown {
+  return decisionResponse({
+    head: inboxHead({
+      group: "reported",
+      state: "approved",
+      source: "signed",
+      entries: 1,
+    }),
+    entries: [signedDecisionEntry({ by: payload, words: payload })],
+  });
+}
+
+/**
+ * How many times the payload appears in that page's rendered text: the entry's
+ * words (1), quoted in the history line, and its `by` (1), named in the small
+ * line under it. Two places, both text.
+ */
+const SIGNED_DECISION_OCCURRENCES = 2;
+
 describe("the decision page against stored markup", () => {
+  it.each(TEXT_PAYLOADS)(
+    "renders a signed answer's words and by as text",
+    async (payload) => {
+      const app = await bootDecision(decisionWithSigned(payload));
+      assertNoInjectedMarkup();
+      expect(root().querySelectorAll("img")).toHaveLength(0);
+      expect(root().querySelectorAll("script")).toHaveLength(0);
+      for (const element of Array.from(root().querySelectorAll("[class]"))) {
+        expect(element.getAttribute("class")).not.toContain(payload);
+      }
+      expectVerbatim(payload, SIGNED_DECISION_OCCURRENCES, 0);
+      app.stop();
+    },
+  );
+
   it.each(TEXT_PAYLOADS)(
     "renders every text field of a decision as text",
     async (payload) => {
@@ -1607,7 +1649,83 @@ async function bootInbox(
  */
 const INBOX_OCCURRENCES = 7;
 
+/**
+ * One inbox holding the owner's own signed answers: a signed head of its own,
+ * and a withdrawn one covering a signed answer while an earlier signed answer
+ * sits on a previous text. The payload rides the two answers' `words` — the two
+ * places the signed sentences interpolate text — and the `by` fields, held but
+ * never rendered. The `project` and `id` are validated by the shape check, and
+ * `at` is checked as a time, so none of them can carry a payload.
+ */
+function inboxWithSigned(payload: string): unknown {
+  return inboxView({
+    projects: [
+      inboxProject({
+        id: "alpha",
+        name: "Alpha",
+        counts: { waiting: 0, oneWay: 0, reported: 1, closed: 1 },
+        decisions: [
+          inboxHead({
+            id: "s",
+            question: "Mine?",
+            state: "approved",
+            source: "signed",
+            group: "reported",
+            at: NOW_ISO,
+            entries: 1,
+            earlierAnswer: {
+              state: "declined",
+              source: "signed",
+              at: NOW_ISO,
+              by: payload,
+              words: payload,
+            },
+          }),
+          inboxHead({
+            id: "c",
+            question: "Covered?",
+            state: "withdrawn",
+            group: "closed",
+            at: NOW_ISO,
+            entries: 3,
+            coveredAnswer: {
+              state: "approved",
+              source: "signed",
+              at: NOW_ISO,
+              by: payload,
+              words: payload,
+            },
+          }),
+        ],
+      }),
+    ],
+  });
+}
+
+/**
+ * How many times the payload appears in that inbox's rendered text: the earlier
+ * signed answer's words (1) and the covered signed answer's words (1). The `by`
+ * fields are held but never rendered. Two places.
+ */
+const SIGNED_OCCURRENCES = 2;
+
 describe("the inbox against stored markup", () => {
+  it.each(TEXT_PAYLOADS)(
+    "renders every signed answer's words as text",
+    async (payload) => {
+      const app = await bootInbox(inboxWithSigned(payload));
+      assertNoInjectedMarkup();
+      expect(root().querySelectorAll("img")).toHaveLength(0);
+      expect(root().querySelectorAll("script")).toHaveLength(0);
+      // No element's class carries the payload.
+      for (const element of Array.from(root().querySelectorAll("[class]"))) {
+        expect(element.getAttribute("class")).not.toContain(payload);
+      }
+      expectVerbatim(payload, SIGNED_OCCURRENCES, 0);
+      app.stop();
+    },
+  );
+
   it.each(TEXT_PAYLOADS)(
     "renders every text field of an inbox as text",
     async (payload) => {

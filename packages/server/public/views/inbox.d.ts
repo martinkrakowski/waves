@@ -24,6 +24,15 @@ export declare const GROUP_HEAD: {
   readonly closed: string;
 };
 
+/** The heading of the owner's own answers: "Answered by you". */
+export declare const SIGNED_HEAD: string;
+
+/**
+ * Whether a head is the owner's own signed answer: the reported group holds
+ * both kinds, and this is the one drawn under "Answered by you".
+ */
+export declare function isSignedHead(head: Head): boolean;
+
 /** The door band text for a head, or `undefined` when the door is `false`. */
 export declare function doorBand(head: Head): string | undefined;
 

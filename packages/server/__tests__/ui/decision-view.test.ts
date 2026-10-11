@@ -300,6 +300,94 @@ describe("renderDecision", () => {
     );
   });
 
+  it("shows the signed state sentence for a reported head", () => {
+    const host = draw(
+      decisionResponse({
+        head: inboxHead({
+          group: "reported",
+          state: "approved",
+          source: "signed",
+        }),
+      }),
+    );
+    expect(textOf(host.querySelector(".card-state"))).toBe(
+      "You approved this on 2026-04-01 at 12:00 UTC.",
+    );
+    expect(textsOf(host, ".card-small")).toContain(
+      "Signed with your passkey. The server checked the signature when it was given; this page does not check it again.",
+    );
+  });
+
+  it("shows the signed state sentence for a history head that left the inbox", () => {
+    const host = draw(
+      decisionResponse({
+        head: inboxHead({
+          group: "history",
+          state: "approved",
+          source: "signed",
+        }),
+      }),
+    );
+    expect(textOf(host.querySelector(".card-state"))).toBe(
+      "You approved this on 2026-04-01 at 12:00 UTC.",
+    );
+    expect(textsOf(host, ".card-small")).toContain(
+      "This left the inbox after 14 days.",
+    );
+  });
+
+  it("shows the covered answer under a waiting delegation", () => {
+    const host = draw(
+      decisionResponse({
+        head: inboxHead({
+          group: "waiting",
+          state: "delegated",
+          entries: 2,
+          coveredAnswer: {
+            state: "approved",
+            source: "signed",
+            at: "2026-10-08T13:00:00Z",
+            by: "owner",
+            words: "Yes, go ahead",
+          },
+        }),
+        entries: [
+          decisionEntry(),
+          decisionEntry({
+            index: 1,
+            state: "delegated",
+            source: "session",
+          }),
+        ],
+      }),
+    );
+    expect(textOf(host.querySelector(".card-state"))).toBe(
+      "Decided under delegation. Awaiting your confirmation.",
+    );
+    expect(textOf(host)).toContain(
+      'You had approved this, signed with your passkey: "Yes, go ahead".',
+    );
+  });
+
+  it("shows the T4 note for an earlier signed answer", () => {
+    const host = draw(
+      decisionResponse({
+        head: inboxHead({
+          earlierAnswer: {
+            state: "declined",
+            source: "signed",
+            at: "2026-10-08T13:00:00Z",
+            by: "owner",
+            words: "no",
+          },
+        }),
+      }),
+    );
+    expect(textOf(host)).toContain(
+      'A signed answer exists on an earlier text: declined, with the words "no".',
+    );
+  });
+
   it("renders three revisions and entries on two of them", () => {
     const OTHER_HASH = "b".repeat(64);
     const THIRD_HASH = "c".repeat(64);

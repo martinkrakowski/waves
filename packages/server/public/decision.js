@@ -24,6 +24,7 @@ import {
   GROUP_STATES,
   oneOf,
   SHAPES,
+  signedAnswerRules,
   SOURCES,
   STATES,
   time,
@@ -174,6 +175,48 @@ function storedRevision(rev, project, id) {
 }
 
 /**
+ * The assertion a signed entry carries: the credential that signed, the three
+ * opaque byte strings it signed over, and the nonce it carried — each a
+ * non-empty string — and the index it bound, which is the entry's own (W63): a
+ * signed entry stored at another position is not an answer, and the page
+ * refuses the response rather than draw it.
+ */
+const SIGNATURE_STRINGS = [
+  "credentialId",
+  "authenticatorData",
+  "clientDataJSON",
+  "signature",
+  "nonce",
+];
+
+function signatureMatches(signature, index) {
+  return (
+    signature !== null &&
+    typeof signature === "object" &&
+    SIGNATURE_STRINGS.every(
+      (field) =>
+        typeof signature[field] === "string" && signature[field] !== "",
+    ) &&
+    count(signature.index) &&
+    signature.index === index
+  );
+}
+
+/**
+ * The owner's own answer: an answer state, signed, and held to the contract's
+ * verdict rules — the ones `signedAnswerRules` in `inbox.js` pins once, so the
+ * entry and every head summary answer to the same rules. `words` is optional
+ * for it: the signature is what makes it an answer, not the sentence beside it.
+ */
+function signedAnswer(entry) {
+  return (
+    ANSWER_STATES.includes(entry.state) &&
+    signatureMatches(entry.signature, entry.index) &&
+    signedAnswerRules(entry)
+  );
+}
+
+/**
  * One state entry as the store holds it. The `revision` it names is checked
  * against the revision numbers the head carries, so an entry for a revision
  * that is not among them is refused rather than drawn as history it is not.
@@ -204,10 +247,17 @@ function storedEntry(entry, revisionNumbers, revisionHashes) {
     (entry.state !== "withdrawn" || entry.reason !== undefined) &&
     // `superseded` names the decision it was replaced by.
     (entry.state !== "superseded" || entry.supersededBy !== undefined) &&
-    // An answer is only `reported` with words — never a bare session claim.
-    (ANSWER_STATES.includes(entry.state)
-      ? entry.source === "reported" && entry.words !== undefined
-      : true)
+    // The three sources, each with its own rule: a signed entry is the owner's
+    // own answer with its assertion; a reported one is an answer with words;
+    // a session one is never an answer. No entry but a signed one carries a
+    // signature.
+    (entry.source === "signed"
+      ? signedAnswer(entry)
+      : entry.source === "reported"
+        ? ANSWER_STATES.includes(entry.state) &&
+          entry.words !== undefined &&
+          entry.signature === undefined
+        : !ANSWER_STATES.includes(entry.state) && entry.signature === undefined)
   );
 }
 
@@ -240,7 +290,9 @@ function decisionHead(head, project, id) {
     (head.source === undefined || oneOf(head.source, SOURCES)) &&
     time(head.at) &&
     oneOf(head.group, DECISION_GROUPS) &&
-    (head.group !== "reported" || head.source === "reported") &&
+    (head.group !== "reported" ||
+      head.source === "reported" ||
+      head.source === "signed") &&
     (head.group === "history" ||
       GROUP_STATES[head.group].includes(head.state)) &&
     actElsewhere(head.actElsewhere) &&
@@ -254,8 +306,9 @@ function decisionHead(head, project, id) {
  * Whether a response is a decision page this app can draw at all. The shape says
  * "no": a response that carries a head the page cannot pin to a path, revisions
  * that do not number 1 to n in order, or entries that name a revision the page
- * does not hold is a broken endpoint — the app treats it as a failed load rather
- * than replacing a page that was right with one it could only half fill.
+ * does not hold — or whose own index is not the position they stand at — is a
+ * broken endpoint; the app treats it as a failed load rather than replacing a
+ * page that was right with one it could only half fill.
  */
 export function drawableDecision(view, project, id) {
   if (
@@ -283,7 +336,11 @@ export function drawableDecision(view, project, id) {
   if (!Array.isArray(entries)) {
     return false;
   }
-  if (!entries.every((entry) => storedEntry(entry, nums, hashes))) {
+  if (
+    !entries.every(
+      (entry, i) => entry.index === i && storedEntry(entry, nums, hashes),
+    )
+  ) {
     return false;
   }
   const last = revisions[revisions.length - 1];

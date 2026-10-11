@@ -187,6 +187,119 @@ describe("renderProjectInbox", () => {
     ).toHaveLength(3);
   });
 
+  describe("the owner's signed answers", () => {
+    /** One project inbox holding one head of each drawn kind. */
+    function fourKinds(): ProjectInboxView {
+      return projectInboxView({
+        counts: { waiting: 1, oneWay: 0, reported: 1, closed: 1 },
+        decisions: [
+          inboxHead({
+            id: "w",
+            question: "Wait?",
+            group: "waiting",
+            state: "open",
+          }),
+          inboxHead({
+            id: "s",
+            question: "Mine?",
+            group: "reported",
+            state: "approved",
+            source: "signed",
+            at: "2026-10-08T13:00:00Z",
+            entries: 1,
+          }),
+          inboxHead({
+            id: "r",
+            question: "Theirs?",
+            group: "reported",
+            state: "declined",
+            source: "reported",
+            at: "2026-10-08T13:00:00Z",
+            entries: 1,
+          }),
+          inboxHead({
+            id: "c",
+            question: "Closed?",
+            group: "closed",
+            state: "withdrawn",
+            entries: 2,
+          }),
+        ],
+      });
+    }
+
+    it("draws Answered by you before Reported as answered, each card in its own", () => {
+      const host = draw(fourKinds());
+      expect(textsOf(host, ".inbox-group h3")).toStrictEqual([
+        "Waiting on you",
+        "Answered by you",
+        "Reported as answered",
+        "Closed by a session",
+      ]);
+      const signed = host.querySelector(".inbox-group.inbox-signed");
+      expect(signed).not.toBeNull();
+      expect(textOf(signed as Element)).toContain("Mine?");
+      expect(textOf(signed as Element)).not.toContain("Theirs?");
+      const reported = host.querySelector(".inbox-group.inbox-reported");
+      expect(reported).not.toBeNull();
+      expect(textOf(reported as Element)).toContain("Theirs?");
+      expect(textOf(reported as Element)).not.toContain("Mine?");
+    });
+
+    it("never says a signed answer was reported, or a reported one signed", () => {
+      const host = draw(fourKinds());
+      const signedCard = host.querySelector(
+        ".inbox-group.inbox-signed .inbox-card",
+      );
+      const reportedCard = host.querySelector(
+        ".inbox-group.inbox-reported .inbox-card",
+      );
+      expect(signedCard).not.toBeNull();
+      expect(reportedCard).not.toBeNull();
+      expect(textOf(signedCard as Element)).toContain(
+        "You approved this on 2026-10-08 at 13:00 UTC.",
+      );
+      expect(textOf(signedCard as Element)).toContain(
+        "Signed with your passkey. The server checked the signature when it was given; this page does not check it again.",
+      );
+      expect(textOf(reportedCard as Element)).toContain(
+        "The alpha session reports you declined this on 2026-10-08 at 13:00 UTC.",
+      );
+      expect(textOf(reportedCard as Element)).toContain(
+        "Reported by a session, not signed by you.",
+      );
+      expect(textOf(signedCard as Element)).not.toContain(
+        "Reported by a session",
+      );
+      expect(textOf(reportedCard as Element)).not.toMatch(
+        /signed with your passkey/i,
+      );
+    });
+
+    it("draws no Reported as answered heading and no empty line when the only answer is signed", () => {
+      const host = draw(
+        projectInboxView({
+          counts: { waiting: 0, oneWay: 0, reported: 1, closed: 0 },
+          decisions: [
+            inboxHead({
+              id: "s",
+              question: "Mine?",
+              group: "reported",
+              state: "answered",
+              source: "signed",
+              at: "2026-10-08T13:00:00Z",
+              entries: 1,
+            }),
+          ],
+        }),
+      );
+      expect(textsOf(host, ".inbox-group h3")).toStrictEqual([
+        "Answered by you",
+      ]);
+      expect(host.querySelector(".project-inbox-empty")).toBeNull();
+    });
+  });
+
   describe("the history block", () => {
     it("draws nothing when there are no history heads", () => {
       const host = draw(
@@ -321,6 +434,53 @@ describe("renderProjectInbox", () => {
           `Go? · ${word} · 2026-04-01 at 12:00 UTC`,
         ]);
       }
+    });
+
+    it("gives a signed history head its own words, never reported ones", () => {
+      const cases: [Head["state"], string][] = [
+        ["approved", "signed as approved"],
+        ["declined", "signed as declined"],
+        ["answered", "signed as answered"],
+      ];
+      for (const [state, word] of cases) {
+        const host = draw(
+          projectInboxView({
+            counts: { waiting: 0, oneWay: 0, reported: 0, closed: 0 },
+            decisions: [
+              inboxHead({
+                id: "h",
+                question: "Go?",
+                group: "history",
+                state,
+                source: "signed",
+              }),
+            ],
+          }),
+        );
+        expect(textsOf(host, ".project-inbox-history-line")).toStrictEqual([
+          `Go? · ${word} · 2026-04-01 at 12:00 UTC`,
+        ]);
+      }
+    });
+
+    it("keeps the session's words for a closed history head that claims a source", () => {
+      const host = draw(
+        projectInboxView({
+          counts: { waiting: 0, oneWay: 0, reported: 0, closed: 0 },
+          decisions: [
+            inboxHead({
+              id: "h",
+              question: "Go?",
+              group: "history",
+              state: "withdrawn",
+              source: "signed",
+            }),
+          ],
+        }),
+      );
+      expect(textsOf(host, ".project-inbox-history-line")).toStrictEqual([
+        "Go? · withdrawn by a session · 2026-04-01 at 12:00 UTC",
+      ]);
     });
   });
 

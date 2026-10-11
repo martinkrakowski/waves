@@ -89,7 +89,10 @@ export function decisionState(decision: StoredDecision): DecisionState {
  * reported an answer that a later revision's new text supersedes. The current
  * text's run is what "not the current text" means here, so an entry from before
  * the run is an earlier answer even when the text later returns. `open` and
- * `delegated` are not answers, so they never appear here.
+ * `delegated` are not answers, so they never appear here. A signed answer
+ * outranks the reported ones: when the owner signed an answer on an earlier
+ * text, that one is named however many reported answers came after it — the
+ * owner's own word is the one a later revision must not displace.
  */
 export function earlierAnswer(
   decision: StoredDecision,
@@ -98,13 +101,17 @@ export function earlierAnswer(
   if (run === undefined) {
     return undefined;
   }
-  let found: StoredEntry | undefined;
+  let last: StoredEntry | undefined;
+  let lastSigned: StoredEntry | undefined;
   for (const entry of decision.entries) {
     if (!isOnCurrentText(entry, run) && isAnswer(entry.state)) {
-      found = entry;
+      last = entry;
+      if (entry.source === "signed") {
+        lastSigned = entry;
+      }
     }
   }
-  return found;
+  return lastSigned ?? last;
 }
 
 /**
@@ -158,9 +165,11 @@ export function groupOf(
 }
 
 /**
- * The answer a withdrawal or supersession covers: the last answer on the current
- * text, before it. Shown beside the session's statement so a session cannot
- * remove an answer by covering it; `undefined` when there is none.
+ * The answer a withdrawal, a supersession or a session's delegation covers: the
+ * last answer on the current text, before the current entry. Shown beside the
+ * session's statement so a session cannot remove an answer by covering it — and
+ * beside a delegation too, so an answer under the delegation the owner has not
+ * confirmed yet is never hidden by it; `undefined` when there is none.
  */
 export function coveredAnswer(
   decision: StoredDecision,
@@ -173,7 +182,11 @@ export function coveredAnswer(
   if (current === undefined) {
     return undefined;
   }
-  if (current.state !== "withdrawn" && current.state !== "superseded") {
+  if (
+    current.state !== "withdrawn" &&
+    current.state !== "superseded" &&
+    current.state !== "delegated"
+  ) {
     return undefined;
   }
   let found: StoredEntry | undefined;

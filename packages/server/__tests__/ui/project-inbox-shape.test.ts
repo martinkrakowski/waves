@@ -138,10 +138,31 @@ const INVALID: readonly (readonly [string, unknown])[] = [
     { ...projectInboxView(), decisions: [{ ...inboxHead(), state: "maybe" }] },
   ],
   [
-    "a head with a source outside the two",
+    "a head with a source outside the three",
     {
       ...projectInboxView(),
       decisions: [{ ...inboxHead(), source: "maybe" }],
+    },
+  ],
+  [
+    "a head with the unknown source owner",
+    {
+      ...projectInboxView(),
+      decisions: [{ ...inboxHead(), source: "owner" }],
+    },
+  ],
+  [
+    "a head with the empty source",
+    {
+      ...projectInboxView(),
+      decisions: [{ ...inboxHead(), source: "" }],
+    },
+  ],
+  [
+    "a head with a source that is not a string",
+    {
+      ...projectInboxView(),
+      decisions: [{ ...inboxHead(), source: 1 }],
     },
   ],
   [
@@ -174,6 +195,20 @@ const INVALID: readonly (readonly [string, unknown])[] = [
     {
       ...projectInboxView(),
       decisions: [{ ...inboxHead(), group: "waiting", state: "approved" }],
+    },
+  ],
+  [
+    "a reported head that a session did not report",
+    {
+      ...projectInboxView(),
+      decisions: [
+        {
+          ...inboxHead(),
+          group: "reported",
+          state: "approved",
+          source: "session",
+        },
+      ],
     },
   ],
   [
@@ -219,7 +254,7 @@ const INVALID: readonly (readonly [string, unknown])[] = [
     },
   ],
   [
-    "a head with a coveredAnswer whose source is outside the two",
+    "a head with a coveredAnswer whose source is outside the three",
     {
       ...projectInboxView(),
       decisions: [
@@ -228,6 +263,42 @@ const INVALID: readonly (readonly [string, unknown])[] = [
           coveredAnswer: {
             state: "approved",
             source: "maybe",
+            at: "2026-10-08T13:00:00Z",
+            by: "owner",
+          },
+        },
+      ],
+    },
+  ],
+  [
+    "a head with an earlier answer that a session did not report",
+    {
+      ...projectInboxView(),
+      decisions: [
+        {
+          ...inboxHead(),
+          earlierAnswer: {
+            state: "approved",
+            source: "session",
+            at: "2026-10-08T13:00:00Z",
+            by: "owner",
+          },
+        },
+      ],
+    },
+  ],
+  [
+    "a head with a covered answer that a session claims to report",
+    {
+      ...projectInboxView(),
+      decisions: [
+        {
+          ...inboxHead(),
+          group: "closed",
+          state: "withdrawn",
+          coveredAnswer: {
+            state: "approved",
+            source: "session",
             at: "2026-10-08T13:00:00Z",
             by: "owner",
           },
@@ -292,6 +363,55 @@ describe("drawableProjectInbox", () => {
                 by: "owner",
                 words: "yes",
                 option: "a",
+              },
+            }),
+          ],
+        }),
+        "alpha",
+      ),
+    ).toBe(true);
+  });
+
+  it("takes a head with a signed answer, in the reported group", () => {
+    expect(
+      drawableProjectInbox(
+        projectInboxView({
+          counts: { waiting: 0, oneWay: 0, reported: 1, closed: 0 },
+          decisions: [
+            inboxHead({
+              group: "reported",
+              state: "approved",
+              source: "signed",
+              entries: 1,
+            }),
+          ],
+        }),
+        "alpha",
+      ),
+    ).toBe(true);
+  });
+
+  it("takes an earlier and a covered answer signed with the passkey", () => {
+    expect(
+      drawableProjectInbox(
+        projectInboxView({
+          decisions: [
+            inboxHead({
+              group: "closed",
+              state: "withdrawn",
+              entries: 2,
+              earlierAnswer: {
+                state: "approved",
+                source: "signed",
+                at: "2026-10-08T13:00:00Z",
+                by: "owner",
+                words: "yes",
+              },
+              coveredAnswer: {
+                state: "declined",
+                source: "signed",
+                at: "2026-10-08T13:00:00Z",
+                by: "owner",
               },
             }),
           ],

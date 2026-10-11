@@ -267,12 +267,12 @@ describe("the nonce route with keys loaded", () => {
     expect(issued).toEqual([]);
   });
 
-  it("404s the answers path until lane 3b wires it", async () => {
+  it("refuses the answers path without a JSON content type", async () => {
     const { started } = await wired();
 
     const response = await ask(started, answersPath());
-    expect(response.status).toBe(404);
-    expect(await response.json()).toEqual({ error: "not found" });
+    expect(response.status).toBe(415);
+    expect(await response.json()).toEqual({ error: "unsupported media type" });
   });
 
   it("answers a fifth ask for one decision", async () => {

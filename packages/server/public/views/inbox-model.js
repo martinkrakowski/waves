@@ -1,7 +1,8 @@
 /**
  * What the inbox page knows about the answer it was given, with no DOM in it:
  * the projects sorted with the ones that have decisions first, each split into
- * the three groups it draws, and the totals across all of them.
+ * the lists it draws — waiting, the owner's signed answers, the reported ones
+ * and the closed ones — and the totals across all of them.
  *
  * It is a module of its own so the view below reads from one place, the way
  * `fleet-model` lets the fleet page's hero, its cards and its rows agree about
@@ -48,18 +49,25 @@ export function countLine(counts, fromCount) {
 }
 
 /**
- * A project's decisions split into the three groups, in the order the page draws
- * them. The server already sorted them this way; this is a partition, not a
- * re-sort, so a card the reader is looking for does not jump past its neighbour.
+ * A project's decisions split into the four lists the page draws, in the order
+ * it draws them. The server already sorted them this way; this is a partition,
+ * not a re-sort, so a card the reader is looking for does not jump past its
+ * neighbour. The reported group holds both kinds of answer, and the owner's
+ * signed ones are taken out of it into a list of their own: the two are never
+ * drawn under one heading.
  */
 function groupDecisions(decisions) {
-  const byGroup = { waiting: [], reported: [], closed: [] };
+  const byGroup = { waiting: [], signed: [], reported: [], closed: [] };
   for (const head of decisions) {
     const group = head.group;
     if (group === "waiting") {
       byGroup.waiting.push(head);
     } else if (group === "reported") {
-      byGroup.reported.push(head);
+      if (head.source === "signed") {
+        byGroup.signed.push(head);
+      } else {
+        byGroup.reported.push(head);
+      }
     } else {
       // The shape check closes `group` to the three values above, so anything
       // that reaches here is `closed`: the last branch needs no test of its own.
@@ -79,9 +87,17 @@ function groupDecisions(decisions) {
 function sortProjects(projects) {
   return projects.sort((left, right) => {
     const leftHas =
-      left.waiting.length + left.reported.length + left.closed.length > 0;
+      left.waiting.length +
+        left.signed.length +
+        left.reported.length +
+        left.closed.length >
+      0;
     const rightHas =
-      right.waiting.length + right.reported.length + right.closed.length > 0;
+      right.waiting.length +
+        right.signed.length +
+        right.reported.length +
+        right.closed.length >
+      0;
     if (leftHas !== rightHas) {
       return leftHas ? -1 : 1;
     }
