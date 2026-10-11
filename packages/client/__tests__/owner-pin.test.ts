@@ -113,6 +113,21 @@ describe("ownerPinFile", () => {
     });
   });
 
+  it("answers a link that cannot even be described with the pin refusal", async () => {
+    const dir = await scratch();
+    // A link to itself below the pin path: opening it loops, and so does
+    // describing it, so the refusal names the code both calls were refused with.
+    const loop = join(dir, "loop");
+    await symlink(loop, loop);
+
+    await expect(
+      ownerPinFile(join(loop, "owner-keys.json")).read(),
+    ).rejects.toThrow(PinRefusal);
+    await expect(
+      ownerPinFile(join(loop, "owner-keys.json")).read(),
+    ).rejects.toThrow("the pin file could not be read: ELOOP");
+  });
+
   it("reports a directory as other, and reads none of it", async () => {
     const dir = await scratch();
     const inner = join(dir, "a-directory");
