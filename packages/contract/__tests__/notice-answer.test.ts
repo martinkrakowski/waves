@@ -287,7 +287,7 @@ describe("validateAnswerRequest", () => {
     answerPaths({ ...minimalAnswer(), authenticatorData: "B".repeat(48) }, [
       "/authenticatorData",
     ]);
-    answerPaths({ ...minimalAnswer(), authenticatorData: "B".repeat(1026) }, [
+    answerPaths({ ...minimalAnswer(), authenticatorData: "A".repeat(1026) }, [
       "/authenticatorData",
     ]);
     expect(
@@ -305,10 +305,10 @@ describe("validateAnswerRequest", () => {
   });
 
   it("bounds clientDataJSON to 20 to 2048 base64url characters", () => {
-    answerPaths({ ...minimalAnswer(), clientDataJSON: "C".repeat(19) }, [
+    answerPaths({ ...minimalAnswer(), clientDataJSON: "A".repeat(19) }, [
       "/clientDataJSON",
     ]);
-    answerPaths({ ...minimalAnswer(), clientDataJSON: "C".repeat(2050) }, [
+    answerPaths({ ...minimalAnswer(), clientDataJSON: "A".repeat(2050) }, [
       "/clientDataJSON",
     ]);
     expect(
@@ -324,10 +324,10 @@ describe("validateAnswerRequest", () => {
   });
 
   it("bounds signature to 8 to 200 base64url characters", () => {
-    answerPaths({ ...minimalAnswer(), signature: "D".repeat(7) }, [
+    answerPaths({ ...minimalAnswer(), signature: "A".repeat(7) }, [
       "/signature",
     ]);
-    answerPaths({ ...minimalAnswer(), signature: "D".repeat(202) }, [
+    answerPaths({ ...minimalAnswer(), signature: "A".repeat(202) }, [
       "/signature",
     ]);
     expect(
