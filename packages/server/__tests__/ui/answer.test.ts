@@ -433,6 +433,21 @@ describe("prepareWords", () => {
     });
   });
 
+  it("strips U+0085 at the ends and keeps it inside", () => {
+    expect(prepareWords("\u0085 yes \u0085")).toStrictEqual({
+      ok: true,
+      words: "yes",
+    });
+    expect(prepareWords("\u0085")).toStrictEqual({
+      ok: false,
+      reason: "empty",
+    });
+    expect(prepareWords("a\u0085b")).toStrictEqual({
+      ok: true,
+      words: "a\u0085b",
+    });
+  });
+
   it("refuses what is empty after normalising and trimming", () => {
     expect(prepareWords("")).toStrictEqual({ ok: false, reason: "empty" });
     expect(prepareWords("  \n ")).toStrictEqual({ ok: false, reason: "empty" });

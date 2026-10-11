@@ -102,7 +102,9 @@ export async function probeAnswering(fetchImpl, project, decision) {
  * what will be signed and shown to him before he signs.
  */
 export function prepareWords(raw) {
-  const words = raw.normalize("NFC").trim();
+  // JavaScript's `trim()` does not strip U+0085 (NEXT LINE), and the server
+  // refuses words that begin or end with it; strip it at the edges here.
+  const words = raw.normalize("NFC").replace(/^[\s\u0085]+|[\s\u0085]+$/g, "");
   if (words === "") {
     return { ok: false, reason: "empty" };
   }
