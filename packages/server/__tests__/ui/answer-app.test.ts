@@ -642,11 +642,26 @@ describe("the answer flow's signing", () => {
 
   it("signs Yes and reads back the entry it made", async () => {
     let releaseGet!: () => void;
-    const fetchImpl = signingFetch({
+    const innerFetch = signingFetch({
       nonce: () => GOOD_NONCE,
       answers: () => GOOD_ANSWERS,
       decision: openDecision(),
     });
+    // In a real browser `fetch` is a named method: `browser.fetch(...)`
+    // throws "Illegal invocation" until the page takes it into a local
+    // first. Wrap the fake the same way to prove the page calls it unbound.
+    const fetchImpl = Object.assign(
+      function (
+        this: unknown,
+        ...args: Parameters<typeof innerFetch>
+      ): ReturnType<typeof innerFetch> {
+        if (this !== undefined && this !== globalThis) {
+          throw new TypeError("Illegal invocation");
+        }
+        return innerFetch(...args);
+      },
+      { calls: innerFetch.calls, setDecision: innerFetch.setDecision },
+    );
     const h = signingHarness("/p/alpha/d/d1", fetchImpl, (options) => {
       const pk = (
         options as unknown as { publicKey: { challenge: Uint8Array } }
