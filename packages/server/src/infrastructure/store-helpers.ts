@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { Stats } from "node:fs";
-import { rename, rm, writeFile } from "node:fs/promises";
+import { constants, type Stats } from "node:fs";
+import { type FileHandle, open, rename, rm, writeFile } from "node:fs/promises";
 
 import type { StoredEvent } from "../application/ports/notice-store.js";
 
@@ -49,6 +49,45 @@ export function assertRealDirectory(info: Stats, path: string): void {
   }
   if ((info.mode & 0o077) !== 0) {
     throw new Error(`${path} is accessible to other users`);
+  }
+}
+
+/**
+ * Reads a document file as text without ever following a symbolic link: a
+ * document file that is a symbolic link is refused and reported with
+ * `<path> is a symbolic link, not a file`, and a dangling link is refused the
+ * same way. The OPEN itself refuses the link (`O_NOFOLLOW` answers `ELOOP`
+ * before the link is followed), so there is no check-then-open window on the
+ * file itself. A missing file answers `undefined`; `O_NONBLOCK` keeps a FIFO
+ * planted as a document from hanging the open, and anything at the path that
+ * is not a regular file is refused.
+ */
+export async function readTextNoFollow(
+  path: string,
+): Promise<string | undefined> {
+  let handle: FileHandle;
+  try {
+    handle = await open(
+      path,
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+    );
+  } catch (error) {
+    const code = errorCode(error);
+    if (code === "ENOENT") {
+      return undefined;
+    }
+    if (code === "ELOOP") {
+      throw new Error(`${path} is a symbolic link, not a file`);
+    }
+    throw error;
+  }
+  try {
+    if (!(await handle.stat()).isFile()) {
+      throw new Error(`${path} is not a regular file`);
+    }
+    return await handle.readFile("utf8");
+  } finally {
+    await handle.close();
   }
 }
 
