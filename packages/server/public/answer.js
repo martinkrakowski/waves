@@ -205,8 +205,9 @@ async function signOnce(model, choice, browser) {
   if (textSha256 !== model.currentRevision.textSha256) {
     return { kind: "text-mismatch" };
   }
+  const fetchImpl = browser.fetch;
 
-  const nonceResponse = await browser.fetch(
+  const nonceResponse = await fetchImpl(
     noncePath(model.head.project, model.head.id),
     { method: "POST", headers: ACCEPT_JSON },
   );
@@ -257,7 +258,7 @@ async function signOnce(model, choice, browser) {
     return { kind: "cancelled" };
   }
 
-  const answerResponse = await browser.fetch(
+  const answerResponse = await fetchImpl(
     answersPath(model.head.project, model.head.id),
     {
       method: "POST",
