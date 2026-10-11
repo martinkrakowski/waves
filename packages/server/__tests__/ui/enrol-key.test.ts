@@ -90,6 +90,27 @@ describe("enrolKey.create options", () => {
     expect(creds.create).toHaveBeenCalledWith(
       createOptions(HOSTNAME, fillBytes(32, 0x41), fillBytes(16, 0x41)),
     );
+    // Pinned against literals rather than against `createOptions` again: the
+    // assertion above compares the call with the builder, so a builder that grew
+    // an algorithm would satisfy both and say nothing. These do not.
+    const options = creds.create.mock.calls[0]?.[0] as
+      PublicKeyCredentialCreationOptions | undefined;
+    expect(options?.rp).toEqual({ id: HOSTNAME, name: "waves" });
+    expect(options?.pubKeyCredParams).toStrictEqual([
+      { type: "public-key", alg: -7 },
+    ]);
+    expect(options?.authenticatorSelection).toEqual({
+      authenticatorAttachment: "platform",
+      residentKey: "required",
+      userVerification: "required",
+    });
+    expect(options?.attestation).toBe("none");
+    expect(options?.timeout).toBe(120_000);
+    expect(options?.user).toEqual({
+      id: fillBytes(16, 0x41),
+      name: "owner",
+      displayName: "owner",
+    });
   });
 });
 
@@ -104,6 +125,14 @@ describe("enrolKey.get options", () => {
     expect(creds.get).toHaveBeenCalledWith(
       getOptions(HOSTNAME, fillBytes(32, 0x41), new Uint8Array(CREDENTIAL_ID)),
     );
+    const options = creds.get.mock.calls[0]?.[0] as
+      PublicKeyCredentialRequestOptions | undefined;
+    expect(options?.rpId).toBe(HOSTNAME);
+    expect(options?.userVerification).toBe("required");
+    expect(options?.timeout).toBe(120_000);
+    expect(options?.allowCredentials).toStrictEqual([
+      { type: "public-key", id: new Uint8Array(CREDENTIAL_ID) },
+    ]);
   });
 });
 
