@@ -18,6 +18,7 @@ import {
   type Started,
 } from "./http-harness.js";
 import {
+  answerSignature,
   decisionRevision,
   stateEntryRequest,
   storedRevision,
@@ -307,6 +308,28 @@ describe("posting a state entry", () => {
     );
 
     expect(response.status).toBe(400);
+  });
+
+  it("refuses a state entry that claims source signed, with a project token", async () => {
+    const { started } = await raised();
+    const response = await json(started, "POST", statesPath(), {
+      ...stateEntry(),
+      source: "signed",
+    });
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).errors[0].path).toBe("/source");
+  });
+
+  it("refuses a state entry that carries a signature, with a project token", async () => {
+    const { started } = await raised();
+    const response = await json(started, "POST", statesPath(), {
+      ...stateEntry(),
+      signature: answerSignature(0),
+    });
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).errors[0].path).toBe("/signature");
   });
 
   it("refuses an option that is not a key of the current revision", async () => {

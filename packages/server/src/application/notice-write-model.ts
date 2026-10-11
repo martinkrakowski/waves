@@ -15,6 +15,7 @@ import type {
   NoticeStorePort,
   StoredEntry,
 } from "../application/ports/notice-store.js";
+import { signedOnCurrentText } from "../domain/decision-state.js";
 import type { Now } from "./read-model.js";
 
 export interface NoticeWriteModelDeps {
@@ -25,6 +26,7 @@ export interface NoticeWriteModelDeps {
 }
 
 const STALE_ERROR = "the state entry is out of date";
+const SIGNED_ERROR = "a signed answer exists on this text";
 
 function timestampOf(atMs: number): string {
   return new Date(atMs).toISOString();
@@ -215,6 +217,20 @@ export function createNoticeWriteModel(deps: NoticeWriteModelDeps) {
         };
       }
 
+      // Design 4.2 (T6): after a signed entry on a text, no reported entry on
+      // that text is accepted. Only reported entries are refused here: a
+      // session's withdrawn or superseded is accepted over a signed answer, and
+      // the answers route writes the signed ones itself.
+      if (entry.source === "reported" && signedOnCurrentText(stored)) {
+        return {
+          kind: "conflict",
+          error: SIGNED_ERROR,
+          revision: currentRevision,
+          textSha256: currentHash,
+          entries: currentEntries,
+        };
+      }
+
       const issues: ValidationIssue[] = [];
       if (entry.option !== undefined) {
         const keys = new Set(current.decision.options.map((o) => o.key));
@@ -241,7 +257,12 @@ export function createNoticeWriteModel(deps: NoticeWriteModelDeps) {
         return { kind: "invalid", errors: issues };
       }
 
-      if (currentEntries >= MAX_SESSION_ENTRIES_PER_DECISION) {
+      // The session allowance counts only the entries a session wrote: signed
+      // answers neither use it up nor are blocked by it (W59).
+      const sessionEntries = stored.entries.filter(
+        (one) => one.source !== "signed",
+      ).length;
+      if (sessionEntries >= MAX_SESSION_ENTRIES_PER_DECISION) {
         return {
           kind: "conflict",
           error: `at most ${MAX_SESSION_ENTRIES_PER_DECISION} session entries per decision`,
