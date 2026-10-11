@@ -1120,6 +1120,17 @@ describe("the answer flow's signing", () => {
       "Answer in my own words",
     ]);
 
+    // One more decision GET followed the refusal, and the replacement
+    // decision it read back is drawn with its entry on the page.
+    expect(
+      fetchImpl.calls.filter(
+        (c) => c.method === "GET" && c.path === DECISION("d1"),
+      ),
+    ).toHaveLength(2);
+    expect(
+      root().querySelector(".decision-history")?.textContent ?? "",
+    ).toContain("signed with your passkey");
+
     h.app.stop();
   });
 
