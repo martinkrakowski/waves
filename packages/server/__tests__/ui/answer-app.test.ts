@@ -1879,4 +1879,51 @@ describe("leaving the decision resets the answer flow", () => {
 
     h.app.stop();
   });
+
+  it("does not carry a prompt left open on one visit over to the next", async () => {
+    const fetchImpl = leavingFetch({
+      nonce: () => NONCE_OK,
+      answers: () => ({ status: 201, body: { index: 0, state: "approved" } }),
+      decisions: { d1: openDecision(), d2: otherDecision() },
+    });
+    let heldOpen = true;
+    const h = signingHarness("/p/alpha/d/d1", fetchImpl, (options) => {
+      const pk = (
+        options as unknown as { publicKey: { challenge: Uint8Array } }
+      ).publicKey;
+      const made = assertionFor(pk.challenge, "prompt-left-open");
+      if (heldOpen) {
+        return new Promise<unknown>(() => {});
+      }
+      return browserAssertion(made.input);
+    });
+    h.app.start();
+    await settle();
+
+    press("answer-yes");
+    await flush();
+    press("answer-sign");
+    await settle();
+    expect(h.getCalls).toHaveLength(1);
+
+    h.app.navigate("/");
+    await settle();
+    h.app.navigate("/p/alpha/d/d1");
+    await settle();
+
+    heldOpen = false;
+    press("answer-yes");
+    await flush();
+    press("answer-sign");
+    await settle();
+
+    expect(
+      h.fetchImpl.calls.filter(
+        (c) => c.method === "POST" && c.path === NONCE("d1"),
+      ),
+    ).toHaveLength(2);
+    expect(messageText()).toBe("Signed and recorded.");
+
+    h.app.stop();
+  });
 });

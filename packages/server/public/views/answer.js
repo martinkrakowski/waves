@@ -39,6 +39,8 @@ const OUTCOME_TEXT = {
     "The server did not accept the signature. Nothing was recorded.",
   "text-mismatch":
     "The text on this page does not match the server's record of it. Nothing was signed. Reload the page.",
+  "in-progress":
+    "A passkey prompt from an earlier press is still open. Finish or cancel it first.",
 };
 
 /** A refusal's sentence, by the reason the server refused for. */

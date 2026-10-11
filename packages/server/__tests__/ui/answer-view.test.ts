@@ -151,7 +151,7 @@ describe("outcomeMessage", () => {
       "The answer was not recorded. Try again.",
     );
     expect(outcomeMessage({ kind: "in-progress" })).toBe(
-      "The answer was not recorded. Try again.",
+      "A passkey prompt from an earlier press is still open. Finish or cancel it first.",
     );
     expect(outcomeMessage({ kind: "failed" })).toBe(
       "The answer was not recorded. Try again.",

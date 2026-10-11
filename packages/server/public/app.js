@@ -252,13 +252,16 @@ export function createApp(deps) {
   /** The state the enrol-key page last answered with, replayed on each draw. */
   let enrolCurrent = undefined;
   /**
-   * The answerer behind a decision page's answer controls, built once per app
-   * from the browser objects it reads as parameters and never rebuilt, because
-   * it holds nothing that belongs to one decision. Everything else the answer
-   * flow holds does: the step the flow is on, the draft the reader typed, the
-   * probe's answer and the decision the flow was opened against all belong to
-   * the decision on screen, and a navigation away drops every one of them.
-   */
+    * The answerer behind a decision page's answer controls, built for the
+    * page open from the browser objects it reads as parameters. It allows one
+    * sign at a time, so a passkey prompt left open on a visit the reader has
+    * left must not answer for the next: the answerer belongs to the page, and
+    * a navigation away drops it with everything else. Everything else the
+    * answer flow holds does too: the step the flow is on, the draft the
+    * reader typed, the probe's answer and the decision the flow was opened
+    * against all belong to the decision on screen, and a navigation away
+    * drops every one of them.
+    */
   let answerLogic = undefined;
   /** The step of the answer flow the reader is on; `idle` before any press. */
   let answerUi = { kind: "idle" };
@@ -1175,12 +1178,15 @@ export function createApp(deps) {
 
   /**
    * Drops everything the answer flow holds: the step, the draft, the probe's
-   * answer and the decision it was asked about. Called when the page is opened
-   * anew and when the route leaves a decision — for another decision as much
-   * as for another page — because the probe is this page's own question, and
-   * an answer half-given on one decision is not a step of another's flow.
+   * answer, the decision it was asked about and the answerer itself, whose one
+   * sign at a time would otherwise make a prompt left open on a visit answer
+   * for the next. Called when the page is opened anew and when the route
+   * leaves a decision — for another decision as much as for another page —
+   * because the probe is this page's own question, and an answer half-given
+   * on one decision is not a step of another's flow.
    */
   function resetAnswerPage() {
+    answerLogic = undefined;
     answerUi = { kind: "idle" };
     answerDraft = "";
     answerProbe = undefined;
