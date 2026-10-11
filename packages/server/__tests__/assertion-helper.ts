@@ -43,6 +43,8 @@ export interface Changes {
   readonly retired?: boolean;
   /** Edit the client data object before it is serialised and signed. */
   readonly editClientData?: (data: Record<string, unknown>) => void;
+  /** The exact client data bytes to sign and send, instead of the built JSON. */
+  readonly clientDataBytes?: Buffer;
   /** Edit the signed authenticator data bytes after the signature is made. */
   readonly tamperData?: (bytes: Buffer) => void;
   /** Sign with another private key than the one the keys list holds. */
@@ -105,7 +107,8 @@ export function buildAssertion(changes: Changes = {}): Built {
     crossOrigin: false,
   };
   changes.editClientData?.(clientData);
-  const clientDataJSON = Buffer.from(JSON.stringify(clientData), "utf8");
+  const clientDataJSON =
+    changes.clientDataBytes ?? Buffer.from(JSON.stringify(clientData), "utf8");
 
   const signature = createSign("SHA256")
     .update(Buffer.concat([authenticatorData, sha256(clientDataJSON)]))

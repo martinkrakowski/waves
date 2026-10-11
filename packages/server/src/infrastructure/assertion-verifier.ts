@@ -117,7 +117,9 @@ function checkedAssertion(
   const clientDataBytes = decodeStrict(input.clientDataJSON);
   let clientData: unknown;
   try {
-    clientData = JSON.parse(clientDataBytes.toString("utf8"));
+    clientData = JSON.parse(
+      new TextDecoder("utf-8", { fatal: true }).decode(clientDataBytes),
+    );
   } catch {
     throw new Refusal("client-data-malformed");
   }

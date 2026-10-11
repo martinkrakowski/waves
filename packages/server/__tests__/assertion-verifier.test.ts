@@ -321,6 +321,24 @@ describe("verifyAssertion", () => {
     expect(result).toEqual({ ok: false, reason: "client-data-malformed" });
   });
 
+  it("refuses client data with a byte that is not valid UTF-8", () => {
+    const good = buildAssertion();
+    const prefix = Buffer.from(
+      Buffer.from(good.input.clientDataJSON, "base64url")
+        .toString("utf8")
+        .replace(/}$/, ',"extra":"'),
+      "utf8",
+    );
+    const built = buildAssertion({
+      clientDataBytes: Buffer.concat([
+        prefix,
+        Buffer.from([0xff]),
+        Buffer.from('"}', "utf8"),
+      ]),
+    });
+    expect(reasonOf(built)).toBe("client-data-malformed");
+  });
+
   it("refuses for the earliest reason when an assertion is wrong in two ways", () => {
     const built = buildAssertion({
       editClientData: (data) => {
