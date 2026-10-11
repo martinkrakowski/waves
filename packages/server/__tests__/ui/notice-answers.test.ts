@@ -113,4 +113,19 @@ describe("the three notice shapes the HTTP routes serve", () => {
       ),
     ).toBe(true);
   });
+
+  it("the decision view accepts a signed answer the store holds", async () => {
+    const { store, model } = await seeded();
+    const outcome = await store.appendEntry(PROJECT, ID, signedEntry(0), 0, 1);
+    expect(outcome).toBe("stored");
+
+    const body = await model.getDecision(PROJECT, ID);
+    expect(body).toBeDefined();
+    expect(body?.head.group).toBe("reported");
+    expect(body?.head.state).toBe("approved");
+    expect(body?.head.source).toBe("signed");
+    expect(body?.entries[0]?.source).toBe("signed");
+
+    expect(drawableDecision(body, PROJECT, ID)).toBe(true);
+  });
 });

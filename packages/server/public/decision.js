@@ -174,6 +174,51 @@ function storedRevision(rev, project, id) {
 }
 
 /**
+ * The assertion a signed entry carries: the credential that signed, the three
+ * opaque byte strings it signed over, and the nonce it carried — each a
+ * non-empty string — and the index it bound, which is the entry's own (W63): a
+ * signed entry stored at another position is not an answer, and the page
+ * refuses the response rather than draw it.
+ */
+const SIGNATURE_STRINGS = [
+  "credentialId",
+  "authenticatorData",
+  "clientDataJSON",
+  "signature",
+  "nonce",
+];
+
+function signatureMatches(signature, index) {
+  return (
+    signature !== null &&
+    typeof signature === "object" &&
+    SIGNATURE_STRINGS.every(
+      (field) =>
+        typeof signature[field] === "string" && signature[field] !== "",
+    ) &&
+    count(signature.index) &&
+    signature.index === index
+  );
+}
+
+/**
+ * The owner's own answer: an answer state, signed, and held to the contract's
+ * verdict rules — `answered` needs words or an option, `declined` has no
+ * option. `words` is optional for it: the signature is what makes it an answer,
+ * not the sentence beside it.
+ */
+function signedAnswer(entry) {
+  return (
+    ANSWER_STATES.includes(entry.state) &&
+    signatureMatches(entry.signature, entry.index) &&
+    (entry.state !== "answered" ||
+      entry.words !== undefined ||
+      entry.option !== undefined) &&
+    (entry.state !== "declined" || entry.option === undefined)
+  );
+}
+
+/**
  * One state entry as the store holds it. The `revision` it names is checked
  * against the revision numbers the head carries, so an entry for a revision
  * that is not among them is refused rather than drawn as history it is not.
@@ -204,10 +249,17 @@ function storedEntry(entry, revisionNumbers, revisionHashes) {
     (entry.state !== "withdrawn" || entry.reason !== undefined) &&
     // `superseded` names the decision it was replaced by.
     (entry.state !== "superseded" || entry.supersededBy !== undefined) &&
-    // An answer is only `reported` with words — never a bare session claim.
-    (ANSWER_STATES.includes(entry.state)
-      ? entry.source === "reported" && entry.words !== undefined
-      : true)
+    // The three sources, each with its own rule: a signed entry is the owner's
+    // own answer with its assertion; a reported one is an answer with words;
+    // a session one is never an answer. No entry but a signed one carries a
+    // signature.
+    (entry.source === "signed"
+      ? signedAnswer(entry)
+      : entry.source === "reported"
+        ? ANSWER_STATES.includes(entry.state) &&
+          entry.words !== undefined &&
+          entry.signature === undefined
+        : !ANSWER_STATES.includes(entry.state) && entry.signature === undefined)
   );
 }
 
@@ -240,7 +292,9 @@ function decisionHead(head, project, id) {
     (head.source === undefined || oneOf(head.source, SOURCES)) &&
     time(head.at) &&
     oneOf(head.group, DECISION_GROUPS) &&
-    (head.group !== "reported" || head.source === "reported") &&
+    (head.group !== "reported" ||
+      head.source === "reported" ||
+      head.source === "signed") &&
     (head.group === "history" ||
       GROUP_STATES[head.group].includes(head.state)) &&
     actElsewhere(head.actElsewhere) &&
