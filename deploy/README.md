@@ -276,8 +276,12 @@ The owner's steps, one per step:
    WAVES_OVERLAY=deploy/k8s/overlays/midnight-owner-keys sh deploy/deploy.sh
    ```
 
-4. Check it: the pod is Running, and the nonce route answers something other
-   than 404 for an existing decision.
+4. Check it: the pod is Running, and a `GET` of the nonce path of any decision
+   answers `405` (answering is on) where it answered `404` before:
+
+   ```sh
+   curl -s -o /dev/null -w '%{http_code}\n' https://waves.midnight.lan/api/v1/projects/<project>/decisions/<decision>/nonce
+   ```
 
 To turn it off, deploy again without the overlay: the mount is removed, the
 routes answer 404, and nothing is deleted. To change a key, replace the Secret
@@ -285,10 +289,8 @@ and restart the deployment — the file is read once at startup, so a new Secret
 alone changes nothing until the pod restarts:
 
 ```sh
-kubectl -n waves create secret generic waves-owner-keys \
-  --from-file=owner-keys.json=~/waves-owner-keys/owner-keys.json \
-  --dry-run=client -o yaml | kubectl apply -f -
-kubectl -n waves rollout restart deploy/waves
+ssh m 'KUBECONFIG=$HOME/.kube/config kubectl -n waves create secret generic waves-owner-keys --from-file=owner-keys.json=/dev/stdin --dry-run=client -o yaml | KUBECONFIG=$HOME/.kube/config kubectl apply -f -' < ~/waves-owner-keys/owner-keys.json
+ssh m 'KUBECONFIG=$HOME/.kube/config kubectl -n waves rollout restart deployment/waves'
 ```
 
 The Secret is writable by anything with cluster access, so it decides only what
