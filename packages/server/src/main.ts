@@ -86,8 +86,8 @@ async function loadSecret(
 /**
  * The owner's public keys are a setting with two shapes, not a secret with a
  * grammar: the variable absent means the feature is off, which one line says,
- * and any failure to load the file it names is a refusal to start. The keys are
- * held here and passed nowhere yet: no route exists to answer with them.
+ * and any failure to load the file it names is a refusal to start. The keys
+ * go to the server, which serves the answer routes only while it holds them.
  */
 async function loadOwnerKeys(config: Config): Promise<OwnerKeysSetting> {
   try {
@@ -154,6 +154,7 @@ async function start(): Promise<number> {
     enrollToken: enroll.kind === "enabled" ? enroll.token : undefined,
     trustProxy: config.trustProxy,
     log: io.out,
+    ownerKeys: ownerKeys?.keys,
   });
 
   const shutdown = (): void => {
