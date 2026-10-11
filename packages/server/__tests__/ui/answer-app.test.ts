@@ -1347,6 +1347,51 @@ describe("the answer flow's signing", () => {
     await settle();
     h.app.stop();
   });
+
+  it("a press that slips past the held-back buttons signs nothing twice", async () => {
+    let releaseNonce!: () => void;
+    const fetchImpl = signingFetch({
+      nonce: () =>
+        new Promise<SigningReply>((resolve) => {
+          releaseNonce = () =>
+            resolve({ status: 200, body: { nonce: NONCE_VALUE, index: 0 } });
+        }),
+      answers: () => GOOD_ANSWERS,
+      decision: openDecision(),
+    });
+    const key = passkeyFor("slipping-press");
+    const h = signingHarness("/p/alpha/d/d1", fetchImpl, key.handler);
+    h.app.start();
+    await settle();
+
+    press("answer-yes");
+    await flush();
+    press("answer-sign");
+    await settle();
+
+    // A press that slips past the held-back buttons reaches the flow off the
+    // step it signs from: the working step stays, nothing is asked again.
+    const signButton = root().querySelector(
+      '[data-key="answer-sign"]',
+    ) as HTMLButtonElement;
+    signButton.dispatchEvent(new Event("click"));
+    await settle();
+
+    expect(root().querySelector("p.answer-working")).not.toBeNull();
+    expect(messageText()).toBe("");
+
+    releaseNonce();
+    await settle();
+
+    expect(messageText()).toBe("Signed and recorded.");
+    expect(
+      h.fetchImpl.calls.filter(
+        (c) => c.method === "POST" && c.path === NONCE("d1"),
+      ),
+    ).toHaveLength(1);
+
+    h.app.stop();
+  });
 });
 describe("the answer flow's steps before signing", () => {
   function setup() {
