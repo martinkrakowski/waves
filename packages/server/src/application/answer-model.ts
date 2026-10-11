@@ -16,10 +16,7 @@ import type { Now } from "./read-model.js";
 
 /** The one-way doors of design W68, checked before anything is signed. */
 export type AnswerRefusal =
-  | "one-way-door"
-  | "act-elsewhere"
-  | "signed-cap"
-  | "entry-ceiling";
+  "one-way-door" | "act-elsewhere" | "signed-cap" | "entry-ceiling";
 
 export type AnswerOutcome =
   | { readonly kind: "stored"; readonly index: number; readonly state: string }
@@ -184,8 +181,7 @@ export function createAnswerModel(deps: AnswerModelDeps) {
       // The entry is checked exactly as the file store's reader will see
       // it: without the `index` and `receivedAt` the store adds, so a label
       // the contract refuses is caught here, before anything is written.
-      const { index: _index, receivedAt: _receivedAt, ...entry } =
-        storedEntry;
+      const { index: _index, receivedAt: _receivedAt, ...entry } = storedEntry;
       void _index;
       void _receivedAt;
       const validated = validateStoredStateEntry(entry);
