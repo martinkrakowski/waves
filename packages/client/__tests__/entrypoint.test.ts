@@ -12,6 +12,11 @@ import {
   network,
   reply,
 } from "./support/harness.js";
+import {
+  decisionRecord,
+  pinReadOf,
+  answerKey,
+} from "./support/signed-answer.js";
 
 const tokenPath = `${CONFIG_DIR}/${PROJECT}.token`;
 
@@ -233,6 +238,22 @@ describe("run", () => {
       );
       expect(built.out).toEqual([body]);
       expect(built.err).toEqual([]);
+    });
+
+    it("answers a signed read with the reader's own exit code", async () => {
+      const key = answerKey();
+      const body = decisionRecord({ entries: [] });
+      const built = harness({
+        script: [reply(200, body)],
+        pins: pinReadOf([{ key, label: "the owner's phone" }]),
+      });
+      expect(
+        await run(["decision", "read", "d1", "--signed"], built.io, built.deps),
+      ).toBe(4);
+      expect(built.out).toEqual([]);
+      expect(built.err).toEqual([
+        "waves decision read: no signed answer on the current text",
+      ]);
     });
   });
 

@@ -9,6 +9,12 @@ import {
   network,
   reply,
 } from "./support/harness.js";
+import {
+  answerKey,
+  decisionRecord,
+  pinReadOf,
+  signedEntry,
+} from "./support/signed-answer.js";
 
 type ReadCommand = Extract<
   Command,
@@ -19,7 +25,7 @@ const DECISION_URL = `http://127.0.0.1:8080/api/v1/projects/${PROJECT}/decisions
 const SHA = "a".repeat(64);
 
 function command(id = "d1"): ReadCommand {
-  return { kind: "decision", action: "read", id };
+  return { kind: "decision", action: "read", id, signed: false };
 }
 
 function record(id = "d1"): string {
@@ -240,5 +246,50 @@ describe("read", () => {
       "WAVES_PROJECT is required",
     );
     expect(built.sent()).toBe(0);
+  });
+
+  it("with --signed, fetches the record and verifies the answer itself", async () => {
+    const key = answerKey();
+    const built = signedEntry({ key, words: "Go with B" });
+    const body = decisionRecord({ entries: [built.entry] });
+    const harnessBuilt = harness({
+      script: [reply(200, body)],
+      pins: pinReadOf([{ key, label: "the owner's phone" }]),
+    });
+
+    expect(
+      await readDecision(
+        { kind: "decision", action: "read", id: "d1", signed: true },
+        harnessBuilt.deps,
+      ),
+    ).toBe(0);
+    expect(harnessBuilt.out).toEqual([
+      "signed answer: approved",
+      "words: Go with B",
+      "signed with: the owner's phone",
+      "verified against /etc/waves/owner-keys.json",
+    ]);
+    expect(harnessBuilt.err).toEqual([]);
+    expect(harnessBuilt.sent()).toBe(1);
+  });
+
+  it("with --signed and no signed answer, exits 4 and prints nothing else", async () => {
+    const key = answerKey();
+    const body = decisionRecord({ entries: [] });
+    const harnessBuilt = harness({
+      script: [reply(200, body)],
+      pins: pinReadOf([{ key, label: "the owner's phone" }]),
+    });
+
+    expect(
+      await readDecision(
+        { kind: "decision", action: "read", id: "d1", signed: true },
+        harnessBuilt.deps,
+      ),
+    ).toBe(4);
+    expect(harnessBuilt.out).toEqual([]);
+    expect(harnessBuilt.err).toEqual([
+      "waves decision read: no signed answer on the current text",
+    ]);
   });
 });
