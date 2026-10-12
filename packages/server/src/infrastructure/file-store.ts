@@ -1,5 +1,5 @@
 import type { Stats } from "node:fs";
-import { lstat, mkdir, readFile, readdir, rm } from "node:fs/promises";
+import { lstat, mkdir, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { Project, StoredSnapshot } from "@hexagen-monaco/waves-contract";
@@ -15,6 +15,8 @@ import { assertIds } from "./ids.js";
 import {
   assertRealDirectory,
   errorCode,
+  readTextNoFollow,
+  removeDocument,
   writeAtomic,
 } from "./store-helpers.js";
 
@@ -63,6 +65,15 @@ function ignore(): undefined {
  * every mutating operation of an instance runs through one in-process queue, so
  * a read-modify-write of `projects.json` never interleaves with another and a
  * `putSnapshot` cannot race a `deleteProject`.
+ *
+ * A document file that is a symbolic link is refused and reported: the
+ * operation throws `Error("<path> is a symbolic link, not a file")`. The link
+ * is never followed — nothing is read through it, nothing is written through
+ * it — and the store never deletes or replaces it by a single-document
+ * operation: removing it is the operator's. A dangling link is refused the
+ * same way. The check is on the last path component only; the directories
+ * above it are the `lstat` checks, which a writer to the data directory could
+ * still race.
  */
 export class FileStore implements StorePort<Project, StoredSnapshot> {
   readonly #dataDir: string;
@@ -143,6 +154,9 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
       const projects = await this.#readProjects();
       projects.delete(id);
       await writeAtomic(this.#projectsPath(), serialiseProjects(projects));
+      // rm removes whatever is at the name without following it — rm unlinks
+      // a link and a recursive rm does not descend through one — so a planted
+      // link does not wedge a project delete: it goes with the project.
       await rm(this.#projectDir(id), { recursive: true, force: true });
       if (statusDir) {
         await rm(this.#statusPath(id), { force: true });
@@ -220,8 +234,8 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
     await this.#serialised(async () => {
       await this.#checkedDataDir(false);
       await this.#assertSnapshotsPath(this.#projectDir(project));
-      await rm(this.#snapshotPath(project, wave), { force: true });
-      await rm(this.#headPath(project, wave), { force: true });
+      await removeDocument(this.#snapshotPath(project, wave));
+      await removeDocument(this.#headPath(project, wave));
     });
   }
 
@@ -324,14 +338,7 @@ export class FileStore implements StorePort<Project, StoredSnapshot> {
   }
 
   async #readText(path: string): Promise<string | undefined> {
-    try {
-      return await readFile(path, "utf8");
-    } catch (error) {
-      if (errorCode(error) === "ENOENT") {
-        return undefined;
-      }
-      throw error;
-    }
+    return readTextNoFollow(path);
   }
 
   async #entryNames(

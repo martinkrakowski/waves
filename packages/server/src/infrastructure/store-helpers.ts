@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
-import type { Stats } from "node:fs";
-import { rename, rm, writeFile } from "node:fs/promises";
+import { constants, type Stats } from "node:fs";
+import {
+  type FileHandle,
+  lstat,
+  open,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 
 import type { StoredEvent } from "../application/ports/notice-store.js";
 
@@ -53,20 +60,80 @@ export function assertRealDirectory(info: Stats, path: string): void {
 }
 
 /**
+ * Reads a document file as text without ever following a symbolic link: a
+ * document file that is a symbolic link is refused and reported with
+ * `<path> is a symbolic link, not a file`, and a dangling link is refused the
+ * same way. The OPEN itself refuses the link (`O_NOFOLLOW` answers `ELOOP`
+ * before the link is followed), so there is no check-then-open window on the
+ * file itself. A missing file answers `undefined`; `O_NONBLOCK` keeps a FIFO
+ * planted as a document from hanging the open, and anything at the path that
+ * is not a regular file is refused.
+ */
+export async function readTextNoFollow(
+  path: string,
+): Promise<string | undefined> {
+  let handle: FileHandle;
+  try {
+    handle = await open(
+      path,
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+    );
+  } catch (error) {
+    const code = errorCode(error);
+    if (code === "ENOENT") {
+      return undefined;
+    }
+    if (code === "ELOOP") {
+      throw new Error(`${path} is a symbolic link, not a file`);
+    }
+    throw error;
+  }
+  try {
+    if (!(await handle.stat()).isFile()) {
+      throw new Error(`${path} is not a regular file`);
+    }
+    return await handle.readFile("utf8");
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
  * Writes `payload` to `target` atomically: a temporary file in the same
  * directory, then a rename — the atomic swap — with the temporary removed on
  * failure. Shared by both file stores so the cleanup path is written once and
  * covered by either store's hostile-filesystem tests.
+ *
+ * `rename` replaces a directory entry and never writes through a link. The
+ * `lstat` of the target first is what makes an existing link a refusal
+ * (`<target> is a symbolic link, not a file`) instead of a silent
+ * replacement: nothing is written and no temporary file is created. A link
+ * created between the `lstat` and the `rename` is replaced, not followed —
+ * the remaining window, and it needs write access to the 0700 data directory.
+ * The temporary file is created with `wx` (`O_CREAT | O_EXCL`): it fails if
+ * the name exists and never follows a link at that name.
  */
 export async function writeAtomic(
   target: string,
   payload: string,
 ): Promise<void> {
+  let info: Stats | undefined;
+  try {
+    info = await lstat(target);
+  } catch (error) {
+    if (errorCode(error) !== "ENOENT") {
+      throw error;
+    }
+  }
+  if (info?.isSymbolicLink()) {
+    throw new Error(`${target} is a symbolic link, not a file`);
+  }
   const temporary = `${target}.tmp-${process.pid}-${randomUUID()}`;
   try {
     await writeFile(temporary, payload, {
       encoding: "utf8",
       mode: FILE_MODE,
+      flag: "wx",
     });
     await rename(temporary, target);
   } catch (error) {
@@ -77,6 +144,26 @@ export async function writeAtomic(
     }
     throw error;
   }
+}
+
+/**
+ * Removes one document file; a missing one is not an error; a symbolic link
+ * is refused and left in place — removing it is the operator's.
+ */
+export async function removeDocument(path: string): Promise<void> {
+  let info: Stats;
+  try {
+    info = await lstat(path);
+  } catch (error) {
+    if (errorCode(error) === "ENOENT") {
+      return;
+    }
+    throw error;
+  }
+  if (info.isSymbolicLink()) {
+    throw new Error(`${path} is a symbolic link, not a file`);
+  }
+  await rm(path, { force: true });
 }
 
 function ignore(): undefined {
