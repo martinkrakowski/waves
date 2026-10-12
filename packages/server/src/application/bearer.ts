@@ -1,5 +1,9 @@
 import type { Project, StoredSnapshot } from "@hexagen-monaco/waves-contract";
 
+import {
+  type RegistrationIdentity,
+  registrationOf,
+} from "./registration-gate.js";
 import type { StorePort } from "./ports/store.js";
 
 /**
@@ -76,7 +80,11 @@ export function matches(
 export type Authentication =
   | { readonly kind: "unknown" }
   | { readonly kind: "wrong-project"; readonly id: string }
-  | { readonly kind: "accepted"; readonly id: string };
+  | {
+      readonly kind: "accepted";
+      readonly id: string;
+      readonly registration: RegistrationIdentity;
+    };
 
 export interface AuthenticatorDeps {
   readonly store: StorePort<Project, StoredSnapshot>;
@@ -105,7 +113,7 @@ export function createAuthenticator(deps: AuthenticatorDeps): Authenticator {
       return { kind: "unknown" };
     }
     const projects = await store.listProjects();
-    let matched: string | undefined;
+    let matched: Project | undefined;
     for (const project of projects) {
       const same = matches(
         compare,
@@ -113,15 +121,19 @@ export function createAuthenticator(deps: AuthenticatorDeps): Authenticator {
         hexToDigest(project.tokenSha256),
       );
       if (same && matched === undefined) {
-        matched = project.id;
+        matched = project;
       }
     }
     if (matched === undefined) {
       return { kind: "unknown" };
     }
-    if (expectedProject !== undefined && matched !== expectedProject) {
-      return { kind: "wrong-project", id: matched };
+    if (expectedProject !== undefined && matched.id !== expectedProject) {
+      return { kind: "wrong-project", id: matched.id };
     }
-    return { kind: "accepted", id: matched };
+    return {
+      kind: "accepted",
+      id: matched.id,
+      registration: registrationOf(matched),
+    };
   };
 }

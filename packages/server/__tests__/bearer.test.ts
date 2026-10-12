@@ -102,6 +102,10 @@ describe("createAuthenticator", () => {
     await expect(authenticate(digestOf(TOKEN), "alpha")).resolves.toEqual({
       kind: "accepted",
       id: "alpha",
+      registration: {
+        tokenSha256: Buffer.from(digestOf(TOKEN)).toString("hex"),
+        registeredAt: "2026-10-01T12:00:00Z",
+      },
     });
   });
 
@@ -149,6 +153,10 @@ describe("createAuthenticator", () => {
     await expect(authenticate(digestOf(TOKEN), "alpha")).resolves.toEqual({
       kind: "accepted",
       id: "alpha",
+      registration: {
+        tokenSha256: Buffer.from(digestOf(TOKEN)).toString("hex"),
+        registeredAt: "2026-10-01T12:00:00Z",
+      },
     });
     expect(seen).toHaveLength(3);
   });
@@ -196,6 +204,10 @@ describe("createAuthenticator", () => {
     await expect(authenticate(digestOf(TOKEN))).resolves.toEqual({
       kind: "accepted",
       id: "alpha",
+      registration: {
+        tokenSha256: Buffer.from(digestOf(TOKEN)).toString("hex"),
+        registeredAt: "2026-10-01T12:00:00Z",
+      },
     });
   });
 });
