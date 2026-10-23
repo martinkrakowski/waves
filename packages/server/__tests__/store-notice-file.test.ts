@@ -1,9 +1,11 @@
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
+  rmSync,
   statSync,
   symlinkSync,
   writeFileSync,
@@ -23,6 +25,7 @@ import {
   storedEntry,
   storedRevision,
 } from "./notice-contract.js";
+import { refuseLink } from "./refuse-link.js";
 
 function harness(): {
   store: FileNoticeStore;
@@ -590,7 +593,7 @@ describe("FileNoticeStore edge cases", () => {
     }
   });
 
-  it("skips a decision file that is gone by the time it is read", async () => {
+  it("refuses a symlinked decision file when listing", async () => {
     const { store, dataDir, dispose } = harness();
     try {
       await store.appendRevision("alpha", "d1", storedRevision(1), 0, 3);
@@ -598,8 +601,9 @@ describe("FileNoticeStore edge cases", () => {
         join(dataDir, "nowhere.json"),
         join(dataDir, "decisions", "alpha", "ghost.json"),
       );
-      const listed = await store.listDecisions("alpha");
-      expect(listed.map((decision) => decision.id)).toEqual(["d1"]);
+      await expect(store.listDecisions("alpha")).rejects.toThrow(
+        /is a symbolic link, not a file/,
+      );
     } finally {
       await dispose();
     }
@@ -613,6 +617,116 @@ describe("FileNoticeStore edge cases", () => {
       const listed = await store.listDecisions("alpha");
       expect(listed.map((decision) => decision.id)).toEqual(["d1", "d2"]);
     } finally {
+      await dispose();
+    }
+  });
+});
+
+describe("FileNoticeStore refuses a symlinked document file on read", () => {
+  it("refuses a symlinked decision file on every read", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.appendRevision("alpha", "d1", storedRevision(1), 0, 3);
+      const stored = join(dataDir, "decisions", "alpha", "d1.json");
+
+      await refuseLink(stored, () => store.getDecision("alpha", "d1"));
+      await expect(store.listDecisions("alpha")).rejects.toThrow(
+        /is a symbolic link, not a file/,
+      );
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("refuses a symlinked events file when listing events", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.appendEvent(
+        "alpha",
+        { id: "e0", receivedAt: "2026-10-08T13:00:00Z", event: event() },
+        10,
+      );
+      const stored = join(dataDir, "events", "alpha.json");
+
+      await refuseLink(stored, () => store.listEvents("alpha", 10));
+    } finally {
+      await dispose();
+    }
+  });
+});
+
+describe("FileNoticeStore refuses a symlinked document file on write", () => {
+  it("refuses a revision appended to a symlinked decision file", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.appendRevision("alpha", "d1", storedRevision(1), 0, 3);
+
+      await refuseLink(join(dataDir, "decisions", "alpha", "d1.json"), () =>
+        store.appendRevision("alpha", "d1", storedRevision(2), 1, 3),
+      );
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("refuses an entry appended to a symlinked decision file", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.appendRevision("alpha", "d1", storedRevision(1), 0, 3);
+
+      await refuseLink(join(dataDir, "decisions", "alpha", "d1.json"), () =>
+        store.appendEntry("alpha", "d1", storedEntry(0), 0, 1),
+      );
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("refuses an event appended beside a symlinked events file", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.appendEvent(
+        "alpha",
+        { id: "e0", receivedAt: "2026-10-08T13:00:00Z", event: event() },
+        10,
+      );
+
+      await refuseLink(join(dataDir, "events", "alpha.json"), () =>
+        store.appendEvent(
+          "alpha",
+          { id: "e0", receivedAt: "2026-10-08T13:00:00Z", event: event() },
+          10,
+        ),
+      );
+    } finally {
+      await dispose();
+    }
+  });
+});
+
+describe("FileNoticeStore removes a symlinked events file with the notices", () => {
+  it("deletes a symlinked events file without following it", async () => {
+    const { store, dataDir, dispose } = harness();
+    const outsideDir = mkdtempSync(join(tmpdir(), "waves-outside-"));
+    try {
+      await store.appendEvent(
+        "alpha",
+        { id: "e0", receivedAt: "2026-10-08T13:00:00Z", event: event() },
+        10,
+      );
+      const stored = join(dataDir, "events", "alpha.json");
+      const bytes = readFileSync(stored, "utf8");
+      const outsideFile = join(outsideDir, "events.json");
+      writeFileSync(outsideFile, bytes);
+      rmSync(stored);
+      symlinkSync(outsideFile, stored);
+
+      await expect(store.deleteNotices("alpha")).resolves.toBeUndefined();
+
+      expect(existsSync(stored)).toBe(false);
+      expect(readFileSync(outsideFile, "utf8")).toBe(bytes);
+    } finally {
+      await rm(outsideDir, { recursive: true, force: true });
       await dispose();
     }
   });

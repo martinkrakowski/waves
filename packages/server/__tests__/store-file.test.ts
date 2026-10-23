@@ -4,6 +4,8 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
+  rmSync,
   statSync,
   symlinkSync,
   writeFileSync,
@@ -21,6 +23,7 @@ import {
   snapshot,
   status,
 } from "./store-contract.js";
+import { refuseLink } from "./refuse-link.js";
 
 interface FileHarness {
   readonly store: FileStore;
@@ -228,18 +231,237 @@ describe("FileStore durability", () => {
     }
   });
 
-  it("ignores a dangling symlink and other files when listing", async () => {
+  it("ignores a leftover temporary file when listing", async () => {
     const { store, dataDir, dispose } = harness();
     try {
       await store.putSnapshot(snapshot("wv1"));
       const waveDir = join(dataDir, "snapshots", "alpha");
-      symlinkSync(join(waveDir, "gone.json"), join(waveDir, "wv2.json"));
       writeFileSync(join(waveDir, "wv3.json.tmp-1-2"), "{partial");
 
       await expect(store.listSnapshots("alpha")).resolves.toEqual([
         snapshot("wv1"),
       ]);
     } finally {
+      await dispose();
+    }
+  });
+
+  it("refuses a symlinked snapshot file when listing", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.putSnapshot(snapshot("wv1"));
+      const waveDir = join(dataDir, "snapshots", "alpha");
+      symlinkSync(join(waveDir, "gone.json"), join(waveDir, "wv2.json"));
+
+      await expect(store.listSnapshots("alpha")).rejects.toThrow(
+        /is a symbolic link, not a file/,
+      );
+    } finally {
+      await dispose();
+    }
+  });
+});
+
+describe("FileStore refuses a symlinked document file on read", () => {
+  it("refuses a symlinked projects file on every read", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.putProject(project("alpha"));
+      const stored = join(dataDir, "projects.json");
+
+      await refuseLink(stored, () => store.getProject("alpha"));
+      await expect(store.listProjects()).rejects.toThrow(
+        /is a symbolic link, not a file/,
+      );
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("refuses a symlinked snapshot file on read", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.putSnapshot(snapshot("wv1"));
+
+      await refuseLink(join(dataDir, "snapshots", "alpha", "wv1.json"), () =>
+        store.getSnapshot("alpha", "wv1"),
+      );
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("refuses a symlinked head file when listing heads", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.putSnapshot(snapshot("wv1"));
+
+      await refuseLink(
+        join(dataDir, "snapshots", "alpha", "wv1.head.json"),
+        () => store.listSnapshotHeads("alpha"),
+      );
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("refuses a symlinked status file on read", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.putStatus({
+        status: status("alpha"),
+        receivedAt: "2026-10-01T12:00:01Z",
+      });
+
+      await refuseLink(join(dataDir, "status", "alpha.json"), () =>
+        store.getStatus("alpha"),
+      );
+    } finally {
+      await dispose();
+    }
+  });
+});
+
+describe("FileStore refuses a symlinked document file on write", () => {
+  it("refuses a write to a symlinked projects file", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.putProject(project("alpha"));
+
+      await refuseLink(join(dataDir, "projects.json"), () =>
+        store.putProject(project("alpha", "Second")),
+      );
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("refuses a create that would write a symlinked projects file", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.putProject(project("alpha"));
+
+      await refuseLink(join(dataDir, "projects.json"), () =>
+        store.createProject(project("beta"), 64),
+      );
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("refuses a write to a symlinked snapshot file", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.putSnapshot(snapshot("wv1"));
+
+      await refuseLink(join(dataDir, "snapshots", "alpha", "wv1.json"), () =>
+        store.putSnapshot(snapshot("wv1", "2026-10-01T13:00:00Z")),
+      );
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("lets the snapshot land and refuses the symlinked head beside it", async () => {
+    const { store, dataDir, dispose } = harness();
+    const waveDir = join(dataDir, "snapshots", "alpha");
+    try {
+      await store.putSnapshot(snapshot("wv1"));
+
+      await refuseLink(join(waveDir, "wv1.head.json"), () =>
+        store.putSnapshot(snapshot("wv1", "2026-10-01T13:00:00Z")),
+      );
+      expect(
+        JSON.parse(readFileSync(join(waveDir, "wv1.json"), "utf8")),
+      ).toEqual(snapshot("wv1", "2026-10-01T13:00:00Z"));
+      // The snapshot write landed before the head write refused.
+      expect(statSync(join(waveDir, "wv1.json")).isFile()).toBe(true);
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("refuses a write to a symlinked status file", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.putStatus({
+        status: status("alpha"),
+        receivedAt: "2026-10-01T12:00:01Z",
+      });
+
+      await refuseLink(join(dataDir, "status", "alpha.json"), () =>
+        store.putStatus({
+          status: status("alpha", { generatedAt: "2026-10-01T13:00:00Z" }),
+          receivedAt: "2026-10-01T13:00:01Z",
+        }),
+      );
+    } finally {
+      await dispose();
+    }
+  });
+});
+
+describe("FileStore refuses a symlinked document file on a single delete", () => {
+  it("refuses to delete a single snapshot that is a symlink", async () => {
+    const { store, dataDir, dispose } = harness();
+    try {
+      await store.putSnapshot(snapshot("wv1"));
+
+      await refuseLink(join(dataDir, "snapshots", "alpha", "wv1.json"), () =>
+        store.deleteSnapshot("alpha", "wv1"),
+      );
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("resolves the deletion of a wave that is not there", async () => {
+    const { store, dispose } = harness();
+    try {
+      await store.putSnapshot(snapshot("wv1"));
+
+      await expect(
+        store.deleteSnapshot("alpha", "wv2"),
+      ).resolves.toBeUndefined();
+      await expect(store.listSnapshots("alpha")).resolves.toEqual([
+        snapshot("wv1"),
+      ]);
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("removes symlinked documents with the project, without following them", async () => {
+    const { store, dataDir, dispose } = harness();
+    const outsideDir = mkdtempSync(join(tmpdir(), "waves-outside-"));
+    try {
+      await store.putProject(project("alpha"));
+      await store.putSnapshot(snapshot("wv1"));
+      await store.putStatus({
+        status: status("alpha"),
+        receivedAt: "2026-10-01T12:00:01Z",
+      });
+      const snapshotPath = join(dataDir, "snapshots", "alpha", "wv1.json");
+      const statusPath = join(dataDir, "status", "alpha.json");
+      const snapshotBytes = readFileSync(snapshotPath, "utf8");
+      const statusBytes = readFileSync(statusPath, "utf8");
+      const outsideSnapshot = join(outsideDir, "snapshot.json");
+      const outsideStatus = join(outsideDir, "status.json");
+      writeFileSync(outsideSnapshot, snapshotBytes);
+      writeFileSync(outsideStatus, statusBytes);
+      rmSync(snapshotPath);
+      rmSync(statusPath);
+      symlinkSync(outsideSnapshot, snapshotPath);
+      symlinkSync(outsideStatus, statusPath);
+
+      await expect(store.deleteProject("alpha")).resolves.toBeUndefined();
+
+      expect(existsSync(snapshotPath)).toBe(false);
+      expect(existsSync(statusPath)).toBe(false);
+      expect(readFileSync(outsideSnapshot, "utf8")).toBe(snapshotBytes);
+      expect(readFileSync(outsideStatus, "utf8")).toBe(statusBytes);
+    } finally {
+      await rm(outsideDir, { recursive: true, force: true });
       await dispose();
     }
   });

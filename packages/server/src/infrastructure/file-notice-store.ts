@@ -1,5 +1,5 @@
 import type { Stats } from "node:fs";
-import { lstat, mkdir, readFile, readdir, rm } from "node:fs/promises";
+import { lstat, mkdir, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
@@ -23,6 +23,7 @@ import {
   assertRealDirectory,
   errorCode,
   nextEventSequence,
+  readTextNoFollow,
   writeAtomic,
 } from "./store-helpers.js";
 
@@ -211,6 +212,15 @@ function readEvents(raw: string | undefined, project: string): StoredEvent[] {
  * and serialises its appends the same way `createProject` does: nothing is
  * awaited between the read and the write of one append, so two writers that
  * read the same count cannot both pass.
+ *
+ * A document file that is a symbolic link is refused and reported: the
+ * operation throws `Error("<path> is a symbolic link, not a file")`. The link
+ * is never followed — nothing is read through it, nothing is written through
+ * it — and the store never deletes or replaces it by a single-document
+ * operation: removing it is the operator's. A dangling link is refused the
+ * same way. The check is on the last path component only; the directories
+ * above it are the `lstat` checks, which a writer to the data directory could
+ * still race.
  */
 export class FileNoticeStore implements NoticeStorePort {
   readonly #dataDir: string;
@@ -381,6 +391,9 @@ export class FileNoticeStore implements NoticeStorePort {
       await this.#checkedDataDir(false);
       await this.#assertRealDirectoryOrAbsent(this.#decisionsDir());
       await this.#assertRealDirectoryOrAbsent(this.#eventsDir());
+      // rm removes whatever is at the name without following it — rm unlinks
+      // a link and a recursive rm does not descend through one — so a planted
+      // link does not wedge a delete of the notices: it goes with them.
       await rm(this.#projectDecisionsDir(project), {
         recursive: true,
         force: true,
@@ -456,14 +469,7 @@ export class FileNoticeStore implements NoticeStorePort {
   }
 
   async #readText(path: string): Promise<string | undefined> {
-    try {
-      return await readFile(path, "utf8");
-    } catch (error) {
-      if (errorCode(error) === "ENOENT") {
-        return undefined;
-      }
-      throw error;
-    }
+    return readTextNoFollow(path);
   }
 
   async #entryNames(
