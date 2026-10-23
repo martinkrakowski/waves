@@ -100,7 +100,9 @@ describe("readTextNoFollow", () => {
     try {
       writeFileSync(join(dir, "file"), "");
 
-      await expect(readTextNoFollow(join(dir, "file", "x"))).rejects.toThrow();
+      await expect(
+        readTextNoFollow(join(dir, "file", "x")),
+      ).rejects.toMatchObject({ code: "ENOTDIR" });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -169,7 +171,7 @@ describe("writeAtomic", () => {
 
       await expect(
         writeAtomic(join(dir, "file", "x"), "payload"),
-      ).rejects.toThrow();
+      ).rejects.toMatchObject({ code: "ENOTDIR" });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
