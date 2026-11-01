@@ -379,7 +379,10 @@
 .seat {
   color: var(--muted);
   font-size: 0.85rem;
+  max-width: 100%;
+  min-width: 0;
   overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* One column below 1080px, where two columns of cards stop fitting. */

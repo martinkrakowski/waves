@@ -269,7 +269,9 @@
 .view.project .panel.seats .name {
   font-family: var(--mono);
   font-size: 0.8rem;
+  min-width: 0;
   overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .view.project .panel.seats meter {
@@ -571,8 +573,11 @@
   color: var(--muted);
   display: block;
   font-size: 0.78rem;
-  max-width: 28rem;
+  margin-right: 0;
+  max-width: min(100%, 28rem);
+  min-width: 0;
   overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* The counts and the two timestamps, in mono: they are read against each other. */

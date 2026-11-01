@@ -694,7 +694,7 @@ function staleBanner(model, nowMs, stale) {
           text("."),
         ];
   return el("p", {
-    attrs: { class: "banner stale", role: "status" },
+    attrs: { class: "banner stale", role: "status", "aria-live": "polite" },
     children,
   });
 }
@@ -1003,7 +1003,7 @@ function toolbar(model, scope, handlers) {
       }),
       ...searchFilter(model.query.q, handlers),
       el("span", {
-        attrs: { class: "shown", role: "status" },
+        attrs: { class: "shown", role: "status", "aria-live": "polite" },
         text: `${shown} of ${scope.length} shown`,
       }),
       ...copyDigest(model, handlers),
