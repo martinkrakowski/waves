@@ -1366,6 +1366,14 @@ describe("the toolbar", () => {
     ]);
   });
 
+  it("carries a data-reason attribute holding the stable reason", () => {
+    expect(
+      Array.from(drawn().host.querySelectorAll(".chips a"), (anchor) =>
+        anchor.getAttribute("data-reason"),
+      ),
+    ).toStrictEqual(["all", "failed", "gate"]);
+  });
+
   it("marks the all chip current while no reason is chosen", () => {
     expect(
       textsOf(drawn().host, '.chips a[aria-current="true"]'),

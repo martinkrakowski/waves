@@ -992,6 +992,79 @@ describe("what a change of the address asks for", () => {
     expect(browser.replaces).toStrictEqual([]);
     app.stop();
   });
+
+  async function seatedFilter(): Promise<{
+    readonly app: ReturnType<typeof createApp>;
+    readonly browser: ReturnType<typeof browserGlobals>;
+    readonly seat: HTMLSelectElement;
+  }> {
+    const { app, browser } = harness({
+      pathname: "/p/alpha",
+      fetchImpl: fetchStub(seated),
+    });
+    app.start();
+    await flush();
+    const seat = root().querySelector("#filter-seat") as HTMLSelectElement;
+    return { app, browser, seat };
+  }
+
+  it("pushes a second mouse choice and does not write it over the first", async () => {
+    const { app, browser, seat } = await seatedFilter();
+
+    click(seat);
+    seat.value = "s2";
+    seat.dispatchEvent(new Event("change", { bubbles: true }));
+
+    click(seat);
+    seat.value = "s1";
+    seat.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(browser.pushes).toStrictEqual([
+      "/p/alpha?seat=s2",
+      "/p/alpha?seat=s1",
+    ]);
+    expect(browser.replaces).toStrictEqual([]);
+    app.stop();
+  });
+
+  it("pushes when a change follows a return through the history or unrelated navigation", async () => {
+    const { app, browser, seat } = await seatedFilter();
+
+    seat.value = "s2";
+    seat.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(browser.pushes).toStrictEqual(["/p/alpha?seat=s2"]);
+
+    browser.location.search = "";
+    browser.popstate();
+    browser.location.search = "?seat=s2";
+    browser.popstate();
+
+    let current = root().querySelector("#filter-seat") as HTMLSelectElement;
+    current.value = "s1";
+    current.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(browser.pushes).toStrictEqual([
+      "/p/alpha?seat=s2",
+      "/p/alpha?seat=s1",
+    ]);
+
+    app.navigate("/p/alpha?all=1");
+    app.navigate("/p/alpha?seat=s1");
+
+    current = root().querySelector("#filter-seat") as HTMLSelectElement;
+    current.value = "s2";
+    current.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(browser.pushes).toStrictEqual([
+      "/p/alpha?seat=s2",
+      "/p/alpha?seat=s1",
+      "/p/alpha?all=1",
+      "/p/alpha?seat=s1",
+      "/p/alpha?seat=s2",
+    ]);
+    expect(browser.replaces).toStrictEqual([]);
+    app.stop();
+  });
 });
 
 describe("the / key", () => {
@@ -1163,6 +1236,46 @@ describe("the focus after a reason chip", () => {
     expect(again).not.toBe(chip);
     expect(again.getAttribute("href")).toBe("/p/alpha");
     expect(document.activeElement).toBe(again);
+    app.stop();
+  });
+
+  it("keeps focus on a reason chip when its count changes across a refresh pass", async () => {
+    let secondLane = false;
+    const fetchImpl = fetchStub((path) => {
+      if (/\/lanes/.test(path) && secondLane) {
+        return {
+          status: 200,
+          body: projectLanes({
+            waves: [waveSummary({ wave: "w-3", lanes: 3 })],
+            lanes: [
+              laneRow({ id: "wv-a", reasons: ["failed"] }),
+              laneRow({ id: "wv-b", reasons: ["failed", "gate"] }),
+              laneRow({ id: "wv-c", reasons: ["failed"] }),
+            ],
+          }),
+        };
+      }
+      return chipped(path);
+    });
+
+    const { app } = harness({ pathname: "/p/alpha", fetchImpl });
+    app.start();
+    await flush();
+
+    const chip = root().querySelector(
+      '.chips a[data-reason="failed"]',
+    ) as HTMLElement;
+    chip.focus();
+    expect(document.activeElement).toBe(chip);
+
+    secondLane = true;
+    await app.refresh();
+
+    const after = root().querySelector(
+      '.chips a[data-reason="failed"]',
+    ) as HTMLElement;
+    expect(textOf(after)).toBe("failed · 3");
+    expect(document.activeElement).toBe(after);
     app.stop();
   });
 });
@@ -1656,13 +1769,21 @@ describe("the projects menu", () => {
   it("stays open when a redraw lands between the click and the toggle", async () => {
     const { app, timers } = await onFleet();
 
-    // What a browser does with a click on the summary: the element has not
-    // flipped while the click is being handled, and the toggle arrives later,
-    // as a queued task. Whatever this DOM does with the default action, the
-    // app has already heard of the reader's choice by the time it draws.
+    let deliver: (() => void) | undefined;
+    const hold = (event: Event): void => {
+      event.stopImmediatePropagation();
+      deliver = () => {
+        menu().dispatchEvent(new Event("toggle"));
+      };
+    };
+    document.addEventListener("toggle", hold, true);
+
     summary().click();
     timers.runLast();
     await flush();
+
+    document.removeEventListener("toggle", hold, true);
+    deliver?.();
 
     expect(menu().open).toBe(true);
     app.stop();

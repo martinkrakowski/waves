@@ -870,7 +870,9 @@ function reasonChips(model, scope) {
         reason: undefined,
         lane: undefined,
       }),
-      active === undefined ? { "aria-current": "true" } : {},
+      active === undefined
+        ? { "aria-current": "true", "data-reason": "all" }
+        : { "data-reason": "all" },
     ),
   ];
   for (const [reason, count] of reasonCounts(scope)) {
@@ -886,7 +888,9 @@ function reasonChips(model, scope) {
           reason: current ? undefined : reason,
           lane: undefined,
         }),
-        current ? { "aria-current": "true" } : {},
+        current
+          ? { "aria-current": "true", "data-reason": reason }
+          : { "data-reason": reason },
       ),
     );
   }

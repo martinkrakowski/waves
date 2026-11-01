@@ -189,6 +189,11 @@ export function createApp(deps) {
    */
   let filterKey = undefined;
   let filterAddress = undefined;
+
+  function clearFilter() {
+    filterKey = undefined;
+    filterAddress = undefined;
+  }
   /**
    * Which project rows the reader has opened, as the project ids they are drawn
    * from. A `Set` and not one boolean, because rows open one at a time; and
@@ -711,7 +716,7 @@ export function createApp(deps) {
             ...patch,
             lane: undefined,
           }),
-          again ? { replace: true } : {},
+          again ? { replace: true, filter: true } : { filter: true },
         );
         filterAddress = `${location.pathname}${location.search}`;
       },
@@ -841,7 +846,7 @@ export function createApp(deps) {
     // label holds a count of the scope, which no filter moves, so the chip is
     // remembered by the text it was drawn with and found again by it.
     if (active.closest("nav.chips") !== null) {
-      return { chip: active.textContent };
+      return { chip: active.getAttribute("data-reason") };
     }
     const href = active.getAttribute("href");
     if (href === null) {
@@ -868,7 +873,7 @@ export function createApp(deps) {
     if (focused.chip !== undefined) {
       const chips = [...root.querySelectorAll("nav.chips a")];
       chips
-        .find((anchor) => anchor.textContent === focused.chip)
+        .find((anchor) => anchor.getAttribute("data-reason") === focused.chip)
         ?.focus({ preventScroll: true });
       return;
     }
@@ -1647,6 +1652,9 @@ export function createApp(deps) {
    * otherwise put one entry per keystroke in front of the reader's back button.
    */
   function navigate(url, options = {}) {
+    if (options.filter !== true) {
+      clearFilter();
+    }
     const path = ownPath(url);
     if (path === undefined) {
       return;
@@ -1663,6 +1671,7 @@ export function createApp(deps) {
   }
 
   function onPopState() {
+    clearFilter();
     reread();
   }
 
@@ -1703,6 +1712,7 @@ export function createApp(deps) {
     if (node === null || node.nodeType !== 1) {
       return;
     }
+    clearFilter();
     // A click on the summary is the one click whose default action flips the
     // menu, and the browser reports that flip later, as a queued task. A
     // ten-second redraw landing in the one task between the two would draw

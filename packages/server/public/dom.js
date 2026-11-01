@@ -14,6 +14,7 @@ const SETTERS = {
   class: (node, value) => node.setAttribute("class", value),
   "data-label": (node, value) => node.setAttribute("data-label", value),
   "data-key": (node, value) => node.setAttribute("data-key", value),
+  "data-reason": (node, value) => node.setAttribute("data-reason", value),
   rel: (node, value) => node.setAttribute("rel", value),
   role: (node, value) => node.setAttribute("role", value),
   title: (node, value) => node.setAttribute("title", value),
