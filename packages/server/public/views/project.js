@@ -65,10 +65,12 @@ export function scopeOf(view, wave) {
 }
 
 /**
- * The six numbers the page leads with, counted over the rows in scope rather than
- * over the response. A filter narrows the table and leaves these alone: a
+ * The six numbers the rows in scope answer to, counted over the rows rather
+ * than over the response. A filter narrows the table and leaves these alone: a
  * counter that moved with the filter would be a second, contradicting answer to
- * the same question.
+ * the same question. The "Lanes" box takes the count the strip gives for the
+ * same scope instead of `lanes`, because the head is the only statement of how
+ * many lanes a wave has and a listing bound can leave rows out.
  */
 export function countersOf(rows) {
   let alive = 0;
@@ -389,6 +391,21 @@ function shownLanes(model) {
   );
 }
 
+/**
+ * What the strip says the scope holds: beside the wave's own link on a wave's
+ * page, beside "all lanes" on the project's. The head is the only statement of
+ * how many lanes a wave has, and the listing holds only the rows its bounds
+ * let through, so a counter that counted the rows would contradict the strip
+ * on the same page the moment a bound cut in.
+ */
+function scopeLanes(model) {
+  const head =
+    model.wave === undefined
+      ? undefined
+      : model.lanes.waves.find((entry) => entry.wave === model.wave);
+  return head === undefined ? shownLanes(model) : head.lanes;
+}
+
 function allLanesItem(model) {
   const current = model.wave === undefined;
   return el("li", {
@@ -645,12 +662,12 @@ function statusPanel(model, nowMs) {
  * a counter that is only amber is a counter a reader who cannot see amber has not
  * read.
  */
-function laneCounters(rows) {
-  const counts = countersOf(rows);
+function laneCounters(model, scope) {
+  const counts = countersOf(scope);
   return el("dl", {
     attrs: { class: "kpis" },
     children: [
-      kpi("Lanes", counts.lanes, false),
+      kpi("Lanes", scopeLanes(model), false),
       kpi("Alive", counts.alive, false),
       kpi("Unknown", counts.unknown, counts.unknown > 0),
       kpi("Need attention", counts.attention, counts.attention > 0),
@@ -904,9 +921,10 @@ function selectFilter({ id, key, label, all, options, chosen, handlers }) {
   // table below it is empty, which is what such a filter really means.
   select.value = chosen !== undefined && options.includes(chosen) ? chosen : "";
   select.addEventListener("change", () => {
-    handlers.onFilter({
-      [key]: select.value === "" ? undefined : select.value,
-    });
+    handlers.onFilter(
+      { [key]: select.value === "" ? undefined : select.value },
+      key,
+    );
   });
   return [el("label", { attrs: { for: id }, text: label }), select];
 }
@@ -1241,7 +1259,7 @@ export function renderProject(model, nowMs, handlers) {
   }
   children.push(waveStrip(model, nowMs), ...omittedWaves(model));
   const scope = scopeOf(view, model.wave);
-  children.push(laneCounters(scope));
+  children.push(laneCounters(model, scope));
   children.push(...statusPanel(model, nowMs));
   const stale = staleWavesOf(view, model.wave, model.query.all);
   if (stale.length > 0) {

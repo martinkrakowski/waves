@@ -179,6 +179,17 @@ export function createApp(deps) {
   let note = "";
   let menuOpen = false;
   /**
+   * The select the last filter navigation came from, and the address that
+   * navigation produced. Arrowing through a closed select commits one choice
+   * per step, and a step that pushed would leave one history entry per arrow.
+   * So a change from the same select, at the address that select's last
+   * change produced, writes the address over itself; a change from anywhere
+   * else — the other select, a link, a return through the history — pushes,
+   * because the address it starts from is not one this filter wrote.
+   */
+  let filterKey = undefined;
+  let filterAddress = undefined;
+  /**
    * Which project rows the reader has opened, as the project ids they are drawn
    * from. A `Set` and not one boolean, because rows open one at a time; and
    * never cleared, because unlike the menu this is the reader's own place in the
@@ -689,14 +700,20 @@ export function createApp(deps) {
    */
   function projectHandlers() {
     return {
-      onFilter: (patch) => {
+      onFilter: (patch, key) => {
+        const at = `${location.pathname}${location.search}`;
+        const again =
+          key !== undefined && key === filterKey && at === filterAddress;
+        filterKey = key;
         navigate(
           hrefFor(route.id, route.wave, {
             ...query,
             ...patch,
             lane: undefined,
           }),
+          again ? { replace: true } : {},
         );
+        filterAddress = `${location.pathname}${location.search}`;
       },
       onSearch: (text) => {
         navigate(
@@ -816,6 +833,16 @@ export function createApp(deps) {
         ? { key, start, end: active.selectionEnd }
         : { key };
     }
+    // A reason chip is a link whose address does not survive its own press:
+    // activating a reason rewrites the chip set, and the chip that was pressed
+    // now links to turning itself off, so by the time the redraw lands its
+    // href is an address no chip carries any more. The bar keeps its shape —
+    // "all", then every reason with rows, in the server's order — and a chip's
+    // label holds a count of the scope, which no filter moves, so the chip is
+    // remembered by the text it was drawn with and found again by it.
+    if (active.closest("nav.chips") !== null) {
+      return { chip: active.textContent };
+    }
     const href = active.getAttribute("href");
     if (href === null) {
       return undefined;
@@ -836,6 +863,13 @@ export function createApp(deps) {
    */
   function refocus(focused) {
     if (focused === undefined) {
+      return;
+    }
+    if (focused.chip !== undefined) {
+      const chips = [...root.querySelectorAll("nav.chips a")];
+      chips
+        .find((anchor) => anchor.textContent === focused.chip)
+        ?.focus({ preventScroll: true });
       return;
     }
     if (focused.key !== undefined) {
@@ -1669,6 +1703,16 @@ export function createApp(deps) {
     if (node === null || node.nodeType !== 1) {
       return;
     }
+    // A click on the summary is the one click whose default action flips the
+    // menu, and the browser reports that flip later, as a queued task. A
+    // ten-second redraw landing in the one task between the two would draw
+    // the menu from the state that is not yet true and shut it under the
+    // reader's hand. So the flip is predicted here, from the state the
+    // element is in while the click is being handled; the queued toggle will
+    // say the same thing and move nothing.
+    if (node.closest("details.menu > summary") !== null) {
+      menuOpen = !menuOpen;
+    }
     if (node.closest("details.menu") === null) {
       shutMenu();
     }
@@ -1799,7 +1843,7 @@ export function createApp(deps) {
       // The entrance plays on the first paint with data and on no other, so the
       // frame marks the first one here and `draw()` takes the mark off again.
       root.setAttribute("data-first", "1");
-      root.addEventListener("click", onClick);
+      root.addEventListener("click", onClick, true);
       root.addEventListener("toggle", onToggle, true);
     }
     if (dialog !== undefined) {
@@ -1833,7 +1877,7 @@ export function createApp(deps) {
     doc.removeEventListener("keydown", onMenuKey);
     win.removeEventListener("popstate", onPopState);
     if (root !== null) {
-      root.removeEventListener("click", onClick);
+      root.removeEventListener("click", onClick, true);
       root.removeEventListener("toggle", onToggle, true);
     }
     if (dialog !== undefined) {

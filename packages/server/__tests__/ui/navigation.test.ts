@@ -7,6 +7,7 @@ import { el, repoLink } from "../../public/dom.js";
 import type { InboxProject } from "../../src/application/notice-read-model.js";
 import type { ProjectLanesView } from "../../src/application/read-model.js";
 import {
+  NOW_ISO,
   attentionView,
   decisionResponse,
   inboxEvent,
@@ -734,8 +735,16 @@ describe("what a change of the address asks for", () => {
       body: projectLanes({
         waves: [waveSummary({ wave: "w-3" })],
         lanes: [
-          laneRow({ id: "wv-a", seat: "s1" }),
-          laneRow({ id: "wv-b", seat: "s2" }),
+          laneRow({
+            id: "wv-a",
+            seat: "s1",
+            reported: { stage: "review", event: "settled", ts: NOW_ISO },
+          }),
+          laneRow({
+            id: "wv-b",
+            seat: "s2",
+            reported: { stage: "review", event: "settled", ts: NOW_ISO },
+          }),
         ],
       }),
     };
@@ -936,6 +945,53 @@ describe("what a change of the address asks for", () => {
     expect(browser.pushes).toStrictEqual(["/p/alpha?seat=s2&all=1"]);
     app.stop();
   });
+
+  it("pushes the first choice a select makes, and writes later ones over it", async () => {
+    const fetchImpl = fetchStub(seated);
+    const { app, browser } = harness({ pathname: "/p/alpha", fetchImpl });
+    app.start();
+    await flush();
+    fetchImpl.calls.length = 0;
+
+    const select = root().querySelector("#filter-seat") as HTMLSelectElement;
+    select.value = "s2";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(browser.pushes).toStrictEqual(["/p/alpha?seat=s2"]);
+
+    // The redraw put a fresh select in the reader's hands, and arrowing on
+    // commits again from it: another entry per step would fill the history
+    // with every step of one choosing.
+    const again = root().querySelector("#filter-seat") as HTMLSelectElement;
+    again.value = "s1";
+    again.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(browser.pushes).toStrictEqual(["/p/alpha?seat=s2"]);
+    expect(browser.replaces).toStrictEqual(["/p/alpha?seat=s1"]);
+    expect(textsOf(root(), "td[data-label='Lane'] a")).toStrictEqual(["wv-a"]);
+    app.stop();
+  });
+
+  it("pushes again when the change comes from anywhere else", async () => {
+    const fetchImpl = fetchStub(seated);
+    const { app, browser } = harness({ pathname: "/p/alpha", fetchImpl });
+    app.start();
+    await flush();
+
+    const seat = root().querySelector("#filter-seat") as HTMLSelectElement;
+    seat.value = "s2";
+    seat.dispatchEvent(new Event("change", { bubbles: true }));
+    const stage = root().querySelector("#filter-stage") as HTMLSelectElement;
+    stage.value = "review";
+    stage.dispatchEvent(new Event("change", { bubbles: true }));
+
+    // The other select is another choosing: it starts from an address this
+    // one did not write, so it pushes.
+    expect(browser.pushes).toStrictEqual([
+      "/p/alpha?seat=s2",
+      "/p/alpha?stage=review&seat=s2",
+    ]);
+    expect(browser.replaces).toStrictEqual([]);
+    app.stop();
+  });
 });
 
 describe("the / key", () => {
@@ -1053,6 +1109,60 @@ describe("the / key", () => {
 
     expect(event.defaultPrevented).toBe(false);
     expect(document.activeElement).toBe(document.body);
+    app.stop();
+  });
+});
+
+describe("the focus after a reason chip", () => {
+  /** A project whose lanes carry two reasons to chip. */
+  function chipped(path: string): Answer {
+    if (path === "/api/v1/projects") {
+      return { status: 200, body: PROJECTS };
+    }
+    if (path === "/api/v1/attention") {
+      return { status: 200, body: attentionView() };
+    }
+    // No status: the panel would rather be absent than drawn from something the
+    // page cannot read.
+    if (/\/status$/.test(path)) {
+      return { status: 404 };
+    }
+    return {
+      status: 200,
+      body: projectLanes({
+        waves: [waveSummary({ wave: "w-3", lanes: 2 })],
+        lanes: [
+          laneRow({ id: "wv-a", reasons: ["failed"] }),
+          laneRow({ id: "wv-b", reasons: ["failed", "gate"] }),
+        ],
+      }),
+    };
+  }
+
+  it("stays on the chip the reader pressed, at its toggled-off address", async () => {
+    const { app } = harness({
+      pathname: "/p/alpha",
+      fetchImpl: fetchStub(chipped),
+    });
+    app.start();
+    await flush();
+
+    const chip = Array.from(root().querySelectorAll(".chips a")).find(
+      (anchor) => textOf(anchor) === "failed · 2",
+    ) as HTMLElement;
+    expect(chip.getAttribute("href")).toBe("/p/alpha?reason=failed");
+    chip.focus();
+    chip.click();
+    await flush();
+
+    // The chip the redraw drew is a new element at the toggled-off address,
+    // and it carries the same label: the same place the reader pressed.
+    const again = Array.from(root().querySelectorAll(".chips a")).find(
+      (anchor) => textOf(anchor) === "failed · 2",
+    ) as HTMLElement;
+    expect(again).not.toBe(chip);
+    expect(again.getAttribute("href")).toBe("/p/alpha");
+    expect(document.activeElement).toBe(again);
     app.stop();
   });
 });
@@ -1541,6 +1651,21 @@ describe("the projects menu", () => {
     press("Escape");
 
     expect(document.activeElement).toBe(document.body);
+  });
+
+  it("stays open when a redraw lands between the click and the toggle", async () => {
+    const { app, timers } = await onFleet();
+
+    // What a browser does with a click on the summary: the element has not
+    // flipped while the click is being handled, and the toggle arrives later,
+    // as a queued task. Whatever this DOM does with the default action, the
+    // app has already heard of the reader's choice by the time it draws.
+    summary().click();
+    timers.runLast();
+    await flush();
+
+    expect(menu().open).toBe(true);
+    app.stop();
   });
 });
 

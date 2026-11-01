@@ -120,11 +120,18 @@ export declare function reasonCounts(
 export declare function searchText(value: string): string;
 
 export interface ProjectHandlers {
-  /** A filter was chosen from a select. `undefined` clears that filter. */
-  onFilter(patch: {
-    readonly seat?: string | undefined;
-    readonly stage?: string | undefined;
-  }): void;
+  /**
+   * A filter was chosen from a select. `undefined` clears that filter. The
+   * key is the select that chose, so the app can tell one choosing from the
+   * next and keep one history entry per choosing.
+   */
+  onFilter(
+    patch: {
+      readonly seat?: string | undefined;
+      readonly stage?: string | undefined;
+    },
+    key?: string,
+  ): void;
   /** The search text changed. `""` clears it. */
   onSearch(text: string): void;
   /** Copy the digest of the rows on screen. */

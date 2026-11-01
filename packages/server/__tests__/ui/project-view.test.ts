@@ -899,6 +899,7 @@ describe("the counters", () => {
   it("leads with the six numbers the rows in scope answer to", () => {
     const host = renderProjectView({
       lanes: projectLanes({
+        waves: [waveSummary({ wave: "w-3", lanes: 3 })],
         lanes: [
           laneRow({ id: "wv-a", derived: { alive: true } }),
           laneRow({
@@ -959,7 +960,10 @@ describe("the counters", () => {
 
   it("warns about nothing in a scope where nothing is wrong", () => {
     const host = renderProjectView({
-      lanes: projectLanes({ lanes: [laneRow()] }),
+      lanes: projectLanes({
+        waves: [waveSummary({ lanes: 1 })],
+        lanes: [laneRow()],
+      }),
     });
     expect(textsOf(host, ".kpis dd")).toStrictEqual([
       "1",
@@ -972,18 +976,47 @@ describe("the counters", () => {
     expect(host.querySelectorAll(".kpis .warn")).toHaveLength(0);
   });
 
-  it("counts nothing at all for a scope with no lanes", () => {
+  it("counts the wave the head speaks of when its rows are elsewhere", () => {
     const host = renderProjectView({
       lanes: projectLanes({ lanes: [laneRow({ wave: "w-2" })] }),
       wave: "w-3",
     });
     expect(textsOf(host, ".kpis dd")).toStrictEqual([
+      "2",
       "0",
       "0",
       "0",
       "0",
       "0",
+    ]);
+  });
+
+  it("counts the lanes the strip counts, not the rows the listing held", () => {
+    const host = renderProjectView({
+      lanes: projectLanes({
+        waves: [waveSummary({ wave: "w-3", lanes: 12 })],
+        lanes: [
+          laneRow({ id: "wv-a" }),
+          laneRow({ id: "wv-b" }),
+          laneRow({ id: "wv-c" }),
+        ],
+        truncated: true,
+      }),
+    });
+    // Three rows were drawn, twelve lanes are in the wave: the strip says
+    // the twelve beside "all lanes" and beside the wave, and the box says
+    // the same thing rather than a second, smaller answer.
+    expect(textsOf(host, ".kpis dd")).toStrictEqual([
+      "12",
+      "3",
       "0",
+      "0",
+      "0",
+      "0",
+    ]);
+    expect(textsOf(host, ".wave-strip .meta")).toStrictEqual([
+      "12 lanes",
+      "12 lanes",
     ]);
   });
 });
@@ -1434,11 +1467,11 @@ describe("the toolbar", () => {
     const select = host.querySelector("#filter-seat") as HTMLSelectElement;
     select.value = "s1";
     select.dispatchEvent(new Event("change", { bubbles: true }));
-    expect(onFilter).toHaveBeenLastCalledWith({ seat: "s1" });
+    expect(onFilter).toHaveBeenLastCalledWith({ seat: "s1" }, "seat");
 
     select.value = "";
     select.dispatchEvent(new Event("change", { bubbles: true }));
-    expect(onFilter).toHaveBeenLastCalledWith({ seat: undefined });
+    expect(onFilter).toHaveBeenLastCalledWith({ seat: undefined }, "seat");
   });
 
   it("asks for the stage a reader picks, and for none when they pick them all", () => {
@@ -1446,11 +1479,11 @@ describe("the toolbar", () => {
     const select = host.querySelector("#filter-stage") as HTMLSelectElement;
     select.value = "review";
     select.dispatchEvent(new Event("change", { bubbles: true }));
-    expect(onFilter).toHaveBeenLastCalledWith({ stage: "review" });
+    expect(onFilter).toHaveBeenLastCalledWith({ stage: "review" }, "stage");
 
     select.value = "";
     select.dispatchEvent(new Event("change", { bubbles: true }));
-    expect(onFilter).toHaveBeenLastCalledWith({ stage: undefined });
+    expect(onFilter).toHaveBeenLastCalledWith({ stage: undefined }, "stage");
   });
 
   it("shows the reader's own search, and asks for it as it is typed", () => {
