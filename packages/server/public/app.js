@@ -14,6 +14,7 @@ import { enrolKey } from "./enrol-key.js";
 import { createApi } from "./api.js";
 import { digestOf } from "./digest.js";
 import { el } from "./dom.js";
+import { mountFrame } from "./live.js";
 import { drawableProjectLanes } from "./project-lanes.js";
 import { drawableProjects } from "./projects.js";
 import { isProjectId, isWaveId } from "./patterns.js";
@@ -1359,7 +1360,8 @@ export function createApp(deps) {
     if (entered) {
       root.removeAttribute("data-first");
     }
-    root.replaceChildren(
+    mountFrame(
+      root,
       shell(
         {
           route,
