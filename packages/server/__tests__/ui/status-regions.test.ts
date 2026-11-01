@@ -147,11 +147,38 @@ function observeLive(rootNode: HTMLElement): Observed {
   };
 }
 
-/** Asserts a node never appears in the removed or added nodes of these records. */
+/**
+ * Asserts a node, and every ancestor of it below `#root`, is neither in the
+ * removed nor the added nodes of these records. A redraw that detaches and
+ * reinserts a wrapper around a live region shows the region itself in neither
+ * list, so the ancestors are what catch a detached-and-reinserted `div.app`.
+ */
 function notDetached(records: MutationRecord[], node: Element): void {
+  const ancestors: Element[] = [];
+  let up = node.parentElement;
+  while (up !== null && up.id !== "root") {
+    ancestors.push(up);
+    up = up.parentElement;
+  }
   for (const record of records) {
-    expect(Array.from(record.removedNodes)).not.toContain(node);
-    expect(Array.from(record.addedNodes)).not.toContain(node);
+    const added = Array.from(record.addedNodes);
+    const removed = Array.from(record.removedNodes);
+    expect(added).not.toContain(node);
+    expect(removed).not.toContain(node);
+    for (const ancestor of ancestors) {
+      expect(removed).not.toContain(ancestor);
+    }
+  }
+}
+
+/**
+ * Drains the observer ONCE and runs every given node's check against that one
+ * snapshot. A second drain would walk an empty list and pass for any node.
+ */
+function checked(observed: Observed, ...nodes: Element[]): void {
+  const records = observed.since();
+  for (const node of nodes) {
+    notDetached(records, node);
   }
 }
 
@@ -184,7 +211,7 @@ describe("the footbar live region", () => {
     expect(oneOf(root(), "footer.footbar [role='status']")).toBe(status);
     expect(status.className).toBe("status");
     expect(textOf(status)).toBe("");
-    notDetached(observed.since(), status);
+    checked(observed, status);
 
     // A failed poll says so in the same node.
     flaky.fail();
@@ -192,7 +219,7 @@ describe("the footbar live region", () => {
     expect(oneOf(root(), "footer.footbar [role='status']")).toBe(status);
     expect(status.className).toBe("note");
     expect(textOf(status)).toBe("offline, retrying");
-    notDetached(observed.since(), status);
+    checked(observed, status);
 
     // The next poll recovers, back in the same node.
     flaky.recover();
@@ -200,21 +227,42 @@ describe("the footbar live region", () => {
     expect(oneOf(root(), "footer.footbar [role='status']")).toBe(status);
     expect(status.className).toBe("status");
     expect(textOf(status)).toBe("");
-    notDetached(observed.since(), status);
+    checked(observed, status);
 
     // Navigation to a project page keeps it, and so does navigating back.
     app.navigate("/p/alpha");
     await flush();
     expect(oneOf(root(), "footer.footbar [role='status']")).toBe(status);
-    notDetached(observed.since(), status);
+    checked(observed, status);
 
     app.navigate("/");
     await flush();
     expect(oneOf(root(), "footer.footbar [role='status']")).toBe(status);
-    notDetached(observed.since(), status);
+    checked(observed, status);
 
     observed.observer.disconnect();
     app.stop();
+  });
+
+  it("counts a status node in a removed wrapper as detached", () => {
+    const observed = observeLive(freshRoot());
+    const status = document.createElement("p");
+    status.setAttribute("role", "status");
+    root().appendChild(status);
+    observed.since(); // The mount itself is not a regression.
+
+    // A redraw that detaches and reinserts the wrapper shows the region in
+    // neither list, so the removal of an ancestor has to be what bites.
+    const wrapper = document.createElement("div");
+    wrapper.append(status);
+    root().appendChild(wrapper);
+    observed.since();
+    wrapper.remove();
+    root().appendChild(wrapper);
+    expect(root().contains(status)).toBe(true);
+    expect(() => checked(observed, status)).toThrow();
+
+    observed.observer.disconnect();
   });
 });
 
@@ -263,8 +311,7 @@ describe("the project toolbar live regions", () => {
     expect(afterFilterQ).not.toBe(q);
     expect(afterFilterSelect).not.toBe(select);
     expect(afterFilterCopy).not.toBe(copyButton);
-    notDetached(observed.since(), shown);
-    notDetached(observed.since(), copied);
+    checked(observed, shown, copied);
 
     // Copying the digest says so in the same copied node.
     (afterFilterCopy as HTMLButtonElement).click();
@@ -273,8 +320,7 @@ describe("the project toolbar live regions", () => {
     expect(textOf(copied)).toBe("Digest copied");
     expect(oneOf(root(), ".toolbar .shown")).toBe(shown);
     expect(textOf(shown)).toBe("1 of 3 shown");
-    notDetached(observed.since(), shown);
-    notDetached(observed.since(), copied);
+    checked(observed, shown, copied);
 
     // A poll redraws the controls around the kept regions.
     const beforeRefreshQ = root().querySelector("#filter-q");
@@ -288,8 +334,7 @@ describe("the project toolbar live regions", () => {
     expect(root().querySelector("#filter-q")).not.toBe(beforeRefreshQ);
     expect(root().querySelector("#filter-seat")).not.toBe(beforeRefreshSelect);
     expect(root().querySelector("button.copy")).not.toBe(beforeRefreshCopy);
-    notDetached(observed.since(), shown);
-    notDetached(observed.since(), copied);
+    checked(observed, shown, copied);
 
     observed.observer.disconnect();
     app.stop();
@@ -307,7 +352,9 @@ describe("the project stale banner", () => {
       waveSummary({ wave: "w-2", receivedAt: BASE, stale: true }),
     ];
     const fetchImpl = fetchStub(
-      projectHandler(() => projectLanes({ waves, lanes: [laneRow()] })),
+      projectHandler(() =>
+        projectLanes({ waves, lanes: [laneRow({ wave: "w-2" })] }),
+      ),
     );
     const { app } = boot({ pathname: "/p/alpha/w/w-2", fetchImpl });
     app.start();
@@ -329,7 +376,7 @@ describe("the project stale banner", () => {
     expect(oneOf(root(), ".banner.stale")).toBe(banner);
     expect(textOf(banner)).toBe(BANNER_TEXT);
     expect(banner.querySelector("span[title]")).toBe(stampNode);
-    notDetached(observed.since(), banner);
+    checked(observed, banner);
 
     // A stamp-only change within "just now" replaces the children, not the banner.
     waves = [waveSummary({ wave: "w-2", receivedAt: SHIFTED, stale: true })];
@@ -339,7 +386,7 @@ describe("the project stale banner", () => {
     const stampNow = banner.querySelector("span[title]") as HTMLElement;
     expect(stampNow).not.toBe(stampNode);
     expect(stampNow.getAttribute("title")).toBe(SHIFTED);
-    notDetached(observed.since(), banner);
+    checked(observed, banner);
 
     // Stale-to-fresh removes the banner without touching the toolbar live regions.
     waves = [waveSummary({ wave: "w-2", receivedAt: BASE, stale: false })];
@@ -347,6 +394,7 @@ describe("the project stale banner", () => {
     expect(oneOf(root(), ".banner.stale")).toBeNull();
     expect(oneOf(root(), ".toolbar .shown")).toBe(shown);
     expect(oneOf(root(), ".toolbar .copied")).toBe(copied);
+    checked(observed, shown, copied);
 
     // Fresh-to-stale re-inserts the banner without detaching the toolbar regions.
     waves = [waveSummary({ wave: "w-2", receivedAt: BASE, stale: true })];
@@ -356,8 +404,46 @@ describe("the project stale banner", () => {
     expect(reinserted).not.toBe(banner);
     expect(oneOf(root(), ".toolbar .shown")).toBe(shown);
     expect(oneOf(root(), ".toolbar .copied")).toBe(copied);
-    notDetached(observed.since(), shown);
-    notDetached(observed.since(), copied);
+    checked(observed, shown, copied);
+
+    observed.observer.disconnect();
+    app.stop();
+  });
+
+  it("keeps the counted banner mounted while its sentence changes across polls", async () => {
+    const ONE_STALE =
+      "1 of 2 waves shown is stale: lanes last seen alive in them read unknown.";
+    const TWO_STALE =
+      "2 of 2 waves shown are stale: lanes last seen alive in them read unknown.";
+    let waves: WaveSummary[] = [
+      waveSummary({ wave: "w-2", receivedAt: BASE, stale: true }),
+      waveSummary({ receivedAt: BASE }),
+    ];
+    const { app } = boot({
+      pathname: "/p/alpha",
+      fetchImpl: fetchStub(
+        projectHandler(() => projectLanes({ waves, lanes: [laneRow()] })),
+      ),
+    });
+    app.start();
+    await flush();
+
+    const banner = oneOf(root(), ".banner.stale") as HTMLElement;
+    expect(banner.getAttribute("role")).toBe("status");
+    expect(banner.getAttribute("aria-live")).toBe("polite");
+    expect(textOf(banner)).toBe(ONE_STALE);
+
+    const observed = observeLive(root());
+
+    // A second stale wave arrives: the same node now says a new sentence.
+    waves = [
+      waveSummary({ wave: "w-2", receivedAt: BASE, stale: true }),
+      waveSummary({ receivedAt: BASE, stale: true }),
+    ];
+    await app.refresh();
+    expect(oneOf(root(), ".banner.stale")).toBe(banner);
+    expect(textOf(banner)).toBe(TWO_STALE);
+    checked(observed, banner);
 
     observed.observer.disconnect();
     app.stop();
@@ -388,13 +474,13 @@ describe("the toolbar across an emptied scope", () => {
     await app.refresh();
     expect(oneOf(root(), ".toolbar")).toBeNull();
     expect(oneOf(root(), "footer.footbar [role='status']")).toBe(footStatus);
-    notDetached(observed.since(), footStatus);
+    checked(observed, footStatus);
 
     // Another empty redraw keeps it gone (no toolbar on either side).
     await app.refresh();
     expect(oneOf(root(), ".toolbar")).toBeNull();
     expect(oneOf(root(), "footer.footbar [role='status']")).toBe(footStatus);
-    notDetached(observed.since(), footStatus);
+    checked(observed, footStatus);
 
     // Scope returns: the toolbar is inserted fresh around the kept footbar.
     lanes = [laneRow()];
@@ -402,7 +488,7 @@ describe("the toolbar across an emptied scope", () => {
     expect(oneOf(root(), ".toolbar")).not.toBeNull();
     expect(textOf(oneOf(root(), ".toolbar .shown"))).toBe("1 of 1 shown");
     expect(oneOf(root(), "footer.footbar [role='status']")).toBe(footStatus);
-    notDetached(observed.since(), footStatus);
+    checked(observed, footStatus);
 
     // A stray node prepended before `div.app` is swept, keeping the app and the
     // footbar live region connected.
@@ -414,8 +500,7 @@ describe("the toolbar across an emptied scope", () => {
     expect(root().contains(stray)).toBe(false);
     expect(oneOf(root(), ".app")).toBe(appNode);
     expect(oneOf(root(), "footer.footbar [role='status']")).toBe(footStatus);
-    notDetached(observed.since(), footStatus);
-    notDetached(observed.since(), appNode);
+    checked(observed, footStatus, appNode);
 
     observed.observer.disconnect();
     app.stop();
