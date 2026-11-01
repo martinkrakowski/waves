@@ -1015,9 +1015,10 @@ describe("what a change of the address asks for", () => {
     seat.value = "s2";
     seat.dispatchEvent(new Event("change", { bubbles: true }));
 
-    click(seat);
-    seat.value = "s1";
-    seat.dispatchEvent(new Event("change", { bubbles: true }));
+    const again = root().querySelector("#filter-seat") as HTMLSelectElement;
+    click(again);
+    again.value = "s1";
+    again.dispatchEvent(new Event("change", { bubbles: true }));
 
     expect(browser.pushes).toStrictEqual([
       "/p/alpha?seat=s2",
@@ -1049,7 +1050,9 @@ describe("what a change of the address asks for", () => {
     ]);
 
     app.navigate("/p/alpha?all=1");
+    await flush();
     app.navigate("/p/alpha?seat=s1");
+    await flush();
 
     current = root().querySelector("#filter-seat") as HTMLSelectElement;
     current.value = "s2";
