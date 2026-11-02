@@ -841,10 +841,8 @@ export function createApp(deps) {
     // A reason chip is a link whose address does not survive its own press:
     // activating a reason rewrites the chip set, and the chip that was pressed
     // now links to turning itself off, so by the time the redraw lands its
-    // href is an address no chip carries any more. The bar keeps its shape —
-    // "all", then every reason with rows, in the server's order — and a chip's
-    // label holds a count of the scope, which no filter moves, so the chip is
-    // remembered by the text it was drawn with and found again by it.
+    // href is an address no chip carries any more, and its label holds a count
+    // a refresh can move. So the chip is remembered by its `data-reason`.
     if (active.closest("nav.chips") !== null) {
       return { chip: active.getAttribute("data-reason") };
     }
